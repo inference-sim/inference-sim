@@ -115,9 +115,10 @@ func dpScenarioBalanced(t *testing.T, mode string) string {
 
 // parallel.data_parallel_load_balancing (#1909), the scenario's and the only source (#2037): the
 // internal and hybrid modes run the dp=2 scenario deterministically and conserve its requests,
-// and hybrid on a group within one node is the internal balancer, byte for byte. The external
-// balancer, one endpoint per rank with the router picking the rank, is refused naming the mode,
-// and an unknown mode is refused naming the field.
+// and hybrid on a group within one node is the internal balancer, byte for byte. External
+// balancing is one endpoint per rank (inference-sim#2699); this fixture packs both ranks on one
+// node (dp_local defaults to dp), so external resolves to a single node endpoint -- the hybrid
+// shape, still refused, naming dp_local. An unknown mode is refused naming the field.
 func TestRunCmd_DPLoadBalancingModes(t *testing.T) {
 	outs := map[string]string{}
 	for _, mode := range []string{"internal", "hybrid"} {
@@ -136,9 +137,11 @@ func TestRunCmd_DPLoadBalancingModes(t *testing.T) {
 	if simulatedFigures(t, outs["hybrid"]) != simulatedFigures(t, outs["internal"]) {
 		t.Error("hybrid on a group within one node must equal the internal balancer")
 	}
+	// External on a group whose ranks share a node exposes one node endpoint, not one per rank:
+	// the hybrid shape this RFC scopes out, refused naming dp_local (not run as internal).
 	if _, stderr, err := runKernelCLI(t, dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, "external"))...); err == nil ||
-		!strings.Contains(stderr, "data_parallel_load_balancing external") {
-		t.Errorf("the external balancer must be refused naming the mode: %v\n%s", err, lastLines(stderr, 3))
+		!strings.Contains(stderr, "one endpoint per rank") {
+		t.Errorf("external on a one-node group must be refused as the hybrid shape, naming dp_local: %v\n%s", err, lastLines(stderr, 3))
 	}
 	_, stderr, err := runKernelCLI(t, dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, "random"))...)
 	var exitErr *exec.ExitError

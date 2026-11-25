@@ -27,6 +27,8 @@ import (
 	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
+	vllmcore "github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview"
 	coreengine "github.com/inference-sim/inference-sim/engines/vllm/vllmengine"
 
 	"math"
@@ -265,7 +267,13 @@ func fatalf(format string, args ...any) { logrus.Fatalf(format, args...) }
 // scenarioEndpointTopology uses the same role-specific kernel placements that price KV
 // handoffs (build.EndpointGroupPlacements), as the cluster's endpoint topology.
 func scenarioEndpointTopology(model *kernelmodel.Model, pools *kernelPools, total, prefill, decode int) (map[cluster.InstanceID]cluster.EndpointTopology, error) {
-	placed, err := build.EndpointGroupPlacements(model, pools.pools(), total, prefill, decode)
+	// A group is one instance (EndpointGroupPlacements), except under external DP load balancing,
+	// where every rank is its own router-visible instance, placed per rank (EndpointPlacements).
+	place := build.EndpointGroupPlacements
+	if externalDPActive() {
+		place = build.EndpointPlacements
+	}
+	placed, err := place(model, pools.pools(), total, prefill, decode)
 	if err != nil || placed == nil {
 		return nil, err
 	}
@@ -630,12 +638,51 @@ func rankInPool(id cluster.InstanceID, firstDecode int) int {
 	return build.RankInPool(string(id), firstDecode)
 }
 
-// requireKernelCapacity refuses a run whose instances do not fit the scenario's pools
-// (build.RequireGroupCapacity). Called once the instance counts are final.
+// requireKernelCapacity refuses a run whose instances do not fit the scenario's pools. Called
+// once the instance counts are final. The host runs a data-parallel group as one instance
+// (build.RequireGroupCapacity: a pool holds whole dp x pp x tp groups), except under external DP
+// load balancing, where every rank is its own router-visible instance (build.RequireCapacity: a
+// pool holds whole ranks).
 func requireKernelCapacity(p *kernelPools) {
-	if err := build.RequireGroupCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
+	check := build.RequireGroupCapacity
+	if externalDPActive() {
+		check = build.RequireCapacity
+	}
+	if err := check(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
 		logrus.Fatalf("%v", err)
 	}
+}
+
+// externalDPActive reports whether the run drives a data-parallel group under external load
+// balancing: each rank is its own router-visible endpoint (inference-sim#2699). dataParallelism
+// and dpLoadBalancing are the run's resolved DP width and mode.
+func externalDPActive() bool {
+	return dataParallelism > 1 && dpLoadBalancing == sim.DPLoadBalancingExternal
+}
+
+// externalDPLockstepRanks is the DeploymentConfig.DPLockstepRanks the run sets: the DP width under
+// external balancing (so the cluster groups each run of that many instances into one shared-group
+// replica), and 0 otherwise (a group is one collapsed instance, as before).
+func externalDPLockstepRanks() int {
+	if externalDPActive() {
+		return dataParallelism
+	}
+	return 0
+}
+
+// scaleInstanceCountsForExternalDP multiplies the run's instance counts by the DP width when the
+// run drives external DP load balancing: every rank of a group becomes its own instance. A no-op
+// otherwise. Called once the group counts are final and before the capacity check reads them.
+func scaleInstanceCountsForExternalDP() {
+	if !externalDPActive() {
+		return
+	}
+	dp := dataParallelism
+	numInstances *= dp
+	prefillInstances *= dp
+	decodeInstances *= dp
+	prefillDecodeInstances *= dp
+	encodeInstances *= dp
 }
 
 // offloadPricing is what the engine's offload pricing reads from the run.
@@ -1180,6 +1227,20 @@ func EngineReleases() []stack.Upstream {
 // (dataOptions) and passed whole.
 func contractRoots(scenarioPath string) map[string]string {
 	return map[string]string{coreengine.RootScenario: scenarioPath}
+}
+
+// dpRankViews exposes a built external data-parallel group as one engine.Engine per rank — the
+// per-endpoint views the router sees under external load balancing (inference-sim#2699, H3). It
+// reports false for any engine that is not such a shared group, so the caller keeps its single
+// collapsed instance. This is the one place cmd reaches the dprankview package, kept here with
+// every other use of the vLLM engine (CLAUDE.md's single-import-site rule); engine_driver_build.go
+// drives it through engine.Engine alone.
+func dpRankViews(eng engine.Engine) ([]engine.Engine, bool) {
+	g, ok := eng.(*vllmcore.DPGroup)
+	if !ok {
+		return nil, false
+	}
+	return dprankview.NewEndpointViews(g), true
 }
 
 // newContractEngine builds one engine from spec over the run's opened data. Every engine of a

@@ -546,11 +546,13 @@ func TestRunCmd_A032DataParallelDeploymentIsOneEngineGroup(t *testing.T) {
 	}
 }
 
-// A 0.33.0 data-parallel group is vLLM's internal balancer: one endpoint whose engine routes to its
-// ranks (core/vllm.DPGroup). Under the external balancer each rank is its own endpoint and the
-// router picks the rank (vllm/entrypoints/cli/serve.py:107-116@5df63a72), which the contract path
-// does not build: a pool stating parallel.data_parallel_load_balancing: external is refused,
-// naming the mode, rather than run as internal. The same pool stating internal runs.
+// A 0.33.0 data-parallel group is vLLM's internal balancer: one endpoint whose engine routes to
+// its ranks (core/vllm.DPGroup). Under external balancing each rank is its own endpoint and the
+// router picks the rank (inference-sim#2699); the host now builds one per-rank endpoint per rank,
+// but only when the ranks are actually spread one per node (dp_local 1). This fixture packs both
+// ranks on one node (dp_local defaults to dp), so external resolves to a single node endpoint --
+// the hybrid shape, still refused, naming dp_local -- rather than run as internal. The same pool
+// stating internal runs.
 func TestRunCmd_A032DataParallelGroupRefusesAnExternalBalancer(t *testing.T) {
 	balanced := func(mode string) string {
 		t.Helper()
@@ -570,10 +572,10 @@ func TestRunCmd_A032DataParallelGroupRefusesAnExternalBalancer(t *testing.T) {
 	_, stderr, err := runKernelCLI(t, "run", "--scenarios", balanced("external"), "--scenario", "v032-dp2.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
 	if err == nil {
-		t.Fatal("a 0.33.0 dp 2 deployment under the external DP balancer ran")
+		t.Fatal("a 0.33.0 dp 2 deployment whose ranks share a node ran under external balancing (it exposes one node endpoint, the hybrid shape)")
 	}
-	if !strings.Contains(stderr, "parallel.data_parallel_load_balancing external") {
-		t.Errorf("the refusal must name the balancing mode; stderr:\n%s", lastLines(stderr, 4))
+	if !strings.Contains(stderr, "one endpoint per rank") {
+		t.Errorf("the refusal must explain external is one endpoint per rank (dp_local 1); stderr:\n%s", lastLines(stderr, 4))
 	}
 	if _, stderr, err := runKernelCLI(t, "run", "--scenarios", balanced("internal"), "--scenario", "v032-dp2.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1"); err != nil {

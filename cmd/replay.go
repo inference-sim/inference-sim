@@ -482,6 +482,8 @@ Example:
 		// Build cluster config (same as runCmd, using replayHorizon instead of simulationHorizon).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/root.go (runCmd
 		// DeploymentConfig literal). See .github/agent-prompts/standards/invariants.md INV-13.
+		// Under external DP load balancing every rank is its own instance (as on run).
+		scaleInstanceCountsForExternalDP()
 		requireKernelCapacity(kernelPD)
 		requirePullPricing(kernelPD, pdTransferContention)
 		scenarioTopology, topologyErr := scenarioEndpointTopology(kernelOpened, kernelPD, numInstances, prefillInstances, decodeInstances)
@@ -497,6 +499,7 @@ Example:
 			InstanceConfig:             instanceConfigOf(runEngine),
 			NumInstances:               numInstances,
 			DPLoadBalancing:            dpLoadBalancing,
+			DPLockstepRanks:            externalDPLockstepRanks(),
 			TraceLevel:                 traceLevel,
 			CounterfactualK:            counterfactualK,
 			PrefillInstances:           prefillInstances,

@@ -31,15 +31,13 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	// own, which the vLLM engine's OpenPools refuses already. A data-parallel deployment is one
 	// instance whose engine is the whole DP group, its ranks, waves and balancer the engine's.
 	poolOf := kernelPDOpened.poolOfInstance()
-	// The DP group is vLLM's internal balancer, one endpoint routing to its ranks. Under the
-	// external balancer each rank is its own endpoint and the router picks the rank
-	// (vllm/entrypoints/cli/serve.py:107-116@5df63a72), which the group does not model: refuse
-	// it, naming the mode, rather than run it as internal.
-	if dataParallelism > 1 && dpLoadBalancing == sim.DPLoadBalancingExternal {
-		logrus.Fatalf("scenario %q: engine %s runs a data-parallel group through the engine contract "+
-			"behind vLLM's internal balancer, which does not drive parallel.data_parallel_load_balancing external yet "+
-			"(one endpoint per rank, the router picking the rank)", kernelScenario, version)
-	}
+	// Under external DP load balancing each rank is its own router-visible endpoint and the router
+	// picks the rank (vllm/entrypoints/cli/serve.py:107-116@5df63a72). The host builds the shared
+	// group once per replica and exposes its ranks as per-rank endpoint views (dpRankViews over the
+	// engine's dprankview, engine_build.go), one InstanceSimulator per rank; the sim leader/member
+	// path (sim/cluster buildDPReplicas) steps the shared group and splits each step across the
+	// views. Internal/unset builds the one collapsed instance, exactly as before.
+	externalDP := dataParallelism > 1 && dpLoadBalancing == sim.DPLoadBalancingExternal
 	// The host does not carry request priority across the engine contract yet: the driver sends
 	// every engine.Request at priority 0 (sim.EngineDriver, the SLO class only as a tag the engine
 	// does not read), so a priority policy would order by arrival alone and silently run as FCFS.
@@ -65,7 +63,11 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	// The run's file systems under the fs tiers' root_dirs, shared by every engine of the model
 	// (#1698): one store for each (model, root_dir).
 	storage := newTierStorage()
-	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
+	// buildEngine builds one engine for the instance at index from its pool, placing it and setting
+	// its front end, and returns the driver configuration its host overheads need. For an external
+	// DP replica this builds the whole shared group once (at the replica's base index); the per-rank
+	// views are wrapped from it below.
+	buildEngine := func(index int, ic sim.InstanceConfig) (engine.Engine, sim.EngineDriverConfig, error) {
 		m := latency
 		accept := acceptance
 		if kernelPDOpened != nil {
@@ -76,7 +78,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		}
 		streamInterval, err := streamIntervalOf(m)
 		if err != nil {
-			return nil, fmt.Errorf("scenario %q: %w", kernelScenario, err)
+			return nil, sim.EngineDriverConfig{}, fmt.Errorf("scenario %q: %w", kernelScenario, err)
 		}
 		// The Spec carries no configuration: the factory reads the pool's engine block from the
 		// scenario file itself, so this binary opens no engine configuration.
@@ -88,14 +90,14 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			Seed:            seed,
 		}, data)
 		if err != nil {
-			return nil, fmt.Errorf("scenario %q: engine %s: %w", kernelScenario, version, err)
+			return nil, sim.EngineDriverConfig{}, fmt.Errorf("scenario %q: engine %s: %w", kernelScenario, version, err)
 		}
 		if err := placeInstance(eng, kernelPDOpened, index); err != nil {
-			return nil, fmt.Errorf("scenario %q: instance_%d: %w", kernelScenario, index, err)
+			return nil, sim.EngineDriverConfig{}, fmt.Errorf("scenario %q: instance_%d: %w", kernelScenario, index, err)
 		}
 		if kernelPDOpened == nil {
 			if err := placePeerInstance(eng, kernelOpened, index); err != nil {
-				return nil, fmt.Errorf("scenario %q: %w", kernelScenario, err)
+				return nil, sim.EngineDriverConfig{}, fmt.Errorf("scenario %q: %w", kernelScenario, err)
 			}
 		}
 		storage.share(eng, model)
@@ -103,7 +105,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		// blis-schemas does not carry yet; the engine resolves them into the admission queue its
 		// plan states, and the driver queues requests on that shape.
 		if err := setEngineFrontend(eng, version); err != nil {
-			return nil, fmt.Errorf("scenario %q: %w", kernelScenario, err)
+			return nil, sim.EngineDriverConfig{}, fmt.Errorf("scenario %q: %w", kernelScenario, err)
 		}
 		reportAssumptions(eng)
 		if iv := serverSeriesIntervalUs(); iv > 0 {
@@ -112,7 +114,7 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 			// engine that cannot record one is refused rather than leave the flag silently off.
 			s, ok := eng.(interface{ EnableServerSeries(intervalUs int64) })
 			if !ok {
-				return nil, fmt.Errorf("scenario %q: engine %s: the engine records no server time series, "+
+				return nil, sim.EngineDriverConfig{}, fmt.Errorf("scenario %q: engine %s: the engine records no server time series, "+
 					"which --server-series-interval-s asks for", kernelScenario, version)
 			}
 			s.EnableServerSeries(iv)
@@ -120,7 +122,55 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		cfg := sim.EngineDriverConfig{Horizon: horizon, Acceptance: accept, StreamInterval: streamInterval,
 			Environment: kernelPDOpened.environmentOf(ic, kernelOpened)}
 		hostOverheads(&cfg, m)
+		return eng, cfg, nil
+	}
+	build := func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
+		eng, cfg, err := buildEngine(index, ic)
+		if err != nil {
+			return nil, err
+		}
 		return sim.NewEngineDriver(eng, cfg), nil
+	}
+
+	if externalDP {
+		// Each run of dataParallelism consecutive instances is one shared group's ranks (the same
+		// grouping sim/cluster's buildDPReplicas uses). The group is built once, at the replica's
+		// base index, and exposed as one per-rank endpoint view; each view gets its own driver over
+		// the shared group's configuration.
+		dp := dataParallelism
+		type replicaViews struct{ drivers []*sim.EngineDriver }
+		cache := map[int]*replicaViews{}
+		return func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {
+			rep, rank := index/dp, index%dp
+			rv := cache[rep]
+			if rv == nil {
+				eng, cfg, err := buildEngine(index, ic)
+				if err != nil {
+					return nil, err
+				}
+				views, ok := dpRankViews(eng)
+				if !ok {
+					return nil, fmt.Errorf("scenario %q: engine %s runs external DP load balancing but its engine is not a "+
+						"data-parallel group that exposes per-rank endpoints", kernelScenario, version)
+				}
+				if len(views) != dp {
+					// Fewer router-visible endpoints than ranks means the group resolved to a hybrid
+					// shape (one endpoint fronting several ranks of a node), which this RFC scopes out
+					// (inference-sim#2699); only true external balancing (one endpoint per rank,
+					// dp_local 1) is driven.
+					return nil, fmt.Errorf("scenario %q: parallel.data_parallel_load_balancing external exposes %d endpoint(s) for "+
+						"%d data-parallel rank(s); the host drives external balancing only as one endpoint per rank (state "+
+						"parallel.dp_local 1). An endpoint fronting several ranks is hybrid balancing, which is not driven yet",
+						kernelScenario, len(views), dp)
+				}
+				rv = &replicaViews{drivers: make([]*sim.EngineDriver, dp)}
+				for k, v := range views {
+					rv.drivers[k] = sim.NewEngineDriver(v, cfg)
+				}
+				cache[rep] = rv
+			}
+			return rv.drivers[rank], nil
+		}
 	}
 	// Build the first instance's engine now: a deployment the engine refuses (one needing a
 	// piece it does not build yet) is a CLI refusal, named, before the cluster is assembled.
