@@ -230,6 +230,7 @@ def make_run_class():
 
 def child(scenario: dict, sglang_root: str, out_path: str) -> None:
     """run_scheduler.child, with this module's run class, ServerArgs and tokenized request."""
+    run_scheduler.arm_hang_dump()
     for name in [n for n in os.environ if n.startswith("SGLANG_")]:
         del os.environ[name]
     os.environ.update(run_scheduler.KEPT_SGLANG_ENV)
