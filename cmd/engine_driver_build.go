@@ -36,8 +36,10 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 	// group once per replica and exposes its ranks as per-rank endpoint views (dpRankViews over the
 	// engine's dprankview, engine_build.go), one InstanceSimulator per rank; the sim leader/member
 	// path (sim/cluster buildDPReplicas) steps the shared group and splits each step across the
-	// views. Internal/unset builds the one collapsed instance, exactly as before.
-	externalDP := dataParallelism > 1 && dpLoadBalancing == sim.DPLoadBalancingExternal
+	// views. Internal/unset builds the one collapsed instance, exactly as before. externalDP
+	// resolves the mode per pool for a P/D run (a disaggregated run's run-wide dpLoadBalancing is the
+	// flag default, not the pools' stated mode); externalDPWidth is the shared per-rank width.
+	externalDPWidth, externalDPBuild := externalDP()
 	// The host does not carry request priority across the engine contract yet: the driver sends
 	// every engine.Request at priority 0 (sim.EngineDriver, the SLO class only as a tag the engine
 	// does not read), so a priority policy would order by arrival alone and silently run as FCFS.
@@ -132,12 +134,12 @@ func engineDriverFactory(ref engineRef, horizon, seed int64, latency latencyMode
 		return sim.NewEngineDriver(eng, cfg), nil
 	}
 
-	if externalDP {
-		// Each run of dataParallelism consecutive instances is one shared group's ranks (the same
+	if externalDPBuild {
+		// Each run of externalDPWidth consecutive instances is one shared group's ranks (the same
 		// grouping sim/cluster's buildDPReplicas uses). The group is built once, at the replica's
 		// base index, and exposed as one per-rank endpoint view; each view gets its own driver over
 		// the shared group's configuration.
-		dp := dataParallelism
+		dp := externalDPWidth
 		type replicaViews struct{ drivers []*sim.EngineDriver }
 		cache := map[int]*replicaViews{}
 		return func(index int, ic sim.InstanceConfig) (*sim.EngineDriver, error) {

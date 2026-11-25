@@ -116,9 +116,9 @@ func dpScenarioBalanced(t *testing.T, mode string) string {
 // parallel.data_parallel_load_balancing (#1909), the scenario's and the only source (#2037): the
 // internal and hybrid modes run the dp=2 scenario deterministically and conserve its requests,
 // and hybrid on a group within one node is the internal balancer, byte for byte. External
-// balancing is one endpoint per rank (inference-sim#2699); this fixture packs both ranks on one
-// node (dp_local defaults to dp), so external resolves to a single node endpoint -- the hybrid
-// shape, still refused, naming dp_local. An unknown mode is refused naming the field.
+// balancing is one router-visible endpoint per rank (inference-sim#2699), so a colocated dp=2
+// deployment runs with 2 per-rank instances (vs 1 collapsed) and conserves its requests. An
+// unknown mode is refused naming the field.
 func TestRunCmd_DPLoadBalancingModes(t *testing.T) {
 	outs := map[string]string{}
 	for _, mode := range []string{"internal", "hybrid"} {
@@ -137,13 +137,18 @@ func TestRunCmd_DPLoadBalancingModes(t *testing.T) {
 	if simulatedFigures(t, outs["hybrid"]) != simulatedFigures(t, outs["internal"]) {
 		t.Error("hybrid on a group within one node must equal the internal balancer")
 	}
-	// External on a group whose ranks share a node exposes one node endpoint, not one per rank:
-	// the hybrid shape this RFC scopes out, refused naming dp_local (not run as internal).
-	if _, stderr, err := runKernelCLI(t, dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, "external"))...); err == nil ||
-		!strings.Contains(stderr, "one endpoint per rank") {
-		t.Errorf("external on a one-node group must be refused as the hybrid shape, naming dp_local: %v\n%s", err, lastLines(stderr, 3))
+	// External balancing exposes each rank as its own router-visible endpoint and runs (colocated):
+	// the dp=2 group builds 2 instances, one per rank, and conserves its requests (vs internal's 1
+	// collapsed instance).
+	extOut, stderr, err := runKernelCLI(t, dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, "external"))...)
+	if err != nil {
+		t.Fatalf("external balancing did not run on a colocated dp=2 group: %v\n%s", err, lastLines(stderr, 3))
 	}
-	_, stderr, err := runKernelCLI(t, dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, "random"))...)
+	clusterConservationHolds(t, extOut, dpFixtureNumRequests)
+	if ids := instanceIDs(t, extOut); len(ids) != 2 {
+		t.Errorf("external dp=2 built %v, want 2 per-rank instances", ids)
+	}
+	_, stderr, err = runKernelCLI(t, dpRunArgs(1, "--scenarios", dpScenarioBalanced(t, "random"))...)
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) || !strings.Contains(stderr, "data_parallel_load_balancing") {
 		t.Errorf("an unknown mode must be refused naming the field: %v\n%s", err, lastLines(stderr, 3))

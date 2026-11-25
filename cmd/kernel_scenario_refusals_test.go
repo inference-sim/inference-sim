@@ -547,13 +547,12 @@ func TestRunCmd_A032DataParallelDeploymentIsOneEngineGroup(t *testing.T) {
 }
 
 // A 0.33.0 data-parallel group is vLLM's internal balancer: one endpoint whose engine routes to
-// its ranks (core/vllm.DPGroup). Under external balancing each rank is its own endpoint and the
-// router picks the rank (inference-sim#2699); the host now builds one per-rank endpoint per rank,
-// but only when the ranks are actually spread one per node (dp_local 1). This fixture packs both
-// ranks on one node (dp_local defaults to dp), so external resolves to a single node endpoint --
-// the hybrid shape, still refused, naming dp_local -- rather than run as internal. The same pool
-// stating internal runs.
-func TestRunCmd_A032DataParallelGroupRefusesAnExternalBalancer(t *testing.T) {
+// its ranks (core/vllm.DPGroup). Under external balancing each rank is its own router-visible
+// endpoint and the router picks the rank (inference-sim#2699); a colocated deployment now builds
+// one instance per rank (the deployment's parallel.data_parallel_load_balancing: external reaches
+// the engine's data_parallel_external_lb). This dp=2 colocated pool stating external runs with 2
+// per-rank instances; the same pool stating internal runs as one collapsed instance.
+func TestRunCmd_A032DataParallelGroupRunsAnExternalBalancer(t *testing.T) {
 	balanced := func(mode string) string {
 		t.Helper()
 		dir := dp032Variant(t, "")
@@ -569,17 +568,17 @@ func TestRunCmd_A032DataParallelGroupRefusesAnExternalBalancer(t *testing.T) {
 		}
 		return dir
 	}
-	_, stderr, err := runKernelCLI(t, "run", "--scenarios", balanced("external"), "--scenario", "v032-dp2.yaml",
+	extOut, stderr, err := runKernelCLI(t, "run", "--scenarios", balanced("external"), "--scenario", "v032-dp2.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1")
-	if err == nil {
-		t.Fatal("a 0.33.0 dp 2 deployment whose ranks share a node ran under external balancing (it exposes one node endpoint, the hybrid shape)")
+	if err != nil {
+		t.Fatalf("a 0.33.0 dp 2 colocated deployment did not run under external balancing: %v\nstderr:\n%s", err, lastLines(stderr, 4))
 	}
-	if !strings.Contains(stderr, "one endpoint per rank") {
-		t.Errorf("the refusal must explain external is one endpoint per rank (dp_local 1); stderr:\n%s", lastLines(stderr, 4))
+	if ids := instanceIDs(t, extOut); len(ids) != 2 {
+		t.Errorf("external dp 2 built %v, want 2 per-rank instances (one router endpoint per rank)", ids)
 	}
 	if _, stderr, err := runKernelCLI(t, "run", "--scenarios", balanced("internal"), "--scenario", "v032-dp2.yaml",
 		"--rate", "4", "--num-requests", "4", "--seed", "1"); err != nil {
-		t.Errorf("the internal balancer must still run: %v\nstderr:\n%s", err, lastLines(stderr, 4))
+		t.Errorf("the internal balancer must still run as one collapsed instance: %v\nstderr:\n%s", err, lastLines(stderr, 4))
 	}
 }
 

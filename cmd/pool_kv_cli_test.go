@@ -163,3 +163,24 @@ func TestRunCmd_ADecodePoolTierBesideItsOwnNixlIsRefusedNamingThePool(t *testing
 		t.Errorf("the refusal does not name the decode pool and its connector:\n%s", lastLines(stderr, 3))
 	}
 }
+
+// TestRunCmd_PDExternalDPRefused: external data-parallel load balancing on a P/D deployment is
+// refused with a named message, not run collapsed-internal while reporting external (the Blocker-1
+// silent-substitution this RFC removes). The per-rank endpoints build, but the cluster's P/D
+// handoff orchestration is not yet adapted for shared-group view-driver instances, so it is refused
+// pending that follow-up (inference-sim#2699). Colocated external is driven (covered elsewhere).
+func TestRunCmd_PDExternalDPRefused(t *testing.T) {
+	dir := variantDir(t, func(s string) string {
+		return strings.ReplaceAll(s, "enable_expert_parallel: true}",
+			"enable_expert_parallel: true, data_parallel_load_balancing: external}")
+	})
+	_, stderr, err := runPoolKV(t, dir, poolKVScenario)
+	if err == nil {
+		t.Fatal("a P/D deployment under external DP balancing ran; it must be refused, not run collapsed-internal")
+	}
+	for _, frag := range []string{"disaggregated", "not driven yet", "pd_events.go"} {
+		if !strings.Contains(stderr, frag) {
+			t.Errorf("the refusal must name the P/D-external orchestration gap (%q); stderr:\n%s", frag, lastLines(stderr, 4))
+		}
+	}
+}

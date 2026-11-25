@@ -1015,7 +1015,7 @@ var runCmd = &cobra.Command{
 		config := cluster.DeploymentConfig{
 			InstanceConfig:                 instanceConfigOf(runEngine),
 			NumInstances:                   numInstances,
-			DPLoadBalancing:                dpLoadBalancing,
+			DPLoadBalancing:                effectiveDPLoadBalancing(),
 			DPLockstepRanks:                externalDPLockstepRanks(),
 			TraceLevel:                     traceLevel,
 			CounterfactualK:                counterfactualK,
