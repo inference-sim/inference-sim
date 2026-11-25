@@ -262,7 +262,7 @@ Repository variables, all optional:
 |---|---|---|
 | `DELIVER_IMPLEMENT_MODEL` | `claude-opus-4-8` | model for the implement phase |
 | `DELIVER_CORRECT_MODEL` | `claude-opus-4-8` | model for the correct phase |
-| `DELIVER_VERIFY_MODEL` | `claude-sonnet-4-6` | model for the review phase |
+| `DELIVER_VERIFY_MODEL` | `aws/claude-opus-5-5` | model for the review phase |
 | `DELIVER_MAX_ROUNDS` | `3` | correction rounds before `needs-human`, per PR |
 | `QA_QUESTIONER_MODEL` | `gcp/gemini-3.6-flash` | questioner model for the cross-vendor qa-review pass |
 | `QA_ANSWERER_MODEL` | `azure/gpt-5.6-sol` | answerer model for the cross-vendor qa-review pass |
