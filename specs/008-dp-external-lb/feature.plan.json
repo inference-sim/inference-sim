@@ -24,38 +24,8 @@
       "surface": [
         {
           "kind": "func",
-          "name": "AddToEndpoint",
-          "sig": "(rank int, req engine.Request, now engine.Time)"
-        },
-        {
-          "kind": "func",
-          "name": "EnableKVEventsForMode",
-          "sig": "(mode string)"
-        },
-        {
-          "kind": "func",
-          "name": "LastActive",
-          "sig": "() []bool"
-        },
-        {
-          "kind": "func",
-          "name": "LockstepSteps",
-          "sig": "() (steps int, dummy int)"
-        },
-        {
-          "kind": "func",
           "name": "NewEndpointViews",
           "sig": "(group *DPGroup) []engine.Engine"
-        },
-        {
-          "kind": "func",
-          "name": "PickRank",
-          "sig": "(now engine.Time, inFlight []int) (int, error)"
-        },
-        {
-          "kind": "func",
-          "name": "StepDue",
-          "sig": "(now engine.Time) bool"
         }
       ],
       "invariants": [

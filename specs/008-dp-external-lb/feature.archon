@@ -44,12 +44,6 @@ box github.com/inference-sim/inference-sim/substrate/contracts/engine
 hole github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview {
   surface:
     NewEndpointViews(group *DPGroup) []engine.Engine
-    AddToEndpoint(rank int, req engine.Request, now engine.Time)
-    StepDue(now engine.Time) bool
-    LockstepSteps() (steps int, dummy int)
-    LastActive() []bool
-    PickRank(now engine.Time, inFlight []int) (int, error)
-    EnableKVEventsForMode(mode string)
   allow:
     import github.com/inference-sim/inference-sim/engines/vllm/core/vllm
     import github.com/inference-sim/inference-sim/substrate/contracts/engine
