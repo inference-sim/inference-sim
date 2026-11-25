@@ -252,7 +252,7 @@ jobs:
       # Deliberately NOT the implement phase's model. Reviewer and implementer being different
       # models is what keeps this from being an agent grading its own homework. Override with
       # the DELIVER_VERIFY_MODEL repository variable.
-      DELIVER_MODEL: ${{ vars.DELIVER_VERIFY_MODEL || 'claude-sonnet-4-6' }}
+      DELIVER_MODEL: ${{ vars.DELIVER_VERIFY_MODEL || 'aws/claude-opus-5-5' }}
       MAX_ROUNDS: ${{ vars.DELIVER_MAX_ROUNDS || '3' }}
 
     steps:
