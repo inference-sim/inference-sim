@@ -613,6 +613,55 @@ func (g *DPGroup) Snapshot() engine.State {
 	return st
 }
 
+// RankMetrics is one rank's exported metrics, each sample labelled with the rank index as vLLM
+// labels a DP engine's series (engine="i"), the same label Metrics gives the group's samples.
+// Under external balancing an endpoint reports only its own rank's series, which the router then
+// scrapes per instance; the group's aggregate Metrics is unchanged.
+func (g *DPGroup) RankMetrics(rank int, now engine.Time) engine.Metrics {
+	out := engine.Metrics{At: now}
+	for _, f := range g.ranks[rank].e.Metrics(now).Families {
+		fam := engine.Family{Name: f.Name, Kind: f.Kind, Help: f.Help}
+		for _, s := range f.Samples {
+			labels := map[string]string{"engine": fmt.Sprint(rank)}
+			for lk, lv := range s.Labels {
+				labels[lk] = lv
+			}
+			fam.Samples = append(fam.Samples, engine.Sample{Name: s.Name, Labels: labels, Value: s.Value})
+		}
+		out.Families = append(out.Families, fam)
+	}
+	return out
+}
+
+// RankSnapshot is one rank's routing state: under external balancing an endpoint reports only the
+// rank it serves, not the group's totals (Snapshot). InFlight is the iterations in flight that
+// scheduled this rank.
+func (g *DPGroup) RankSnapshot(rank int) engine.State {
+	st := g.ranks[rank].e.Snapshot()
+	n := 0
+	for _, it := range g.inflight {
+		if _, ok := it.rank[rank]; ok {
+			n++
+		}
+	}
+	st.InFlight = n
+	return st
+}
+
+// RankKVCacheCapacity is one rank's KV cache size; the ranks are replicas of one pool, so it is
+// the same figure KVCacheCapacity reports for the group.
+func (g *DPGroup) RankKVCacheCapacity(rank int) kv.Capacity { return g.ranks[rank].e.KVCacheCapacity() }
+
+// StepDue reports whether a lockstep iteration would run at now: the group has work on ANY rank
+// (not only rank 0), no iteration is under way or mid-dummy, and a batch slot is free. It is the
+// guard the leader's group step uses to decide whether to step; the conditions are Schedule's own
+// early returns (ErrNoCapacity, and the open/busyUntil/stepping guard). A member's arrival while
+// rank 0 is idle must still make this true, or a group with work only on ranks 1..dp-1 would never
+// step.
+func (g *DPGroup) StepDue(now engine.Time) bool {
+	return len(g.inflight) < g.InFlightLimit() && g.open == nil && now >= g.busyUntil && g.stepping()
+}
+
 // Assumptions are the pricer's disclosed assumptions, as Engine reports them.
 func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }
 
@@ -696,14 +745,19 @@ func (g *DPGroup) RecordSelected(d *load.Data) {
 	}
 }
 
-// EnableKVEvents turns on rank 0's KV cache events only. Under vLLM's internal data-parallel
-// balancer a pod is one router endpoint of rank index 0, and only rank 0's KV events reach the
-// router's precise-prefix index (sim/cluster/dp_replica.go:153-161, #2677); ranks 1..dp-1 cache
-// prefixes the router never sees. External balancing (one endpoint per rank) is refused at build
-// (cmd/engine_driver_build.go), so a live DPGroup is always internal/hybrid and rank 0 is the
-// endpoint. Enabling rank 0 alone means Complete carries only its events, with no per-event filter.
+// EnableKVEvents turns on the KV cache events of each endpoint's representative rank — the first
+// rank the router scrapes for that endpoint (EndpointRanks). Under vLLM's internal data-parallel
+// balancer the group is one router endpoint of rank index 0, so this enables rank 0 alone, exactly
+// as #2677 requires: only rank 0's KV events reach the router's precise-prefix index, and ranks
+// 1..dp-1 cache prefixes the router never sees. Under external balancing every rank is its own
+// endpoint, so every rank publishes; the host routes each rank's events to its own endpoint (one
+// InstanceSimulator per rank, keyed in the gateway by instance id, sim/llmd/kvevents.go). The form
+// is endpoint-driven so the internal case stays byte-identical to enabling rank 0 directly.
 func (g *DPGroup) EnableKVEvents() {
-	g.ranks[0].e.EnableKVEvents()
+	for e := 0; e < g.Endpoints(); e++ {
+		first, _ := g.EndpointRanks(e)
+		g.ranks[first].e.EnableKVEvents()
+	}
 }
 
 // KVEventsRefusal is the ranks' (Engine.KVEventsRefusal): every rank runs one configuration.
