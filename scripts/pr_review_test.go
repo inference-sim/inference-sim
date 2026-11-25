@@ -217,8 +217,11 @@ func TestPrReviewReviewJobRunsOnDedicatedUntrustedPool(t *testing.T) {
 	if !strings.Contains(raw, "pr-review-untrusted") {
 		t.Errorf("the `review` job must run on the dedicated `pr-review-untrusted` pool, got %q", raw)
 	}
-	if raw == "self-hosted" {
-		t.Error("the `review` job must NOT share the delivery loop's `self-hosted` pool")
+	if raw == "self-hosted" || strings.Contains(raw, "AGENT_RUNS_ON") {
+		t.Error("the `review` job must NOT share the delivery loop's runners")
+	}
+	if !strings.Contains(raw, "vars.PR_REVIEW_RUNS_ON") {
+		t.Errorf("the `review` job must pick its scale set with PR_REVIEW_RUNS_ON, got %q", raw)
 	}
 }
 

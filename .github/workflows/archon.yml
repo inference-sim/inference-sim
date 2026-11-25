@@ -45,7 +45,9 @@ jobs:
   archon-review:
     needs: check-permissions
     if: needs.check-permissions.outputs.allowed == 'true'
-    runs-on: [self-hosted]
+    # The agent runners: the blis-ci-agents scale set when AGENT_RUNS_ON names it (k8s/agents),
+    # the old self-hosted pool while it is unset.
+    runs-on: ${{ vars.AGENT_RUNS_ON || 'self-hosted' }}
     timeout-minutes: 10
 
     steps:

@@ -1,0 +1,107 @@
+# The LiteLLM proxy for the pr-review runners (README.md), ported from k8s/pr-review-runner.yaml.
+# It holds the LiteLLM key, from the secret blis-litellm (keys base-url and api-key), and adds it
+# to each request it relays; a pr-review job holds only a dummy key, so the key never enters the
+# reviewer's session. The proxy is its own pod, not a sidecar, so the runner's egress can stay
+# narrower than the proxy's (network.yaml). Only blis-ci-pr-review pods may reach it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-proxy-nginx
+  namespace: blis
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr notice;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      access_log /dev/stdout;
+      include /etc/nginx/conf.d/*.conf;
+    }
+  # proxy_pass takes a variable so nginx resolves the upstream at request time (the resolver below,
+  # the cluster DNS), and a changed load-balancer address never needs a restart. Host is the
+  # upstream's own name, from base-url.
+  default.conf.template: |
+    server {
+      server_tokens off;
+      listen 0.0.0.0:4000;
+      resolver ${LITELLM_RESOLVER} valid=30s ipv6=off;
+      resolver_timeout 5s;
+      location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+      }
+      location / {
+        set $litellm_upstream ${LITELLM_UPSTREAM};
+        proxy_pass $litellm_upstream$request_uri;
+        proxy_set_header Authorization "Bearer ${LITELLM_KEY}";
+        proxy_set_header x-api-key "${LITELLM_KEY}";
+        proxy_set_header Host $proxy_host;
+        proxy_ssl_server_name on;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-proxy
+  namespace: blis
+  labels:
+    app: litellm-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm-proxy
+  template:
+    metadata:
+      labels:
+        app: litellm-proxy
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: litellm-proxy
+          # The unprivileged nginx image runs as any uid in group 0, as OpenShift assigns one.
+          image: docker.io/nginxinc/nginx-unprivileged:1.30.6-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+          env:
+            - name: LITELLM_UPSTREAM
+              valueFrom: {secretKeyRef: {name: blis-litellm, key: base-url}}
+            - name: LITELLM_KEY
+              valueFrom: {secretKeyRef: {name: blis-litellm, key: api-key}}
+            # The cluster DNS service (kubectl -n openshift-dns get svc dns-default).
+            - {name: LITELLM_RESOLVER, value: "172.30.0.10"}
+            # envsubst replaces these alone, so nginx's own $variables stay.
+            - {name: NGINX_ENVSUBST_FILTER, value: "LITELLM_"}
+          ports:
+            - containerPort: 4000
+          volumeMounts:
+            - {name: nginx, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf}
+            - {name: nginx, mountPath: /etc/nginx/templates/default.conf.template, subPath: default.conf.template}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: nginx
+          configMap:
+            name: litellm-proxy-nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-proxy
+  namespace: blis
+spec:
+  selector:
+    app: litellm-proxy
+  ports:
+    - port: 4000
+      targetPort: 4000

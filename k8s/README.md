@@ -1,5 +1,11 @@
 # GitHub Actions Self-Hosted Runner on Kubernetes
 
+> **Being replaced.** The agent jobs move to the ARC scale sets in `k8s/agents/` (`blis-ci-agents`,
+> `blis-ci-pr-review`) as soon as the repository variables `AGENT_RUNS_ON` and `PR_REVIEW_RUNS_ON`
+> name them. These Deployments stay, for rollback, until both pools have run for a while; then
+> `deployment.yaml`, `pr-review-runner.yaml` and `secret.yaml` go (`k8s/agents/README.md`, setup
+> step 6).
+
 Deploys the repo's self-hosted GitHub Actions runners as a Kubernetes Deployment
 in the `blis` namespace. Runners are **ephemeral**: each container serves exactly
 one job, deregisters, and is replaced with a fresh container.

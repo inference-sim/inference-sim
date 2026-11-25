@@ -461,12 +461,17 @@ func TestDeliverPhaseBudgetsFitTheStallSweepWindow(t *testing.T) {
 	}
 }
 
-// runsOnSelfHosted reports whether a job's `runs-on` names the self-hosted runner, accepting both
-// the scalar (`runs-on: self-hosted`) and sequence (`runs-on: [self-hosted]`) forms.
+// agentRunsOn is the `runs-on` of every agent job: the blis-ci-agents scale set when the
+// repository variable names it (k8s/agents), else the old self-hosted pool.
+const agentRunsOn = "${{ vars.AGENT_RUNS_ON || 'self-hosted' }}"
+
+// runsOnSelfHosted reports whether a job's `runs-on` names the agent runners, accepting
+// agentRunsOn and both forms of the old label, the scalar (`runs-on: self-hosted`) and the
+// sequence (`runs-on: [self-hosted]`).
 func runsOnSelfHosted(node yaml.Node) bool {
 	var scalar string
 	if err := node.Decode(&scalar); err == nil {
-		return scalar == "self-hosted"
+		return scalar == "self-hosted" || scalar == agentRunsOn
 	}
 	var list []string
 	if err := node.Decode(&list); err == nil {

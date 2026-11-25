@@ -61,7 +61,8 @@ escaping symlinks scrubbed (`scripts/pr_review/scrub_symlinks.sh`) before any re
   `OVERRIDE_GITHUB_TOKEN` path and **skips the OIDC exchange** — which would otherwise need
   `id-token: write` on the untrusted box and would mint the Anthropic App's *write* token (#1883).
 - **Key out of the session:** LiteLLM needs the VPN, so the runner is self-hosted — but the key lives
-  **only in a separate `litellm-proxy` pod** (`k8s/pr-review-runner.yaml`). The reviewer talks to the
+  **only in a separate `litellm-proxy` pod** (`k8s/agents/litellm-proxy.yaml`; the old runner's is
+  `k8s/pr-review-runner.yaml`). The reviewer talks to the
   `litellm-proxy` Service with a **dummy** key; the proxy injects the real one (both
   `Authorization: Bearer` for qa and `x-api-key` for blis). A runtime step asserts no real key is in
   the job env. (It is a separate pod, not a same-pod sidecar, so the runner's egress can be locked
@@ -89,9 +90,11 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
 
 ## Infrastructure prerequisites (not created by the workflow)
 
-- A self-hosted runner labelled **`pr-review-untrusted`** plus the **`litellm-proxy`** pod/Service and
-  the three egress/ingress `NetworkPolicy` objects (`k8s/pr-review-runner.yaml`), isolated from the
-  delivery-loop `self-hosted` pool.
+- The **`blis-ci-pr-review`** scale set (`PR_REVIEW_RUNS_ON`), the **`litellm-proxy`** pod/Service and
+  their `NetworkPolicy` objects (`k8s/agents/`), isolated from the agent pool `blis-ci-agents`. On the
+  new set-up the proxy reads the secret `blis-litellm`, sends the `base-url` host as `Host`, and admits
+  pr-review pods only (`k8s/agents/README.md`); what follows describes the old runner
+  (`k8s/pr-review-runner.yaml`, label **`pr-review-untrusted`**), used while the variable is unset.
 - The proxy's `nous-wiki-llm` secret (LiteLLM endpoint + key). **`base-url` must be a bare
   `https://host` with no trailing slash and no path** — the proxy appends `$request_uri`, so a
   trailing slash or path produces doubled-slash/doubled-path upstream 404s. **This proxy is pinned to
@@ -117,7 +120,8 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
   is visible, scrubbed, and non-authoritative; a human reads it.
 - **Gateway spend.** Bounded by the LiteLLM budget on the shared key; the session's dummy key is useless
   (it only reaches the `litellm-proxy`, which overwrites it).
-- **Proxy reachable namespace-wide.** The proxy listens on a routable pod IP; the namespace-wide
+- **Proxy reachable namespace-wide (old runner only).** On the new set-up the proxy admits
+  `blis-runner: pr-review` pods alone (`k8s/agents/network.yaml`). On the old runner, the proxy listens on a routable pod IP; the namespace-wide
   `allow-same-namespace` policy lets any blis pod reach `:4000` (an `litellm-proxy-ingress` policy
   records the runner-only intent for if that blanket policy is tightened). The credential cannot be
   read back through the proxy — it is injected outbound only — so the exposure is use as a
