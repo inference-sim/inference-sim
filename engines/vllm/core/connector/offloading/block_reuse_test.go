@@ -3,10 +3,11 @@
 package offloading
 
 import (
-	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
-	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 	"slices"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
 
 // A group that shares the GPU block pool can trigger a pending store fence
@@ -68,6 +69,43 @@ func TestFlushesPendingStoreWhenAnUnoffloadedGroupReusesItsBlock(t *testing.T) {
 			if got := slices.Contains(flush, store.ID); got != tc.wantReuse {
 				t.Errorf("store %d from GPU block %d, second request full block %d, ring block %d: flush %v, want store flushed %t",
 					store.ID, store.GPU[0], full[0].ID, ring[0].ID, flush, tc.wantReuse)
+			}
+		})
+	}
+}
+
+func TestFlushesPendingStoreWhenARunningRequestGrows(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		blocks    [][]int
+		wantFlush bool
+	}{
+		{name: "GPU-only group reuses the source", blocks: [][]int{nil, {1}}, wantFlush: true},
+		{name: "offloaded group reuses the source", blocks: [][]int{{1}, nil}, wantFlush: true},
+		{name: "GPU-only group takes another block", blocks: [][]int{nil, {2}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			conn, err := New(Config{
+				Groups: []Group{{BlockSize: protoBlock}}, KVGroups: []int{0},
+				TokensPerHash: protoBlock, NumChunks: 4, PrefixCaching: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := &sched.Request{ID: "running", Prompt: prompt(2*protoBlock, 1)}
+			conn.OnNewRequest(req)
+			conn.BuildMeta(sched.StepOutput{Reqs: []sched.StepRequest{{
+				ID: req.ID, NewBlocks: [][]int{{3}, {4}},
+			}}})
+
+			// An earlier request's pending store still reads block 1.
+			const pendingStore = 7
+			conn.watch(1, pendingStore)
+			meta := conn.BuildMeta(sched.StepOutput{Reqs: []sched.StepRequest{{
+				ID: req.ID, NewBlocks: tc.blocks,
+			}}}).(Meta)
+			if got := slices.Contains(meta.Flush, pendingStore); got != tc.wantFlush {
+				t.Errorf("flush = %v, want pending store flushed: %v", meta.Flush, tc.wantFlush)
 			}
 		})
 	}

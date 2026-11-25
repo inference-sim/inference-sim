@@ -694,17 +694,23 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 	return hitTokens, false
 }
 
-// AfterAlloc records blocks that can be the source of a pending store before
-// selecting groups for a restore. The port uses one GPU block pool for all
-// groups (vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:240-248,1065-1085@0fda86a3).
-func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, external int) {
-	for _, gb := range blocks.Groups {
-		for _, id := range gb {
+// recordAllocations tracks reuse across the GPU block pool shared by all groups.
+func (s *Scheduler) recordAllocations(groups [][]int) {
+	for _, ids := range groups {
+		for _, id := range ids {
 			if id != 0 {
 				s.allocated[id] = true
 			}
 		}
 	}
+}
+
+// AfterAlloc tracks the whole GPU block table before selecting the groups for a
+// restore. The vLLM 0.33 oracle counts full-attention prefix hits as allocations.
+// The model still does that; vLLM 0.34 excludes those touched blocks
+// (offloading/scheduler.py:1055-1082@0fda86a3).
+func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, external int) {
+	s.recordAllocations(blocks.Groups)
 	if external == 0 {
 		return
 	}
@@ -809,7 +815,7 @@ func (s *Scheduler) unwatch(job int, blocks []int) {
 	}
 }
 
-// updateReqStates is _update_req_states (scheduler.py:1281-1331).
+// updateReqStates is _update_req_states (offloading/scheduler.py:1212-1251@0fda86a3).
 func (s *Scheduler) updateReqStates(step sched.StepOutput) {
 	ends := map[string][]int{}
 	for _, rq := range step.Reqs {
@@ -823,6 +829,7 @@ func (s *Scheduler) updateReqStates(step sched.StepOutput) {
 		if rq.NewBlocks == nil {
 			continue
 		}
+		s.recordAllocations(rq.NewBlocks)
 		newBlocks := selected(s.cfg, rq.NewBlocks)
 		if len(s.swa) > 0 {
 			e := make([]int, len(s.swa))
@@ -833,11 +840,6 @@ func (s *Scheduler) updateReqStates(step sched.StepOutput) {
 		}
 		for gi := range s.groups {
 			st.groups[gi].blockIDs = append(st.groups[gi].blockIDs, newBlocks[gi]...)
-			for _, b := range newBlocks[gi] {
-				if b != 0 {
-					s.allocated[b] = true
-				}
-			}
 		}
 	}
 	if len(s.swa) == 0 || len(s.allocated) == 0 {
