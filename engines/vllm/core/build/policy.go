@@ -116,6 +116,14 @@ func requireOneEndpoint(scenario string, m *kernelmodel.Model, stated string) er
 	if runs == deployment.DPLBInternal {
 		return nil
 	}
+	if runs == deployment.DPLBExternal {
+		// The host now exposes each rank of an external group as its own router-visible endpoint
+		// (one InstanceSimulator per rank over the shared group's dprankview views, driven by the
+		// sim leader/member path), for a colocated pool and for each P/D pool (inference-sim#2699).
+		// A dp_local=1 hybrid resolves to external here, so it is covered too; a hybrid that spans
+		// several ranks per node is still deferred below.
+		return nil
+	}
 	resolved := ""
 	if runs != pl.DataParallelLoadBalancing.Mode() {
 		resolved = fmt.Sprintf(" (vLLM runs it as %s)", runs)
