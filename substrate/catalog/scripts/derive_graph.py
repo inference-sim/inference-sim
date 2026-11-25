@@ -1195,6 +1195,28 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
             return base_dtype(cfg, raw, model)
         if "fp8" in fmt:
             return "fp8"
+        # A mixed-precision block states a width per target set, and no single one is the
+        # checkpoint's: glm-5.2-nvfp4-fp8 puts attention at FP8 and every MLP (the routed and
+        # shared experts, the bulk of the weight) at NVFP4. The global is the MLP/expert width,
+        # which the experts and the dense MLP inherit; the attention group's width rides on its
+        # own nodes (ct_place_mixed_precision), which only handler_glm_moe_dsa calls. A block
+        # whose architecture has no handler that places the other groups per node, or whose
+        # groups do not name exactly one MLP/expert group, is refused rather than priced at a
+        # guessed global.
+        if str(quant.get("format", "")).lower() == "mixed-precision":
+            if architecture_of(raw, model) != "GlmMoeDsaForCausalLM":
+                raise DeriveError(
+                    f"{model}: a mixed-precision compressed-tensors checkpoint, whose groups "
+                    f"only handler_glm_moe_dsa places per node")
+            groups = quant.get("config_groups") or {}
+            mlp = [g for g in groups.values()
+                   if any(ct_matches("model.layers.0.mlp.experts", str(t))
+                          for t in (g or {}).get("targets") or ())]
+            if len(mlp) != 1:
+                raise DeriveError(
+                    f"{model}: a mixed-precision checkpoint whose config_groups name "
+                    f"{len(mlp)} MLP/expert groups, not one; the global width is ambiguous")
+            return ct_group_width(mlp[0], model)[0]
         # A per-group block states the width per tensor set rather than once. The
         # dominant group decides the stored width: a checkpoint holding 49,152 tensors
         # at four bits and 192 at eight is a four-bit checkpoint, and pricing it at the
@@ -1944,6 +1966,8 @@ HEAD_AT_BASE_ARCHS = frozenset({
     "HYV3ForCausalLM",                    # hy3-fp8 (fp8, lm_head ignored)
     "MiMoV2ForCausalLM",                  # mimo-v2-flash (fp8, the head is not quantized)
     "Qwen3_5MoeForConditionalGeneration",  # qwen3.5-397b-a17b-fp8
+    "Qwen3_5ForConditionalGeneration",    # qwen3.8-27b-int4 (compressed-tensors int4, lm_head ignored)
+    "NemotronHForCausalLM",               # nemotron-3-ultra-550b-a55b-fp8-block (block fp8, lm_head ignored)
 })
 
 
@@ -1996,6 +2020,108 @@ def ct_ignores(quant: dict[str, Any], name: str, model: str) -> bool:
         raise DeriveError(f"{model}: the ignore list names some shards of {name} and not "
                           f"others, which vLLM refuses")
     return all(hits)
+
+
+def ct_group_width(group: dict[str, Any], model: str) -> tuple[str, bool]:
+    """The dtype a compressed-tensors config_group stores its weights at, and whether it
+    carries a 128 x 128 block FP8 scale.
+
+    The same bits/type/format vocabulary the single-width config_groups path reads
+    (weight_dtype), factored so a mixed-precision checkpoint can resolve each group on its
+    own rather than collapsing them to one dominant width."""
+    weights = (group or {}).get("weights") or {}
+    bits, kind = weights.get("num_bits"), weights.get("type")
+    fmt = str(group.get("format") or "").lower()
+    if bits == 8 and kind == "float":
+        return "fp8", weights.get("block_structure") == [128, 128]
+    if bits == 4 and kind == "float":
+        if "mxfp4" in fmt:
+            return "mxfp4", False
+        if "nvfp4" in fmt:
+            return "nvfp4", False
+        gs = weights.get("group_size")
+        if gs == 16:
+            return "nvfp4", False
+        if gs == 32:
+            return "mxfp4", False
+        raise DeriveError(f"{model}: a 4-bit float weight group names format {fmt!r} and "
+                          f"group_size {gs!r}; NVFP4 and MXFP4 cannot be told apart")
+    if bits == 8 and kind == "int":
+        return "int8", False
+    if bits == 4 and kind == "int":
+        return "int4", False
+    raise DeriveError(f"{model}: a {bits}-bit {kind!r} weight group has no dtype in this "
+                      f"schema's vocabulary")
+
+
+def ct_place_mixed_precision(kinds: list[dict[str, Any]], stack: dict[str, Any],
+                             quant: dict[str, Any], cfg: dict[str, Any], raw: dict[str, Any],
+                             model: str, draft: tuple[str, list[int]] | None = None
+                             ) -> list[dict[str, Any]]:
+    """Give each weight node of a mixed-precision compressed-tensors checkpoint the width its
+    own config_group states, rather than one dominant group's.
+
+    glm-5.2-nvfp4-fp8 puts attention (`re:.*self_attn\\..*`) at block-scaled FP8 and every MLP
+    (`re:.*mlp\\..*`, the routed and shared experts and the dense MLP) at NVFP4. The global
+    width is the MLP/expert one (weight_dtype), so those nodes inherit it; this stamps the
+    attention nodes FP8 with their block scale, and the `ignore` list's modules (the whole MTP
+    layer, `re:model.layers.78.*`) BF16. Each node is asked at the module name vLLM builds it
+    under (spec['layer'] / spec['draft_layer'] + spec['roles']); a role the groups price two
+    ways across a kind's layers is refused, since one node prices one width. Only a node that
+    inherits the global is stamped: a width a handler already placed (the indexer's
+    wk_weights_proj, the router, the head) is left as it stated it."""
+    arch = architecture_of(raw, model)
+    spec = MODELOPT_MODULES[arch]
+    base = base_dtype(cfg, raw, model)
+    g = weight_dtype(cfg, raw, model)
+    groups = [(ct_group_width(grp, model), [str(t) for t in (grp.get("targets") or ())])
+              for grp in (quant.get("config_groups") or {}).values()]
+    layers_of: dict[str, list[tuple[str, int]]] = {}
+    for i, kid in enumerate(expand_stack(stack)):
+        layers_of.setdefault(kid, []).append((spec["layer"], i))
+    if draft:
+        kid, indices = draft
+        layers_of[kid] = [(spec["draft_layer"], i) for i in indices]
+    roles = dict(spec["roles"], router=None, shared_expert_gate=None)
+    if spec["shared"]:
+        up = "shared_gate_up" if spec["shared"][0].endswith("gate_up_proj") else "shared_up"
+        roles.update({up: spec["shared"][0], "shared_down": spec["shared"][1]})
+
+    def width_for(module: str) -> tuple[str, bool] | None:
+        if ct_ignores(quant, module, model):
+            return base, False
+        for (w, blk), targets in groups:
+            if any(ct_matches(module, t) for t in targets):
+                return w, blk
+        return None
+
+    out = []
+    for kind in kinds:
+        idx = layers_of.get(kind["id"], [])
+        nodes = []
+        for node in kind["nodes"]:
+            role = node.get("role")
+            if (node["op"] not in ("GEMM", "GroupedGEMM") or not idx
+                    or "weight_dtype" in node or role not in roles):
+                nodes.append(node)
+                continue
+            path = roles.get(role)
+            if path is None:
+                nodes.append(node)
+                continue
+            answers = {width_for(fmt.format(i=i) + path) for fmt, i in idx}
+            if len(answers) != 1:
+                raise DeriveError(f"{model}: the config groups price {role!r} in layer kind "
+                                  f"{kind['id']!r} two ways across its layers; one node cannot "
+                                  f"price both")
+            placed = answers.pop() or (base, False)
+            if placed[0] != g:
+                node = dict(node, weight_dtype=placed[0])
+                if placed[1]:
+                    node["weight_scale"] = dict(FP8_BLOCK_SCALE)
+            nodes.append(node)
+        out.append(dict(kind, nodes=nodes))
+    return out
 
 
 def head_left_unquantized(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> bool:
@@ -3175,6 +3301,11 @@ def handler_glm_moe_dsa(cfg, raw, model):
                                 "edges": [list(e) for e in last["edges"]]}], *result[1:])
     has_draft = any(k["id"] == DRAFT_KIND_ID for k in result[0])
     draft = (DRAFT_KIND_ID, list(range(layers, layers + spec))) if spec and has_draft else None
+    quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if (str(quant.get("quant_method", "")).lower() == "compressed-tensors"
+            and str(quant.get("format", "")).lower() == "mixed-precision"):
+        kinds = ct_place_mixed_precision(result[0], result[1], quant, cfg, raw, model, draft=draft)
+        return (kinds, *result[1:])
     return modelopt_placed(result, raw, model, draft=draft)
 
 
@@ -5632,23 +5763,50 @@ GDN_IN_PROJ_SHARDS = {
     "recurrent_in_proj_ba": ("in_proj_ba", ("in_proj_b", "in_proj_a")),
 }
 
+# The module path, under the MTP layer prefix mtp.layers.{i}, that each draft node's role is
+# built at (Qwen3_5MultiTokenPredictor, qwen3_5_mtp.py:122, 226-234). Used to ask a
+# compressed-tensors `ignore` list whether it leaves a draft projection unquantized; mtp.fc is
+# placed inline at its own name and the router is a GateLinear with no quant config, so neither
+# is listed here.
+QWEN3_5_MTP_MODULES = {
+    "qkv_proj": "self_attn.qkv_proj",
+    "o_proj": "self_attn.o_proj",
+    "mlp_gate_up": "mlp.gate_up_proj",
+    "mlp_down": "mlp.down_proj",
+    "recurrent_in_proj_qkvz": "linear_attn.in_proj_qkvz",
+    "recurrent_in_proj_ba": "linear_attn.in_proj_ba",
+    "mixer_out": "linear_attn.out_proj",
+    "experts": "mlp.experts",
+    "shared_gate_up": "mlp.shared_expert.gate_up_proj",
+    "shared_down": "mlp.shared_expert.down_proj",
+}
 
-def gdn_fp8_unconverted(cfg: dict[str, Any], raw: dict[str, Any], model: str, role: str,
-                        layers: list[int]) -> str | None:
-    """The base width, where an fp8 checkpoint leaves a DeltaNet input projection unconverted
+
+def gdn_in_proj_unconverted(cfg: dict[str, Any], raw: dict[str, Any], model: str, role: str,
+                            layers: list[int]) -> str | None:
+    """The base width, where the checkpoint leaves a DeltaNet input projection unconverted
     on every DeltaNet layer; None where it converts it on every one.
 
     Qwen3.5-397B-A17B-FP8 names in_proj_b and in_proj_a (and conv1d) in modules_to_not_convert
     on all 45 DeltaNet layers and leaves in_proj_qkv and in_proj_z to the fp8 block format, so
-    in_proj_ba stays bf16 beside an fp8 in_proj_qkvz. vLLM skips a packed module whose shards
-    are all listed and refuses one whose shards are listed in part (is_layer_skipped,
-    model_executor/layers/quantization/utils/quant_utils.py:619-690@v0.33.0, which fp8.py:154-167
-    reads from modules_to_not_convert); a projection skipped on
-    some layers and not others would need two nodes, and is refused too."""
+    in_proj_ba stays bf16 beside an fp8 in_proj_qkvz. Qwen3.8-27B-INT4 does the same through a
+    compressed-tensors `ignore` list, which names in_proj_b and in_proj_a on every Gated
+    DeltaNet layer and leaves in_proj_qkv and in_proj_z to the int4 Linear group. vLLM skips a
+    packed module whose shards are all listed and refuses one whose shards are listed in part
+    (is_layer_skipped, model_executor/layers/quantization/utils/quant_utils.py:619-690@v0.33.0,
+    which fp8.py:154-167 reads from modules_to_not_convert and compressed_tensors reads from
+    `ignore`); a projection skipped on some layers and not others would need two nodes, and is
+    refused too."""
     quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
-    if not isinstance(quant, dict) or "fp8" not in str(quant.get("quant_method", "")).lower():
+    if not isinstance(quant, dict):
         return None
-    names = quant.get("modules_to_not_convert") or quant.get("ignored_layers") or []
+    method = str(quant.get("quant_method", "")).lower()
+    if "fp8" in method:
+        names = quant.get("modules_to_not_convert") or quant.get("ignored_layers") or []
+    elif method == "compressed-tensors":
+        names = quant.get("ignore") or []
+    else:
+        return None
     packed, shards = GDN_IN_PROJ_SHARDS[role]
 
     def listed(i, tensor):
@@ -5775,7 +5933,7 @@ def _handler_qwen3_5(cfg, raw, model, dense):
     ]
     gdn_layers = [i for i, t in enumerate(types) if t == "linear_attention"]
     for node in in_proj:
-        kept = gdn_fp8_unconverted(cfg, raw, model, node["role"], gdn_layers)
+        kept = gdn_in_proj_unconverted(cfg, raw, model, node["role"], gdn_layers)
         if kept:
             node["weight_dtype"] = kept
 
@@ -5823,6 +5981,20 @@ def _handler_qwen3_5(cfg, raw, model, dense):
                      tp="column"),
                 collective("AllGather", "mtp_fc_out", EMIT_TENSOR_PARALLEL)]
         draft = lead + [dict(n) for n in full]
+        # A compressed-tensors `ignore` list that names the whole MTP module leaves every
+        # draft linear unquantized, not only fc: Qwen3.8-27B-INT4 names `re:^mtp.*`, so every
+        # projection the draft copies from the decoder is BF16 in memory beside the int4
+        # decoder. Each draft node is asked at the module name vLLM builds it under
+        # (mtp.layers.0.<path>); a role the list leaves quantized keeps the decoder's width.
+        quant = raw.get("quantization_config") or {}
+        if str(quant.get("quant_method", "")).lower() == "compressed-tensors":
+            base = base_dtype(cfg, raw, model)
+            for node in draft:
+                if node.get("op") not in ("GEMM", "GroupedGEMM") or "weight_dtype" in node:
+                    continue
+                path = QWEN3_5_MTP_MODULES.get(node.get("role"))
+                if path and ct_ignores(quant, "mtp.layers.0." + path, model):
+                    node["weight_dtype"] = base
         kinds.append({"id": draft_id, "nodes": draft, "edges": chain(draft)})
     quant = raw.get("quantization_config") or {}
     if str(quant.get("quant_method", "")).lower() not in MODELOPT_METHODS:
@@ -5918,7 +6090,7 @@ def handler_qwen4_exp(cfg, raw, model):
                dict(gemm("recurrent_in_proj_ba", 2 * v_heads, hidden), tp=ba_tp)]
     gdn_layers = [i for i, t in enumerate(types) if t == "linear_attention"]
     for node in in_proj:
-        kept = gdn_fp8_unconverted(cfg, raw, model, node["role"], gdn_layers)
+        kept = gdn_in_proj_unconverted(cfg, raw, model, node["role"], gdn_layers)
         if kept:
             node["weight_dtype"] = kept
     gdn = [

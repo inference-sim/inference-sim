@@ -58,6 +58,7 @@ var pricedTowerConfigs = map[string]string{
 	"8058591f5ffb5bdacf6cdd87a0d1db126a12cf19259257aec25a91ec22918779": "qwen3.5-397b-a17b-nvfp4",
 	"93a4693fa9d8392fbfccd4b3c9873f4bfdcb14fdede978b123d07d19675efe99": "qwen3.6-35b-a3b",
 	"191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab": "qwen3.8-27b",
+	"5498b42f9ea96d2669709c177e29122997ce14786a7530fe1ea1b340e535776c": "qwen3.8-27b-int4",
 	"58211cb34baf5e71ef4cc12c2f17466775a0bfb2c23d5abae9ecc3bd44f770fb": "inkling-2-small",
 	"dc6617d800bacc9d3caa41570f885467f733a7cee25f8eef3a60e01c1ff98343": "mistral-large-4-1t-a52b",
 	"c09dc9ea714c8de78f42f8a86dc6c1ecec039f8a8c465eb39cc33994f2f89cfd": "mistral-large-4-1t-a52b-nvfp4",

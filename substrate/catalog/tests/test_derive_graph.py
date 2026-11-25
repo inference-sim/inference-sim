@@ -1328,11 +1328,20 @@ def test_the_draft_module_indexes_even_where_the_base_rule_skips():
             # and carries NO mHC, since vLLM gates that on `not is_mtp_layer`
             # (glm5next/common/model.py:439). A relation over the full attention prefix
             # would flag those as faults.
+            #
+            # The indexer's SHAPE is compared, not its stored width: a checkpoint can leave
+            # the whole MTP layer unquantized while quantizing the decoder, so the draft
+            # indexer's weight_dtype legitimately differs from the base's. glm-5.2-nvfp4-fp8
+            # is the case in hand -- its `ignore` names `re:model.layers.78.*` (the MTP),
+            # so its draft indexer is BF16 beside an FP8 decoder indexer. vLLM still builds
+            # both from the same decoder-layer code, so the work and the projection shapes
+            # cannot differ; the width is the checkpoint's quantization choice, like eh_proj.
             if base_scoring:
                 ref = sorted(base_scoring)[0]
                 def indexer_cost(ns):
                     return collections.Counter(
-                        node_cost(n) for n in ns
+                        node_cost({**n, "weight_dtype": None, "weight_scale": None})
+                        for n in ns
                         if str(n.get("role") or "").startswith("index_")
                         or n.get("role") == "block_index_scores")
                 draft_cost = indexer_cost(nodes)
@@ -1656,8 +1665,14 @@ EXPECTED_IDENTICAL = {
         "configs differ only in max_position_embeddings (196608 against 204800) and a "
         "dtype label, neither of which the cost model reads",
 
-    frozenset({"glm-5.2", "glm-5.2-fp8", "glm-5.3"}):
-        "one architecture across three GLM-5 generations. Every cost-relevant field is "
+    frozenset({"glm-5.2", "glm-5.2-fp8", "glm-5.3", "glm-5.3-mxfp4"}):
+        "one architecture across three GLM-5 generations, plus one quantization of them "
+        "(glm-5.3-mxfp4 of glm-5.3) that differs only in quantization_config, which the cost "
+        "signature does not read because its width is a single global one and no node overrides "
+        "it. glm-5.2-nvfp4-fp8 is NOT here: it is mixed precision (NVFP4 MLP, FP8 attention with "
+        "a block scale), which the deriver expresses as per-node weight_dtype and weight_scale "
+        "overrides — and the signature does read those, so it prices differently from the all-FP8 "
+        "glm-5.2-fp8. Every cost-relevant field is "
         "identical: 78 layers, hidden 6144, 256 experts at top-8, moe_intermediate 2048, "
         "3 leading dense layers, vocab 154880, the same sparse-MLA geometry, and the "
         "same indexer pattern — index_topk_freq 4 with index_skip_topk_offset 3, which "
@@ -1676,6 +1691,10 @@ EXPECTED_IDENTICAL = {
     frozenset({"glm-5", "glm-5.1-fp8"}):
         "one checkpoint geometry: GLM-5.1-FP8 is a post-trained GLM-5-FP8 whose config.json "
         "differs from GLM-5-FP8's only in transformers_version",
+    # qwen3.8-27b and qwen3.8-27b-int4 are NOT a group: the INT4 release's compressed-tensors
+    # `ignore` list leaves the fused in_proj_ba, the LM head and the whole MTP module BF16 beside
+    # the int4 Linear group, so those nodes state bf16 per-node widths the cost signature reads,
+    # where the unquantized qwen3.8-27b states none. The int4 weight traffic prices differently.
     frozenset({"deepseek-v3", "deepseek-r1-0528"}):
         "one checkpoint geometry: DeepSeek-R1-0528 is a post-trained DeepSeek-V3 whose "
         "config.json differs from V3's only in transformers_version",
@@ -8581,6 +8600,104 @@ def test_glm_dsa_nvfp4_places_experts_dense_layers_and_the_draft_layer(name, den
         "nvfp4", "bf16", "bf16")
     # The MTP layer, model.layers.78, is excluded whole.
     assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+
+
+def test_glm_dsa_mixed_precision_prices_attention_fp8_and_the_mlp_nvfp4():
+    """glm-5.2-nvfp4-fp8 is a mixed-precision compressed-tensors checkpoint: config_group_0 puts
+    attention (`re:.*self_attn\\..*`) at block-scaled FP8 and config_group_1 puts every MLP
+    (`re:.*mlp\\..*`, the routed and shared experts and the dense MLP) at NVFP4. The global width
+    is the NVFP4 MLP one, which the experts and the dense MLP inherit; the attention nodes carry
+    FP8 with the 128 x 128 block scale, and the `ignore` list's modules -- the indexer's
+    wk_weights_proj, the gate/router, and the whole MTP layer (model.layers.78) -- stay BF16. A
+    single dominant group would price the NVFP4 experts at FP8 and drop the block scale."""
+    g = graph_of(MODELS / "glm-5.2-nvfp4-fp8")
+    assert g["global"]["weight_dtype"] == "nvfp4"
+    assert g["global"].get("weight_scale") is None
+    k = {kk["id"]: kk for kk in g["layer_kinds"]}
+
+    def node(kind, role):
+        return next(n for n in k[kind]["nodes"] if n.get("role") == role)
+
+    block = {"elements": 128 * 128, "bytes": 4}
+    # Attention projections (including the indexer's wq_b): FP8 with a 128 x 128 block scale.
+    for kind, role in [("attn_dense_indexed", "qkv_a_proj"), ("attn_dense_indexed", "q_b_proj"),
+                       ("attn_dense_indexed", "kv_b_proj"), ("attn_dense_indexed", "o_proj"),
+                       ("attn_dense_indexed", "index_wq_b"), ("attn_moe_noindex", "o_proj")]:
+        n = node(kind, role)
+        assert n.get("weight_dtype") == "fp8", (kind, role, n.get("weight_dtype"))
+        assert n.get("weight_scale") == block, (kind, role, n.get("weight_scale"))
+    # The dense MLP and the experts inherit the global NVFP4 and carry no block scale.
+    for kind, role in [("attn_dense_indexed", "mlp_gate_up"), ("attn_dense_indexed", "mlp_down"),
+                       ("attn_moe_noindex", "experts"), ("attn_moe_noindex", "shared_gate_up"),
+                       ("attn_moe_noindex", "shared_down")]:
+        n = node(kind, role)
+        assert n.get("weight_dtype", g["global"]["weight_dtype"]) == "nvfp4", (kind, role)
+        assert n.get("weight_scale") is None, (kind, role)
+    # The indexer's wk_weights_proj and the router stay BF16 (named by the ignore list / a
+    # GateLinear with no quant config); the fix must not reclassify them.
+    assert node("attn_dense_indexed", "index_wk_weights_proj").get("weight_dtype") == "bf16"
+    assert node("attn_moe_noindex", "router").get("weight_dtype") == "bf16"
+    # The whole MTP layer, model.layers.78, is in the ignore list: BF16 throughout.
+    assert {w for w, _ in _widths(g, "mtp_moe").values()} == {"bf16"}
+    assert next(n for n in g["head"] if n.get("role") == "lm_head")["weight_dtype"] == "bf16"
+
+
+def test_mixed_precision_format_outside_glm_dsa_is_refused_not_mispriced(tmp_path):
+    """A compressed-tensors `format: mixed-precision` block is only placed correctly by
+    ct_place_mixed_precision, which handler_glm_moe_dsa alone calls. Reusing Qwen's own
+    checkpoint (a regular pack-quantized one) with its format swapped to mixed-precision
+    pins that a different architecture (Qwen3_5ForConditionalGeneration here) is refused
+    rather than silently priced at the MLP/expert group's width -- before this guard, its
+    attention would have taken that width with no error at all."""
+    raw = config_of(MODELS / "qwen3.8-27b-int4")
+    assert raw["architectures"][0] != "GlmMoeDsaForCausalLM"
+    raw["quantization_config"]["format"] = "mixed-precision"
+    with pytest.raises(deriver().DeriveError, match="only handler_glm_moe_dsa places per node"):
+        _derive_raw(raw, tmp_path, "qwen-mixed-precision-test")
+
+
+def test_mixed_precision_block_leaves_an_untargeted_module_at_the_base_width(tmp_path):
+    """width_for returns None for a module no group targets and the ignore list does not name;
+    compressed-tensors builds that module unquantized, so it must keep the checkpoint's base
+    (BF16) width explicitly, not silently inherit the quantized global. No node in the committed
+    glm-5.2-nvfp4-fp8 hits this today (every MLP linear is in group_1's `re:.*mlp\\..*`), so this
+    narrows group_1's targets to exclude `mlp.down_proj` with a negative lookahead, putting a
+    dense layer's down-projection in neither group nor the ignore list."""
+    raw = config_of(MODELS / "glm-5.2-nvfp4-fp8")
+    raw["quantization_config"]["config_groups"]["group_1"]["targets"] = \
+        [r"re:.*mlp\.(?!down_proj).*"]
+    g = _derive_raw(raw, tmp_path, "glm-untargeted-module-test")
+    assert g["global"]["weight_dtype"] == "nvfp4"
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    down = next(n for k in kinds.values() for n in k["nodes"] if n.get("role") == "mlp_down")
+    assert down.get("weight_dtype") == "bf16", down
+
+
+@pytest.mark.parametrize("name", ["qwen3.8-27b-int4", "nemotron-3-ultra-550b-a55b-fp8-block"])
+def test_quantized_checkpoint_prices_its_ignored_lm_head_at_the_base_width(name):
+    """A compressed-tensors checkpoint whose `ignore` list names lm_head builds the head
+    unquantized, even when the global weight width is itself quantized. qwen3.8-27b-int4 (an int4
+    Linear group) and nemotron-3-ultra-550b-a55b-fp8-block (block FP8) both do, matching their
+    siblings that already carry bf16 on the head. The head is a large share of the weight, so
+    taking the quantized global would misprice fixed memory (about +9% on qwen3.8-27b-int4)."""
+    g = graph_of(MODELS / name)
+    assert g["global"]["weight_dtype"] != "bf16"
+    head = next(n for n in g["head"] if n.get("role") == "lm_head")
+    assert head.get("weight_dtype") == "bf16"
+
+
+def test_qwen38_27b_int4_honours_its_ignore_list_for_the_deltanet_and_mtp_modules():
+    """Qwen3.8-27B-INT4's compressed-tensors `ignore` names the fused in_proj_ba (as its
+    in_proj_b/in_proj_a shards) on every Gated DeltaNet layer and the whole MTP module
+    (`re:^mtp.*`). So in_proj_ba is bf16 beside the int4 in_proj_qkvz, and every projection the
+    MTP draft copies from the decoder is bf16, not only mtp_fc."""
+    g = graph_of(MODELS / "qwen3.8-27b-int4")
+    assert g["global"]["weight_dtype"] == "int4"
+    dense = _widths(g, "gdn_dense")
+    assert dense["recurrent_in_proj_ba"][0] == "bf16"
+    assert dense["recurrent_in_proj_qkvz"][0] == "int4"
+    draft = g["speculator"]["stack"]["pattern"][0]
+    assert {w for w, _ in _widths(g, draft).values()} == {"bf16"}
 
 
 def test_glm53_flash_nvfp4_quantizes_its_experts_and_dense_mlps():

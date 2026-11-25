@@ -1,0 +1,12 @@
+name: nemotron-3-ultra-550b-a55b-fp8-block
+source:
+  provider: huggingface
+  repo: RedHatAI/NVIDIA-Nemotron-3-Ultra-550B-A55B-FP8-block
+  revision: 75b691c14f99b51a8018e62ffff43b2c36a4582e
+  retrieved: 2026-11-24
+licence:
+  id: LicenseRef-nvidia-open-model-license
+  evidence: https://huggingface.co/RedHatAI/NVIDIA-Nemotron-3-Ultra-550B-A55B-FP8-block/raw/75b691c14f99b51a8018e62ffff43b2c36a4582e/README.md
+config:
+  sha256: ca5cb4ad17efc4a7d09ef9e79d8e688102078d6056d276a4ce4e7750cc57b3f4
+drafters: [speculator]
