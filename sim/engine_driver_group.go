@@ -61,6 +61,16 @@ func (d *EngineDriver) PickRank(now int64, inFlight []int) (int, bool, error) {
 	return k, true, err
 }
 
+// LeadsGroupEngine reports whether the driver's engine can lead a data-parallel group's lockstep
+// step — it implements the group-step surface (StepDue/LockstepSteps/LastActive). The cluster
+// wires the sim leader/member path (JoinGroup) only for such an engine, the shared-group external
+// build; a replica whose ranks are separately-built engines is coordinated at the cluster level
+// instead (sim/cluster eventMembers).
+func (d *EngineDriver) LeadsGroupEngine() bool {
+	_, ok := d.eng.(groupEngine)
+	return ok
+}
+
 // groupOf is the driver whose request id is, among the leader and its members.
 func (d *EngineDriver) groupOf(id string) *EngineDriver {
 	if _, ok := d.reqs[id]; ok {
@@ -159,18 +169,35 @@ type groupEngine interface {
 	LastActive() []bool
 }
 
+// groupBatch is one lockstep step the leader keeps in flight: the contract batch, each driver's
+// share of it (from splitGroupBatch, so the completion applies to the same drivers that ran it),
+// and when the step ends. It is the group analog of driverBatch.
+type groupBatch struct {
+	b      engine.Batch
+	shares map[*EngineDriver]engine.Batch
+	end    int64
+}
+
 // kickGroup is the leader's kick: the group's lockstep step at now, when it is due, with every
-// member's same-instant arrivals delivered first, and each driver's share of it applied by that
-// driver at the step's start (the compatibility engine's host loop applies a step's results when
-// the step starts). Every rank with work takes the step's instant as its clock; when rank 0 has
-// none, the leader's clock stays at its last real event, as the host loop's group leaves it.
+// member's same-instant arrivals delivered first. It mirrors the normal driver's kick
+// (engine_driver.go): the leader schedules the step, keeps its batch in flight and completes it at
+// the step's end (driverGroupStepEnd), rather than applying the result at the step's start. Each
+// rank with work takes the step's instant as its clock; when rank 0 has none, the leader's clock
+// stays at its last real event. The step-end event re-kicks the leader for the next step, and the
+// dummy / nothing-due cases re-wake through NextWake (rearmWake), as the normal driver does.
+//
+// StepDue mirrors Schedule's own guards (an iteration begins iff no other is open, no dummy is
+// mid-flight, a batch slot is free and some rank has work), and the open guard admits at most one
+// iteration per instant, so one step per call is exact: the loop the normal kick runs to fill the
+// in-flight queue would, for a group, be a single pass — the next step is driven by the step-end.
 func (d *EngineDriver) kickGroup(now int64) {
 	g, ok := d.eng.(groupEngine)
 	if !ok {
 		panic(fmt.Sprintf("engine driver: the engine %T leads a group but does not step one", d.eng))
 	}
 	if !g.StepDue(now) {
-		// No step is due: the leader's rank, idle, admits its waiting handoffs at once.
+		// No step is due (one is in flight or mid-dummy, or no rank has work): the leader's rank,
+		// idle, admits its waiting handoffs at once, then re-arms its wake.
 		d.admitIdle(now)
 		d.rearmWake(now)
 		return
@@ -189,6 +216,8 @@ func (d *EngineDriver) kickGroup(now int64) {
 		panic(fmt.Sprintf("engine driver: the group's Schedule at %d: %v", now, err))
 	}
 	if after, _ := g.LockstepSteps(); after == before {
+		// Defensive: StepDue held, so Schedule began an iteration. If it somehow did not, nothing
+		// ran this instant.
 		d.rearmWake(now)
 		return
 	}
@@ -213,45 +242,110 @@ func (d *EngineDriver) kickGroup(now int64) {
 		d.Clock = prev
 	}
 	shares := d.splitGroupBatch(b)
-	end := now
-	var results map[*EngineDriver]engine.Result
-	if !b.Empty() {
-		end = now + max(d.eng.StepTime(b), 1)
-		res, err := d.eng.Complete(b.ID, engine.Outcome{}, end)
-		if err != nil {
-			panic(fmt.Sprintf("engine driver: the group's Complete(%d) at %d: %v", b.ID, now, err))
-		}
-		results = d.splitGroupResult(res)
-	}
 	for _, o := range drivers {
-		ob, ran := shares[o]
-		if !ran {
-			continue
+		if ob, ran := shares[o]; ran {
+			o.notePreempted(ob)
 		}
-		o.notePreempted(ob)
-		o.admit(ob, now, now)
-		o.Metrics.Busy.Record(d.eng, ob, now, end)
 	}
 	for _, f := range b.Finished {
 		// A request the step ended without running it (engine.Batch.Finished) ends on the rank
-		// that holds it.
+		// that holds it, at the step's start, as the normal driver finishes such a request in kick.
 		if o := d.groupOf(f.ID); o != nil {
 			o.finishUnrun([]engine.Finished{f}, now)
 		}
 	}
+	if !b.Empty() {
+		// A real step runs a forward pass: time it (gpuFreeAt serialises steps exactly as the
+		// normal driver's timeBatch does over this same engine), admit each driver's share at the
+		// step's start, record each rank busy, and keep the batch in flight to complete at its end.
+		start, end := d.timeBatch(b, now)
+		for _, o := range drivers {
+			if ob, ran := shares[o]; ran {
+				o.admit(ob, now, start)
+				o.Metrics.Busy.Record(d.eng, ob, start, end)
+			}
+		}
+		d.groupInFlight = append(d.groupInFlight, groupBatch{b: b, shares: shares, end: end})
+		d.schedule(&driverGroupStepEnd{at: end})
+	}
+	// A dummy-only step runs no forward pass and is not in flight: the engine sets busyUntil and
+	// the group wakes when the dummy batches end (NextWake). rearmWake picks that up.
+	d.rearmWake(now)
+	for _, m := range d.members {
+		m.rearmWake(now)
+	}
+}
+
+// driverGroupStepEnd completes the oldest in-flight lockstep step at its step's end, splits its
+// result across the ranks' drivers so each keeps its own report, delivers each rank's KV events to
+// that rank's endpoint, and re-kicks the leader for the next step — the group analog of
+// driverStepEnd's Complete/apply/kick.
+type driverGroupStepEnd struct {
+	at int64
+}
+
+func (e *driverGroupStepEnd) Timestamp() int64    { return e.at }
+func (e *driverGroupStepEnd) Priority() int       { return PriorityStep }
+func (e *driverGroupStepEnd) run(d *EngineDriver) { d.groupStepEnd(e.at) }
+
+func (d *EngineDriver) groupStepEnd(end int64) {
+	if len(d.groupInFlight) == 0 {
+		panic(fmt.Sprintf("engine driver: a group step ended at %d with no batch in flight", end))
+	}
+	gb := d.groupInFlight[0]
+	d.groupInFlight = d.groupInFlight[1:]
+	res, err := d.eng.Complete(gb.b.ID, d.groupOutcome(gb.shares), end)
+	if err != nil {
+		panic(fmt.Sprintf("engine driver: the group's Complete(%d) at %d: %v", gb.b.ID, end, err))
+	}
+	results := d.splitGroupResult(res)
+	drivers := append([]*EngineDriver{d}, d.members...)
+	// Each rank's KV events reach only its own endpoint (the gateway keys delivery by instance id):
+	// splitGroupResult cannot place a Removed or Cleared event (it names no request), so the events
+	// are taken from the producing rank the engine recorded (LastKVEventsByRank), index r being
+	// rank r's driver.
+	if kv, ok := d.eng.(interface {
+		LastKVEventsByRank() [][]engine.KVEvent
+	}); ok {
+		for rank, evs := range kv.LastKVEventsByRank() {
+			if rank >= len(drivers) || len(evs) == 0 {
+				continue
+			}
+			o := drivers[rank]
+			r := results[o]
+			r.KVEvents = evs
+			results[o] = r
+		}
+	}
 	for _, o := range drivers {
-		r := results[o]
-		o.apply(shares[o], r, end)
-		for range r.Finished {
+		o.apply(gb.shares[o], results[o], end)
+		for range results[o].Finished {
 			// A finished request leaves its rank's instance when the step ends (the host loop's
 			// RequestLeftEvent), which is the instance's last event if nothing follows it.
 			o.schedule(&driverLeftEvent{at: end})
 		}
 	}
-	d.rearmWake(now)
-	for _, m := range d.members {
-		m.rearmWake(now)
+	// Schedule the next lockstep step while this one has just freed its slot, as driverStepEnd
+	// re-kicks the normal driver.
+	d.kickGroup(end)
+}
+
+// groupOutcome is the group step's acceptance outcome, each request's accepted drafts computed on
+// the driver that holds it (its own Acceptance and carry), the per-endpoint form of the normal
+// driver's outcome. Acceptance zero (the common case) yields the empty outcome on every driver, so
+// this leaves a non-speculating run unchanged.
+func (d *EngineDriver) groupOutcome(shares map[*EngineDriver]engine.Batch) engine.Outcome {
+	var out engine.Outcome
+	for o, ob := range shares {
+		oo := o.outcome(ob)
+		for id, n := range oo.Accepted {
+			if out.Accepted == nil {
+				out.Accepted = map[string]int{}
+			}
+			out.Accepted[id] = n
+		}
 	}
+	return out
 }
 
 // admitIdle starts the pulls d's rank admits while it has no other work (an AdmitIdle query).
