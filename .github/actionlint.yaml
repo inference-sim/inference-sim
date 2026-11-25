@@ -1,5 +1,7 @@
-# actionlint's configuration (the workflow-lint job of ci.yml). pr-review-untrusted is the label of
-# the self-hosted runner pool k8s/pr-review-runner.yaml defines; actionlint cannot know it.
+# actionlint's configuration (the workflow-lint job of ci.yml). The ARC scale sets named literally in
+# runs-on (k8s/agents); actionlint cannot know them. The CI scale sets (k8s/ci) are named in runs-on
+# expressions, which actionlint does not check.
 self-hosted-runner:
   labels:
-    - pr-review-untrusted
+    - blis-ci-agents
+    - blis-ci-pr-review

@@ -22,8 +22,8 @@ pull request runs where this repository's own branches run. With the variables u
 runs hosted as before. The gate jobs (`changes`, `required`), `cache-warm`'s arm64 entry, `byte gate arm64`,
 `release.yml`, `substrate-registry` (its tests start setup-python's Python with an empty environment, which
 finds its shared library only on a hosted image), the SGLang oracle's `oracle-checks`, `fields`, `treecore-diff` (it needs `rustup`) and
-`oracle` jobs, and the other workflows (`gofmt`, `private-names`, `blis`, `golden-change` and the agent workflows) stay
-hosted. No required check changes name.
+`oracle` jobs, and the other workflows (`gofmt`, `private-names`, `blis`, `golden-change`) stay
+hosted. The agent workflows have scale sets of their own (`k8s/agents/README.md`). No required check changes name.
 
 `blis-ci-small` has what the jobs there need that `buildpack-deps` lacks: `jq`, which its `tools`
 init container downloads at a pinned version and checksum. CI sets `REQUIRE_JQ`, so a pod without it
@@ -37,7 +37,8 @@ What keeps a fork's code off the cluster until someone has read it is approval, 
 repository's Actions setting *Require approval for all external contributors* (setup step 0) holds
 every outside contributor's workflow run until a maintainer approves it. A fork's pull request runs
 its own copy of the workflows, so it can name a scale set's label in `runs-on`. So before approving
-a fork's run, read its diff, and under `.github/` look for a changed `runs-on` or `vars.` reference.
+a fork's run, read its diff, and under `.github/` look for a changed `runs-on` or `vars.` reference,
+above all one that names an agent pool, `blis-ci-agents` or `blis-ci-pr-review` (k8s/agents/README.md, Risks).
 A repository-level scale set cannot be limited to selected workflows; an organization-level runner
 group can, if the scale sets move to the organization.
 
@@ -46,12 +47,11 @@ group can, if the scale sets move to the organization.
 - **Approval.** Every outside contributor's workflow run waits for a maintainer's approval before
   any job starts (setup step 0). This does most of the work: the rest limits what an approved run
   that turns out to be hostile can do.
-- **Namespace.** `blis` holds the CI scale sets, their ARC controller and its listeners, and nothing
-  else (`namespace.yaml`, `network.yaml`). The quota, the network policies and the EgressFirewall
-  cover every pod in it.
-  The agent runners (`k8s/deployment.yaml`, `k8s/pr-review-runner.yaml`), which hold credentials,
-  move to a namespace of their own first (setup step 1): in `blis` they would lose the API server
-  and every host off the list.
+- **Namespace.** `blis` holds the CI scale sets, the agent scale sets (`k8s/agents`), the
+  `litellm-proxy`, and the ARC controller and its listeners (`namespace.yaml`, `network.yaml`). The
+  quota, the network policies and the EgressFirewall cover every pod in it. The agent pods, which
+  hold credentials, get one extra path each by pod label (`k8s/agents/network.yaml`), and no CI pod
+  carries that label, so a CI pod reaches neither them, nor LiteLLM, nor the proxy.
 - **Nodes.** The cluster does not let us label or taint nodes, so the pods schedule on any worker
   node, beside other namespaces' pods. What a container escape would need is closed off instead:
   the pods are unprivileged (below), mount no host path, and hold nothing worth taking.
@@ -123,8 +123,8 @@ The first is a precondition of enabling the scale sets; the others are accepted.
    job's tools write outside the two volumes, and the pod and all it wrote go when the job ends.
    The API server's addresses in `allow-arc-api-server` are this cluster's; on a cluster where they
    differ the policy fails closed (the controller cannot reach the API server and no runner starts),
-   it does not open anything. And `network.yaml` covers every pod in `blis`, so apply it only after
-   the credentialed agent runners have left the namespace (setup step 1).
+   it does not open anything. And `network.yaml` covers every pod in `blis`, the agent pods
+   included: what they need beyond it is in `k8s/agents/network.yaml`.
 
 ## Setup
 
@@ -136,10 +136,8 @@ The first is a precondition of enabling the scale sets; the others are accepted.
      -f approval_policy=all_external_contributors
    ```
 
-1. **Quota and network.** The `blis` namespace already exists. Move the agent runners out of it
-   first: the policies below cover every pod in `blis`, and an agent runner left there would lose
-   the API server and every host off the list (`kubectl -n blis get pods` should show only
-   `blis-ci-*` and `arc-blis-*` pods before you apply).
+1. **Quota and network.** The `blis` namespace already exists. The policies below cover every pod
+   in `blis`; the agent pods' extra paths are in `k8s/agents/network.yaml` (`k8s/agents/README.md`).
 
    ```bash
    kubectl apply -f k8s/ci/namespace.yaml -f k8s/ci/network.yaml

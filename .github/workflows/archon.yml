@@ -45,7 +45,8 @@ jobs:
   archon-review:
     needs: check-permissions
     if: needs.check-permissions.outputs.allowed == 'true'
-    runs-on: [self-hosted]
+    # The agent runners, which alone may reach LiteLLM (k8s/agents).
+    runs-on: blis-ci-agents
     timeout-minutes: 10
 
     steps:

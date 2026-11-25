@@ -433,12 +433,11 @@ func TestDeliverPhaseBudgetsFitTheStallSweepWindow(t *testing.T) {
 			if err := yaml.Unmarshal(body, &wf); err != nil {
 				t.Fatalf("parsing %s: %v", path, err)
 			}
-			// Only the self-hosted agent jobs matter: they are the long ones, and the ones the
-			// sweep's stand-down is reasoning about. `runs-on` is a scalar in some phases and a
-			// sequence in others, so both shapes are decoded.
+			// Only the agent jobs matter: they are the long ones, and the ones the sweep's
+			// stand-down is reasoning about.
 			checked := 0
 			for name, job := range wf.Jobs {
-				if job.TimeoutMinutes == 0 || !runsOnSelfHosted(job.RunsOn) {
+				if job.TimeoutMinutes == 0 || !runsOnAgentRunners(job.RunsOn) {
 					continue
 				}
 				checked++
@@ -461,22 +460,13 @@ func TestDeliverPhaseBudgetsFitTheStallSweepWindow(t *testing.T) {
 	}
 }
 
-// runsOnSelfHosted reports whether a job's `runs-on` names the self-hosted runner, accepting both
-// the scalar (`runs-on: self-hosted`) and sequence (`runs-on: [self-hosted]`) forms.
-func runsOnSelfHosted(node yaml.Node) bool {
+// agentRunsOn is the `runs-on` of every agent job: the blis-ci-agents scale set (k8s/agents).
+const agentRunsOn = "blis-ci-agents"
+
+// runsOnAgentRunners reports whether a job's `runs-on` is the agent runners.
+func runsOnAgentRunners(node yaml.Node) bool {
 	var scalar string
-	if err := node.Decode(&scalar); err == nil {
-		return scalar == "self-hosted"
-	}
-	var list []string
-	if err := node.Decode(&list); err == nil {
-		for _, l := range list {
-			if l == "self-hosted" {
-				return true
-			}
-		}
-	}
-	return false
+	return node.Decode(&scalar) == nil && scalar == agentRunsOn
 }
 
 func mustAtoi(t *testing.T, s string) int {
