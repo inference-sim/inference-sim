@@ -659,12 +659,12 @@ func requireKernelCapacity(p *kernelPools) {
 // here -- reading it is what made a P/D external deployment build collapsed-internal while the
 // Result reported external.
 //
-// External DP is driven for a colocated deployment (each rank a router-visible endpoint). On a P/D
-// deployment it is refused, not run: the per-rank endpoints build, but the cluster's P/D handoff
-// orchestration is not yet adapted for shared-group view-driver instances, so a remote-prefilled
-// decode sub-request runs on its rank but never completes (it is not committed/finished through the
-// leader/member completion split). A named refusal beats the silent-internal behaviour it replaces;
-// P/D external is a follow-up (see the refusal message).
+// External DP is driven for a colocated deployment and for a disaggregated (P/D) one: each rank is
+// a router-visible endpoint, the shared group steps through the sim leader/member path, and a
+// remote-prefilled decode sub-request completes on its rank through the leader/member split. A P/D
+// deployment must run external at the same data-parallel width on both pools; a mixed-mode or
+// mixed-width disaggregated deployment is refused (not run silently as one collapsed instance), its
+// per-pool handling not driven yet.
 func externalDP() (dp int, active bool) {
 	if kernelPDOpened == nil {
 		if dataParallelism > 1 && dpLoadBalancing == sim.DPLoadBalancingExternal {
@@ -672,18 +672,18 @@ func externalDP() (dp int, active bool) {
 		}
 		return 0, false
 	}
-	pExt, _ := poolExternalDP(kernelPDOpened.prefill)
-	dExt, _ := poolExternalDP(kernelPDOpened.decode)
+	pExt, pDP := poolExternalDP(kernelPDOpened.prefill)
+	dExt, dDP := poolExternalDP(kernelPDOpened.decode)
 	if !pExt && !dExt {
 		return 0, false
 	}
-	logrus.Fatalf("scenario %q: external data-parallel load balancing on a disaggregated (P/D) deployment is not driven "+
-		"yet. The per-rank endpoints build, but the cluster's P/D handoff orchestration (sim/cluster/pd_events.go, "+
-		"detectDecodeCompletions) and the leader/member decode-completion path are not yet adapted for shared-group "+
-		"view-driver instances, so a remote-prefilled decode sub-request runs on its rank but never completes "+
-		"(inference-sim#2699 follow-up). Colocated external DP is driven; state internal on the P/D pools, or run "+
-		"external on a colocated deployment", kernelScenario)
-	return 0, false // unreached: logrus.Fatalf exits
+	bothExternalSameWidth := pExt && dExt && pDP == dDP && pDP > 1
+	if !bothExternalSameWidth {
+		logrus.Fatalf("scenario %q: external data-parallel load balancing on a disaggregated deployment needs both pools "+
+			"external at the same data-parallel width; got prefill external=%v/dp%d, decode external=%v/dp%d",
+			kernelScenario, pExt, pDP, dExt, dDP)
+	}
+	return pDP, true
 }
 
 // poolExternalDP is a P/D pool's data-parallel width and whether it resolves to external balancing,
