@@ -205,9 +205,13 @@ type EngineDriver struct {
 
 	// A data-parallel group with one instance per rank (engine_driver_group.go): leader is rank
 	// 0's driver for a member, nil for the leader or an engine of its own; members are the
-	// leader's other ranks' drivers, in rank order.
-	leader  *EngineDriver
-	members []*EngineDriver
+	// leader's other ranks' drivers, in rank order. groupInFlight are the leader's lockstep steps
+	// scheduled and not yet completed, oldest first (the group analog of inFlight): the leader
+	// keeps each step's batch in flight and completes it at its step's end (driverGroupStepEnd),
+	// mirroring the normal driver's inFlight/driverStepEnd.
+	leader        *EngineDriver
+	members       []*EngineDriver
+	groupInFlight []groupBatch
 }
 
 type driverReq struct {
@@ -571,7 +575,11 @@ func (d *EngineDriver) stepAfterArrivals(now int64) {
 		return
 	}
 	d.rearmWake(now)
-	if len(d.inFlight) > 0 || d.stepPending {
+	// The leader keeps its lockstep steps in groupInFlight, not inFlight, so a step in flight for
+	// the group is gated here too: without this a leader arrival would queue a redundant step that
+	// kickGroup's StepDue guard only drops. The next step is scheduled when the in-flight one ends
+	// (driverGroupStepEnd re-kicks the leader).
+	if len(d.inFlight) > 0 || len(d.groupInFlight) > 0 || d.stepPending {
 		return
 	}
 	d.stepPending = true

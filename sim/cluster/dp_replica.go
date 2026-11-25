@@ -81,11 +81,18 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		}
 	}
 	cs.dpReplicas, cs.replicaOf = replicas, replicaOf
+	external := sim.DPEachRankIsAnEndpoint(config.DPLoadBalancing)
 	// A replica endpoint admits requests on one queue before the balancer picks a rank (INV-R1):
-	// its ranks share the stage their engine states. An external-balancer or P/D-pool rank keeps
-	// the stage it was built with: its own endpoint's.
+	// its ranks share the stage their engine states. An internal- or hybrid-balancer replica
+	// shares rank 0's stage (endpointReplica non-nil). An external shared-group replica also
+	// shares one stage, so the N router-visible views admit together exactly as the one collapsed
+	// instance would (the proof's byte-identity), and rank 0 leads the group's lockstep step while
+	// the rest join as members (the sim leader/member path). A replica whose ranks are
+	// separately-built engines (not a shared group) is coordinated at the cluster level alone
+	// (eventMembers), so it is left as built.
 	for _, rep := range replicas {
-		if cs.endpointReplica(rep.ranks[0]) == nil {
+		shared := external && rep.ranks[0].drv.LeadsGroupEngine()
+		if cs.endpointReplica(rep.ranks[0]) == nil && !shared {
 			continue
 		}
 		drivers := make([]*sim.EngineDriver, len(rep.ranks))
@@ -94,6 +101,12 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		}
 		if err := sim.ShareAdmissionStage(drivers); err != nil {
 			return fmt.Errorf("replica %s: %w", rep.id, err)
+		}
+		if shared {
+			// Rank 0's driver leads; the rest join as members in rank order, before the run starts.
+			for k, inst := range rep.ranks {
+				inst.drv.JoinGroup(rep.ranks[0].drv, k)
+			}
 		}
 	}
 	return nil

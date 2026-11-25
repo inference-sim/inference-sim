@@ -995,6 +995,10 @@ var runCmd = &cobra.Command{
 		// Unified cluster path (used for all values of numInstances).
 		// INV-13 SYNC POINT: PD fields below must stay in sync with cmd/replay.go (replayCmd
 		// DeploymentConfig literal). See .github/agent-prompts/standards/invariants.md INV-13.
+		// Under external DP load balancing every rank of a group is its own router-visible
+		// instance, so the group counts become rank counts before anything reads them (the
+		// capacity check, the handoff pricer and the endpoint topology all index by instance).
+		scaleInstanceCountsForExternalDP()
 		// The instance counts are final: every instance must fit
 		// its pool, and the P/D handoff pricer places instances by these counts.
 		requireKernelCapacity(kernelPD)
@@ -1011,7 +1015,8 @@ var runCmd = &cobra.Command{
 		config := cluster.DeploymentConfig{
 			InstanceConfig:                 instanceConfigOf(runEngine),
 			NumInstances:                   numInstances,
-			DPLoadBalancing:                dpLoadBalancing,
+			DPLoadBalancing:                effectiveDPLoadBalancing(),
+			DPLockstepRanks:                externalDPLockstepRanks(),
 			TraceLevel:                     traceLevel,
 			CounterfactualK:                counterfactualK,
 			PrefillInstances:               prefillInstances,

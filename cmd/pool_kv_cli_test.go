@@ -163,3 +163,29 @@ func TestRunCmd_ADecodePoolTierBesideItsOwnNixlIsRefusedNamingThePool(t *testing
 		t.Errorf("the refusal does not name the decode pool and its connector:\n%s", lastLines(stderr, 3))
 	}
 }
+
+// External DP on a P/D deployment is driven when both pools balance externally at the same
+// data-parallel width (inference-sim#2699). A deployment that asks for it on one pool only (here the
+// prefill pool external, the decode pool left internal) is refused at build time, naming the
+// constraint -- not run silently as one collapsed instance while the Result reports external. The
+// refusal returns before the simulation loop, so this guards the cmd per-pool resolution
+// (poolExternalDP) without the cost of the full external run. The both-pools-external P/D run is
+// exercised end-to-end by the attached DP8 proof run, and the decode-completion path it relies on is
+// pinned at the driver level (sim.TestExternalDP_RemotePrefilledDecodeCompletes).
+func TestRunCmd_PDExternalDPMixedWidthRefused(t *testing.T) {
+	dir := variantDir(t, func(s string) string {
+		// The first of the two identical pool parallel blocks is the prefill pool's; mark it external
+		// and leave the decode pool internal, a mixed deployment the resolver must refuse.
+		return strings.Replace(s, "dp: 8, enable_expert_parallel: true}",
+			"dp: 8, enable_expert_parallel: true, data_parallel_load_balancing: external}", 1)
+	})
+	_, stderr, err := runPoolKV(t, dir, poolKVScenario)
+	if err == nil {
+		t.Fatal("a P/D deployment external on one pool only ran; it must be refused, not run collapsed-internal")
+	}
+	for _, frag := range []string{"both pools external", "same data-parallel width"} {
+		if !strings.Contains(stderr, frag) {
+			t.Errorf("the refusal must name the P/D-external width constraint (%q); stderr:\n%s", frag, lastLines(stderr, 4))
+		}
+	}
+}
