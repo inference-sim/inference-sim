@@ -723,7 +723,7 @@ func (d *EngineDriver) kick(now int64) {
 		if err != nil {
 			panic(fmt.Sprintf("engine driver: Schedule at %d: %v", now, err))
 		}
-		d.notePreempted(b)
+		d.notePreempted(b, now)
 		d.finishUnrun(b.Finished, now)
 		if b.Empty() {
 			d.noteEmptyStep(b)
@@ -971,9 +971,12 @@ func (d *EngineDriver) admit(b engine.Batch, now, start int64) {
 	}
 }
 
-func (d *EngineDriver) notePreempted(b engine.Batch) {
+// notePreempted counts each request the step at now preempted, and records now as the time
+// of that preemption against the request (Metrics.RequestPreemptions).
+func (d *EngineDriver) notePreempted(b engine.Batch, now int64) {
 	for _, id := range b.Preempted {
 		d.Metrics.PreemptionCount++
+		d.Metrics.RequestPreemptions[id] = append(d.Metrics.RequestPreemptions[id], now)
 		if r := d.reqs[id]; r != nil {
 			r.req.State = StateQueued
 			if d.OnRunState != nil {

@@ -1904,6 +1904,9 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 		mergeFloat64Map(merged.RequestITLs, m.RequestITLs, "RequestITLs")
 		mergeInt64Map(merged.RequestSchedulingDelays, m.RequestSchedulingDelays, "RequestSchedulingDelays")
 		mergeFloat64Map(merged.RequestCompletionTimes, m.RequestCompletionTimes, "RequestCompletionTimes")
+		for k, v := range m.RequestPreemptions {
+			merged.RequestPreemptions[k] = append(merged.RequestPreemptions[k], v...)
+		}
 
 		for k, v := range m.Requests {
 			if _, exists := merged.Requests[k]; exists {
@@ -2012,6 +2015,15 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		dec := parent.DecodeSubReqID  // "req_N_decode"
 		pid := parent.ID              // "req_N"
 		completed := parent.CompletionTime > 0 && parent.DecodeInstanceID != ""
+
+		// Preemptions of either sub-request belong to the parent's row, in time order, so the
+		// rows' counts still sum to PreemptionCount.
+		if times := append(slices.Clone(m.RequestPreemptions[pfx]), m.RequestPreemptions[dec]...); len(times) > 0 {
+			slices.Sort(times)
+			delete(m.RequestPreemptions, pfx)
+			delete(m.RequestPreemptions, dec)
+			m.RequestPreemptions[pid] = times
+		}
 
 		// servedFirstToken: the decode sub-request has ≥1 un-discarded ITL entry at
 		// finalization — i.e. a client-visible first-token measurement survived to the end.

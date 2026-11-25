@@ -45,6 +45,10 @@ func requestRows(cs *cluster.ClusterSimulator, m *sim.Metrics) []result.RequestR
 			row.Agentic = &result.AgenticTag{Lane: a.Lane, Tree: a.Tree, TraceID: a.TraceID, Stream: a.Stream,
 				Kind: result.AgenticKind(a.Kind), StreamInstance: a.StreamInstance, Turn: a.Turn, Outcome: a.Outcome}
 		}
+		// The times of the preemptions the engine made of this request, whether or not it
+		// went on to complete: the run keeps them apart from the per-request metrics.
+		row.Preemptions = len(m.RequestPreemptions[rec.ID])
+		row.PreemptedAtUs = m.RequestPreemptions[rec.ID]
 		if rm, ok := byID[rec.ID]; ok {
 			row.Instance = rm.HandledBy
 			row.CachedLocalTokens, row.CachedExternalTokens = rm.CachedLocalTokens, rm.CachedExternalTokens

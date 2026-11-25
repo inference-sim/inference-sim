@@ -917,3 +917,22 @@ func TestShareAdmissionStage_RanksShareTheFirstStage(t *testing.T) {
 		t.Error("a rank with no queue was shared into one")
 	}
 }
+
+// notePreempted counts each preemption and keeps its clock against the request, in order, so
+// the per-request lengths sum to the count.
+func TestEngineDriver_NotePreemptedRecordsEachTimeAgainstItsRequest(t *testing.T) {
+	fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 8, InFlight: 1, StepBaseUs: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := NewEngineDriver(fifo, EngineDriverConfig{Horizon: 1 << 40})
+	d.notePreempted(engine.Batch{Preempted: []string{"a", "b"}}, 40)
+	d.notePreempted(engine.Batch{Preempted: []string{"a"}}, 70)
+	if d.Metrics.PreemptionCount != 3 {
+		t.Errorf("PreemptionCount = %d, want 3", d.Metrics.PreemptionCount)
+	}
+	want := map[string][]int64{"a": {40, 70}, "b": {40}}
+	if !reflect.DeepEqual(d.Metrics.RequestPreemptions, want) {
+		t.Errorf("RequestPreemptions = %v, want %v", d.Metrics.RequestPreemptions, want)
+	}
+}
