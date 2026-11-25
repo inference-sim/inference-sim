@@ -75,10 +75,16 @@ type DPGroup struct {
 	// busyUntil is when an iteration that ran only dummy batches ends: no batch of it is in
 	// flight through the contract, so the group asks to be stepped then (NextWake).
 	busyUntil engine.Time
-	// iterations counts the lockstep iterations run; last is the last ended iteration's
-	// per-rank record.
+	// iterations counts the lockstep iterations run; dummySteps counts those of them that ran
+	// only dummy batches (no rank ran tokens); last is the last ended iteration's per-rank record.
 	iterations int
+	dummySteps int
 	last       []core.RankStep
+	// lastKVEvents are the KV events the most recent Complete produced, grouped by the rank that
+	// produced them (LastKVEventsByRank). Under external balancing the leader routes rank k's
+	// events to endpoint k's sink; a Removed or Cleared event names no request, so it cannot be
+	// routed from the batch split and must carry its rank from here. Reset at each Complete.
+	lastKVEvents [][]engine.KVEvent
 }
 
 // rankState is one rank: its scheduler, its engine core and the requests it serves.
@@ -330,6 +336,7 @@ func (g *DPGroup) Schedule(now engine.Time) (engine.Batch, error) {
 		g.open = open
 	case it.batch.Empty():
 		// Every rank ran a dummy batch, or nothing: no forward pass of it is in flight.
+		g.dummySteps++
 		g.endStep(steps)
 		g.busyUntil = now + g.dummyTime()
 	default:
@@ -445,6 +452,10 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 	it := g.inflight[0]
 	g.inflight = g.inflight[1:]
 	res := engine.Result{Emitted: map[string]int{}}
+	// Capture each rank's events as the rank that produced them, so the leader can route them to
+	// that rank's endpoint under external balancing. Removed and Cleared events name no request,
+	// so the rank cannot be recovered from the batch split later: it is recorded here.
+	g.lastKVEvents = make([][]engine.KVEvent, len(g.ranks))
 	for i, r := range g.ranks {
 		cb, ok := it.rank[i]
 		if !ok {
@@ -472,6 +483,7 @@ func (g *DPGroup) Complete(id engine.BatchID, outcome engine.Outcome, end engine
 		res.FirstTokens = append(res.FirstTokens, rr.FirstTokens...)
 		res.Finished = append(res.Finished, rr.Finished...)
 		res.KVEvents = append(res.KVEvents, rr.KVEvents...)
+		g.lastKVEvents[i] = append(g.lastKVEvents[i], rr.KVEvents...)
 		// A rank's block IDs are its own pool's, so two ranks hold a block of the same ID. The
 		// contract lets the host count distinct blocks across handoffs: give each rank's IDs a
 		// range of their own.
@@ -661,6 +673,29 @@ func (g *DPGroup) RankKVCacheCapacity(rank int) kv.Capacity { return g.ranks[ran
 func (g *DPGroup) StepDue(now engine.Time) bool {
 	return len(g.inflight) < g.InFlightLimit() && g.open == nil && now >= g.busyUntil && g.stepping()
 }
+
+// LockstepSteps is the number of lockstep iterations begun and, of those, how many ran only dummy
+// batches (no rank ran tokens). The leader compares the count across a step to tell whether one
+// advanced.
+func (g *DPGroup) LockstepSteps() (steps, dummy int) { return g.iterations, g.dummySteps }
+
+// LastActive reports, for the last ended iteration, which ranks ran a real forward pass (not a
+// dummy batch): rank i is active iff its step scheduled a batch that executed tokens.
+func (g *DPGroup) LastActive() []bool {
+	out := make([]bool, len(g.ranks))
+	for i := range out {
+		if i < len(g.last) && g.last[i].Step.Scheduled != nil {
+			out[i] = core.Executed(*g.last[i].Step.Scheduled)
+		}
+	}
+	return out
+}
+
+// LastKVEventsByRank is the KV events the most recent Complete produced, grouped by the rank that
+// produced them; index r is rank r's events. Empty for a rank that produced none. The leader uses
+// it to deliver each rank's events to that rank's endpoint under external balancing, which the
+// batch split cannot do for a Removed or Cleared event (it names no request).
+func (g *DPGroup) LastKVEventsByRank() [][]engine.KVEvent { return g.lastKVEvents }
 
 // Assumptions are the pricer's disclosed assumptions, as Engine reports them.
 func (g *DPGroup) Assumptions() []string { return g.ranks[0].e.Assumptions() }

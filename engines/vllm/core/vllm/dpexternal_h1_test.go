@@ -93,6 +93,71 @@ func TestARequestsKVLandsOnlyOnItsRank(t *testing.T) {
 	}
 }
 
+// BC-H1-4 (tagging): a KV event carries the rank that produced it, so the leader can route it to
+// that rank's endpoint under external balancing — including a Removed or Cleared event, which
+// names no request and so cannot be placed from the batch split. LastKVEventsByRank groups each
+// Complete's events by producing rank. Driving distinct prompts onto ranks 1 and 2 (and nothing
+// onto 0 or 3), and forcing evictions on rank 1: rank 1's stores and removals appear only under
+// index 1, rank 2's stores only under index 2, the two stores are disjoint, and no event of any
+// kind (store, removal or clear) lands on an idle rank. This fails if events are not grouped by
+// their producing rank.
+func TestExternalKVEventsCarryTheirRanksIndex(t *testing.T) {
+	g := group(t, "data_parallel_external_lb: true\n")
+	g.EnableKVEvents()
+	// req seeds a prompt from len(id), so ids of distinct lengths give disjoint hash chains. Give
+	// rank 1 many distinct prompts (enough to store and then evict) and rank 2 a few of its own, at
+	// disjoint lengths from rank 1's.
+	for i := 0; i < 12; i++ {
+		if err := g.AddToEndpoint(1, req(strings.Repeat("a", 5+i), 90, 4), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		if err := g.AddToEndpoint(2, req(strings.Repeat("b", 60+i), 90, 4), 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := make([]map[string]bool, g.Ranks())
+	removed := make([]int, g.Ranks())
+	cleared := make([]int, g.Ranks())
+	for r := range store {
+		store[r] = map[string]bool{}
+	}
+	runExternalToIdle(t, g, func(engine.Result) {
+		for r, evs := range g.LastKVEventsByRank() {
+			for _, e := range evs {
+				switch {
+				case e.Cleared:
+					cleared[r]++
+				case e.Removed:
+					removed[r]++
+				default:
+					store[r][e.Hash] = true
+				}
+			}
+		}
+	})
+	if len(store[1]) == 0 || len(store[2]) == 0 {
+		t.Fatalf("rank 1 stored %d blocks, rank 2 stored %d; both endpoints must publish their own stores", len(store[1]), len(store[2]))
+	}
+	for h := range store[1] {
+		if store[2][h] {
+			t.Errorf("block %s is published under both rank 1 and rank 2; each endpoint's events must carry only its own rank", h)
+		}
+	}
+	if removed[1] == 0 {
+		t.Error("rank 1 evicted blocks but published no removal under its own index")
+	}
+	for r := 0; r < g.Ranks(); r++ {
+		if r == 1 || r == 2 {
+			continue
+		}
+		if len(store[r]) != 0 || removed[r] != 0 || cleared[r] != 0 {
+			t.Errorf("idle rank %d published events (store %d, removed %d, cleared %d); no event may land on a rank that served no request", r, len(store[r]), removed[r], cleared[r])
+		}
+	}
+}
+
 // BC-H1-3: StepDue is true whenever any rank has work, not only rank 0. A request on a non-zero
 // endpoint must make the group's step due, or the leader (which steps only when StepDue holds)
 // would never step a group whose work sits on ranks 1..dp-1. This fails if StepDue consulted rank
