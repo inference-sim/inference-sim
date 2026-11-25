@@ -192,3 +192,36 @@ func TestPeerAddressesAreTheNodeHostnameAndAPortPerInstanceOnTheNode(t *testing.
 		t.Error("an address was set after the engine's first Schedule")
 	}
 }
+
+// Two instances with no single hostname (each spans more than one node, so EndpointTopology.Hostname
+// is "", as a TP16 pool on 8-GPU nodes has) and the identical stated address, as one sweep-level
+// offload: block gives every pool, still get distinct addresses: the port counts up on the stated
+// host instead of panicking on the collision (inference-sim/inference-sim#2688).
+func TestPeerAddressesWithNoHostnameDisambiguateOnTheStatedHost(t *testing.T) {
+	var engines []*addressed
+	cfg := newTestDeploymentConfig(2)
+	cfg.PeerEndpoint = func(id InstanceID) plan.Endpoint { return plan.Endpoint{} }
+	cfg.ScenarioEndpointTopology = StaticEndpointTopology(map[InstanceID]EndpointTopology{
+		"instance_0": {NodeCount: 2}, "instance_1": {NodeCount: 2}})
+	cfg.NewEngine = func(index int, _ sim.InstanceConfig) (*sim.EngineDriver, error) {
+		fifo, err := enginetest.NewFIFO(enginetest.FIFOConfig{MaxRunning: 1, TokenBudget: 64, InFlight: 1, StepBaseUs: 10})
+		if err != nil {
+			return nil, err
+		}
+		eng := &addressed{talker: &talker{FIFO: fifo, addr: "localhost:5710", arrivals: new([]arrival),
+			placed: map[string]plan.Endpoint{}}, setAfter: new(bool)}
+		engines = append(engines, eng)
+		return sim.NewEngineDriver(eng, sim.EngineDriverConfig{Horizon: 1 << 40}), nil
+	}
+	reqs := []*sim.Request{{ID: "a", InputTokens: make([]sim.TokenID, 16), OutputTokens: make([]sim.TokenID, 1), State: sim.StateQueued}}
+	mustRun(t, newTestCluster(cfg, NewSliceRequestSource(reqs), nil))
+	want := []string{"localhost:5710", "localhost:5711"}
+	for i, e := range engines {
+		if e.addr != want[i] {
+			t.Errorf("instance_%d has the address %q, want %q", i, e.addr, want[i])
+		}
+	}
+	if engines[0].addr == engines[1].addr {
+		t.Fatalf("both hostless instances have the same address %q", engines[0].addr)
+	}
+}

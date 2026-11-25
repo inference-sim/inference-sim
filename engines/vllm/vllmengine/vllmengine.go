@@ -995,10 +995,18 @@ func connectorOf(kt *yaml.Node) string {
 
 // splitOffload separates the deployment's offload block (offloadOf) into what stays in kv_offload (the
 // connector and what vLLM derives from the model) and the tier the offloading child states under vLLM's
-// names: cpu_bytes_to_use, block_size, eviction_policy and spec_name.
+// names: cpu_bytes_to_use, block_size, eviction_policy, spec_name, and (unrenamed, vLLM already uses
+// these names on both sides) blocks_per_chunk, offload_prompt_only, spec_module_path,
+// cache_policy_module_path, secondary_tiers, backpressure and tier_poll_interval_s — a disaggregated
+// (P/D) pool's secondary tiers (e.g. a p2p tier) move with the rest of the tier, rather than being left
+// in kv_offload where checkConnectorPair refuses them beside a MultiConnector.
 func splitOffload(off *yaml.Node) (derived, tier *yaml.Node) {
 	rename := map[string]string{"cpu_bytes": "cpu_bytes_to_use", "block_size": "block_size",
-		"eviction_policy": "eviction_policy", "spec": "spec_name"}
+		"eviction_policy": "eviction_policy", "spec": "spec_name",
+		"blocks_per_chunk": "blocks_per_chunk", "offload_prompt_only": "offload_prompt_only",
+		"spec_module_path": "spec_module_path", "cache_policy_module_path": "cache_policy_module_path",
+		"secondary_tiers": "secondary_tiers", "backpressure": "backpressure",
+		"tier_poll_interval_s": "tier_poll_interval_s"}
 	derived = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	tier = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	for i := 0; i+1 < len(off.Content); i += 2 {

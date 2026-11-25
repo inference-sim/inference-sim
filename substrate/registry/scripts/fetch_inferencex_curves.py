@@ -14,8 +14,11 @@ hash is not the pinned one. A file already present with the pinned hash is not d
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import sys
+import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -23,6 +26,44 @@ REGISTRY = Path(__file__).resolve().parent.parent
 LOCK = REGISTRY / "validator" / "testdata" / "inferencex" / "curves.json"
 CACHE = REGISTRY / "validator" / "testdata" / "inferencex" / "cache"
 RAW = "https://raw.githubusercontent.com/{repo}/{commit}/{path}/{name}"
+
+# The fetch of a pinned file is retried on a transient transport error or a retryable HTTP status
+# (429, or any 5xx: the backend returned "Backend.max_conn reached" as a 503 in one release run),
+# with a capped exponential backoff. The pinned content is still verified by hash after every
+# fetch, so a retry can only accept the one payload curves.json pins, never a different one.
+MAX_ATTEMPTS = 4
+BACKOFF_CAP_S = 10.0
+
+
+def _is_retryable(err: Exception) -> bool:
+    if isinstance(err, urllib.error.HTTPError):
+        return err.code == 429 or 500 <= err.code <= 599
+    # Any other transport-level failure is transient: a dropped connection arrives as
+    # http.client.RemoteDisconnected/ConnectionResetError (h.getresponse() is outside urllib's
+    # URLError wrapper), a stall as TimeoutError, a partial body as http.client.IncompleteRead.
+    return True
+
+
+def read_url(url: str, opener=urllib.request.urlopen, sleep=time.sleep) -> bytes:
+    """Fetch url, retrying retryable transport/HTTP errors up to MAX_ATTEMPTS with capped backoff.
+    Raises SystemExit naming the URL and the attempts when they are exhausted."""
+    delay = 1.0
+    last: Exception | None = None
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            with opener(url, timeout=60) as r:
+                return r.read()
+        except (OSError, http.client.HTTPException) as e:
+            # HTTPError and URLError are OSError subclasses, so a non-retryable status (a 404)
+            # still re-raises via _is_retryable; a bare RemoteDisconnected/ConnectionResetError
+            # from getresponse()/read() is caught here where urllib.error.URLError alone missed it.
+            if not _is_retryable(e):
+                raise
+            last = e
+            if attempt < MAX_ATTEMPTS:
+                sleep(min(delay, BACKOFF_CAP_S))
+                delay *= 2
+    raise SystemExit(f"{url}: {MAX_ATTEMPTS} attempts failed, last error: {last}")
 
 
 def load_lock(path: Path = LOCK) -> dict:
@@ -41,7 +82,7 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def fetch(dest: Path, lock: dict, opener=urllib.request.urlopen) -> int:
+def fetch(dest: Path, lock: dict, opener=urllib.request.urlopen, sleep=time.sleep) -> int:
     dest.mkdir(parents=True, exist_ok=True)
     repo = lock["repository"].removeprefix("https://github.com/")
     fetched = 0
@@ -50,8 +91,7 @@ def fetch(dest: Path, lock: dict, opener=urllib.request.urlopen) -> int:
         if target.is_file() and sha256(target) == want:
             continue
         url = RAW.format(repo=repo, commit=lock["commit"], path=lock["path"], name=name)
-        with opener(url, timeout=60) as r:
-            body = r.read()
+        body = read_url(url, opener=opener, sleep=sleep)
         got = hashlib.sha256(body).hexdigest()
         if got != want:
             raise SystemExit(f"{url}: SHA-256 {got}, but curves.json pins {want}")
