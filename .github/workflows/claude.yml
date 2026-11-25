@@ -238,7 +238,8 @@ jobs:
       needs.check-permissions.outputs.allowed == 'true' &&
       needs.check-permissions.outputs.author_allowed == 'true' &&
       needs.check-permissions.outputs.is_review == 'false'
-    runs-on: [self-hosted]
+    # The agent runners, which alone may reach LiteLLM (k8s/agents).
+    runs-on: blis-ci-agents
     timeout-minutes: 60
     permissions:
       contents: write
@@ -351,7 +352,8 @@ jobs:
       needs.check-permissions.outputs.allowed == 'true' &&
       needs.check-permissions.outputs.author_allowed == 'true' &&
       needs.check-permissions.outputs.is_review == 'true'
-    runs-on: [self-hosted]
+    # The agent runners, which alone may reach LiteLLM (k8s/agents).
+    runs-on: blis-ci-agents
     timeout-minutes: 60
     permissions:
       contents: read          # cannot push — the whole point of this job (#1697)

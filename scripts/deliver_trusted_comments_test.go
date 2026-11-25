@@ -31,9 +31,7 @@ import (
 // real script and returns stdout. `jsonMode` selects the --json emission.
 func renderTrusted(t *testing.T, payload string, jsonMode bool) string {
 	t.Helper()
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not on PATH")
-	}
+	needJQ(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "payload.json")
 	if err := os.WriteFile(path, []byte(payload), 0o600); err != nil {
@@ -288,9 +286,7 @@ exit 1
 
 func runTrustedLive(t *testing.T, path string, jsonMode bool) (string, string, int) {
 	t.Helper()
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not on PATH")
-	}
+	needJQ(t)
 	args := []string{scriptPath(t, "deliver-trusted-comments.sh")}
 	if jsonMode {
 		args = append(args, "--json")

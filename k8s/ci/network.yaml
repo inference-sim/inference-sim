@@ -4,7 +4,8 @@
 # (README.md, Egress). Nothing in the cluster's own networks is reachable from a runner: not the API
 # server, not other namespaces, not the node or cloud metadata addresses, not the hosting
 # organization's intranet (9.0.0.0/8, public addresses). All of them cover every pod
-# in blis; allow-arc-api-server adds the API server for the ARC controller and its listeners only.
+# in blis; allow-arc-api-server adds the API server for the ARC controller and its listeners only,
+# and k8s/agents/network.yaml adds LiteLLM and its proxy for the agent pods only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

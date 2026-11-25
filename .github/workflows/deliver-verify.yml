@@ -237,7 +237,8 @@ jobs:
           && github.event.pull_request.head.repo.full_name == github.repository
         )
       )
-    runs-on: [self-hosted]
+    # The agent runners, which alone may reach LiteLLM (k8s/agents).
+    runs-on: blis-ci-agents
     # Generous: the full test suite plus an archon build plus an agent review. The single
     # self-hosted runner is a known contention point, tracked as a follow-up on #1654.
     timeout-minutes: 120

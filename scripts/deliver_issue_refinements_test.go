@@ -30,9 +30,7 @@ import (
 // refine renders a `{"comments":[…]}` payload through the real script and returns its stdout.
 func refine(t *testing.T, payload string) string {
 	t.Helper()
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not on PATH")
-	}
+	needJQ(t)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "payload.json")
@@ -316,9 +314,7 @@ func TestRefinements_TiedTimestampsOrderDeterministically(t *testing.T) {
 // indistinguishable from "this issue has no refinements", which is the exact failure #1782 is
 // about — so the degraded digest carries a marker, and it is on stdout where the reader is.
 func TestRefinements_UnreadableInputIsMarkedNotSilent(t *testing.T) {
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not on PATH")
-	}
+	needJQ(t)
 
 	cmd := exec.Command("bash", scriptPath(t, "deliver-issue-refinements.sh"),
 		"--render", filepath.Join(t.TempDir(), "does-not-exist.json"))
@@ -341,9 +337,7 @@ func TestRefinements_UnreadableInputIsMarkedNotSilent(t *testing.T) {
 
 // A malformed payload is the same class: loud, marked, non-zero.
 func TestRefinements_MalformedPayloadIsMarkedNotSilent(t *testing.T) {
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not on PATH")
-	}
+	needJQ(t)
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "payload.json")
@@ -609,9 +603,7 @@ func runLiveWithDeadline(t *testing.T, path, deadlineSeconds string) (string, st
 // SIGTERM→SIGKILL escalation quickly.
 func runLiveWithDeadlineAndGrace(t *testing.T, path, deadlineSeconds, graceSeconds string) (string, string, int) {
 	t.Helper()
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not on PATH")
-	}
+	needJQ(t)
 
 	cmd := exec.Command("bash", scriptPath(t, "deliver-issue-refinements.sh"), "1782")
 	cmd.Env = []string{"PATH=" + path, "GH_REPO=owner/repo"}

@@ -359,7 +359,7 @@ func TestCIChangesGroupsMatchTheWorkflow(t *testing.T) {
 		}
 	}
 	// The job's other outputs are where the heavy jobs run (its runners step), not groups.
-	runnerOutputs := []string{"runner-large", "runner-oracle", "large-workers"}
+	runnerOutputs := []string{"runner-large", "runner-oracle", "runner-small", "large-workers"}
 	for o, v := range outputs {
 		switch {
 		case strings.Contains(v, "steps.groups.outputs."):

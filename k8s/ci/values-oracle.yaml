@@ -6,7 +6,8 @@ githubConfigUrl: https://github.com/inference-sim/inference-sim
 githubConfigSecret: blis-ci-github
 runnerScaleSetName: blis-ci-oracle
 minRunners: 0
-maxRunners: 6
+# The vLLM oracle's 4 jobs and the SGLang oracle's 14 oracle-run jobs of one full run at once.
+maxRunners: 18
 # No container mode: no Docker daemon, no Kubernetes mode, no privileged sidecar.
 template:
   spec:

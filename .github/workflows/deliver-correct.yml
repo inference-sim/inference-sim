@@ -48,7 +48,8 @@ on:
 
 jobs:
   correct:
-    runs-on: [self-hosted]
+    # The agent runners, which alone may reach LiteLLM (k8s/agents).
+    runs-on: blis-ci-agents
     timeout-minutes: 60
     env:
       REPO: ${{ github.repository }}
