@@ -37,7 +37,8 @@ What keeps a fork's code off the cluster until someone has read it is approval, 
 repository's Actions setting *Require approval for all external contributors* (setup step 0) holds
 every outside contributor's workflow run until a maintainer approves it. A fork's pull request runs
 its own copy of the workflows, so it can name a scale set's label in `runs-on`. So before approving
-a fork's run, read its diff, and under `.github/` look for a changed `runs-on` or `vars.` reference.
+a fork's run, read its diff, and under `.github/` look for a changed `runs-on` or `vars.` reference,
+above all one that names an agent pool, `blis-ci-agents` or `blis-ci-pr-review` (k8s/agents/README.md, Risks).
 A repository-level scale set cannot be limited to selected workflows; an organization-level runner
 group can, if the scale sets move to the organization.
 

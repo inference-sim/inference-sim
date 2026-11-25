@@ -92,9 +92,11 @@ reviewer holds a shell on untrusted input, so a single workflow with a write-acc
   `NetworkPolicy` objects (`k8s/agents/`), isolated from the agent pool `blis-ci-agents`. Setup is in
   `k8s/agents/README.md`.
 - The proxy's secret `blis-litellm` (keys `base-url` and `api-key`). **`base-url` must be a bare
-  `https://host` with no trailing slash and no path**: the proxy appends `$request_uri`, so a
+  `https://host` with no trailing slash and no path**: the proxy appends the request's path, so a
   trailing slash or path produces doubled-slash/doubled-path upstream 404s. The proxy sends that host
-  as `Host`. Its egress allows LiteLLM's range (`9.0.0.0/8`) on 443 alone, so a LiteLLM outside it
+  as `Host`, and checks the upstream's certificate for that name against the image's CA bundle. It
+  relays only the routes the reviewers call (`/v1/messages`, `/v1/messages/count_tokens`,
+  `/v1/models`, `/chat/completions`) and returns 404 for the rest. Its egress allows LiteLLM's range (`9.0.0.0/8`) on 443 alone, so a LiteLLM outside it
   needs `k8s/agents/network.yaml` changed too, not just the secret.
 - The cluster DNS Service ClusterIP in the proxy's `LITELLM_RESOLVER` env (`172.30.0.10` here; the
   nginx `resolver`). On a cluster with a different DNS IP, change it or nginx cannot resolve the

@@ -32,10 +32,14 @@ The two sets hold different things, and the pods are kept apart by that label:
   443 for `blis-runner: agents` and the proxy, and the proxy's port 4000 for
   `blis-runner: pr-review`. The label is set in the scale sets' values files, and no CI values file
   sets it. A job cannot change its own pod's labels: the pod has no service account token and no
-  route to the API server.
+  route to the API server. Which pool, and so which label, a job gets is its `runs-on`, though,
+  and an approved fork run can name either pool (Risks, 5).
 - **The proxy admits pr-review pods only.** Its ingress allows `blis-runner: pr-review` alone, so a
   CI pod (running a pull request's code) cannot use it as a relay. The old namespace allowed any pod
-  in it to reach the proxy.
+  in it to reach the proxy. It relays only the routes the reviewers call (Claude Code's
+  `/v1/messages` and its `count_tokens`, qa-review's `/chat/completions`, the preflight's
+  `/v1/models`), returns 404 for any other LiteLLM route, and sends the key only to an upstream whose
+  certificate verifies for the upstream's name.
 - **No secret is readable from a runner.** `blis-litellm`, `blis-ci-github` and the controller's
   token live in the namespace, but a runner pod mounts no service account token and cannot reach
   the API server, so it cannot read them. The proxy reads `blis-litellm` through its own env, and a
@@ -67,6 +71,16 @@ their own (the discussion's plan, #2683).
 4. **The EgressFirewall.** `k8s/ci/network.yaml`'s `EgressFirewall` is namespace-wide and not in
    force on this cluster (it rejects wildcard rules). If it ever applies, it must allow LiteLLM's
    addresses too, or the agent jobs and the proxy lose LiteLLM.
+5. **A fork run can name an agent pool.** The label keeps a CI pod off these paths, but a job picks
+   its pool by `runs-on`, and a fork's pull request runs its own copy of the workflows. So an
+   approved fork run that turns out to be hostile can name `blis-ci-pr-review` and use the proxy
+   (the inference routes alone, with the real key), or name `blis-ci-agents` and reach `9.0.0.0/8`
+   on 443. It holds no secret there: the repository secrets are not given to a fork's run. This is
+   not a regression: the old runners took any job that named `self-hosted`, with no egress policy
+   at all. What guards it today is approval and the approver's check for a changed `runs-on`
+   (`k8s/ci/README.md`). A repository-level scale set cannot be limited to selected workflows; the
+   fix is organization-level runner groups for these two scale sets, each restricted to the
+   workflows that use it at `refs/heads/main` (a follow-up for an organization admin).
 
 ## Setup
 
