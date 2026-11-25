@@ -27,8 +27,6 @@ import (
 	"github.com/inference-sim/inference-sim/engines/vllm/core/build"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/kernelmodel"
 	cengine "github.com/inference-sim/inference-sim/engines/vllm/core/runconfig"
-	vllmcore "github.com/inference-sim/inference-sim/engines/vllm/core/vllm"
-	"github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview"
 	coreengine "github.com/inference-sim/inference-sim/engines/vllm/vllmengine"
 
 	"math"
@@ -1230,17 +1228,13 @@ func contractRoots(scenarioPath string) map[string]string {
 }
 
 // dpRankViews exposes a built external data-parallel group as one engine.Engine per rank — the
-// per-endpoint views the router sees under external load balancing (inference-sim#2699, H3). It
-// reports false for any engine that is not such a shared group, so the caller keeps its single
-// collapsed instance. This is the one place cmd reaches the dprankview package, kept here with
-// every other use of the vLLM engine (CLAUDE.md's single-import-site rule); engine_driver_build.go
-// drives it through engine.Engine alone.
+// per-endpoint views the router sees under external load balancing (inference-sim#2699, H3),
+// through the engine module's host facade (vllmengine.DPRankViews). It reports false for any engine
+// that is not such a shared group, so the caller keeps its single collapsed instance. cmd reaches
+// the view engine only through engine.Engine and the facade, never the engine's core/vllm or
+// dprankview packages (the reach-the-engine-only-through-the-contract boundary).
 func dpRankViews(eng engine.Engine) ([]engine.Engine, bool) {
-	g, ok := eng.(*vllmcore.DPGroup)
-	if !ok {
-		return nil, false
-	}
-	return dprankview.NewEndpointViews(g), true
+	return coreengine.DPRankViews(eng)
 }
 
 // newContractEngine builds one engine from spec over the run's opened data. Every engine of a
