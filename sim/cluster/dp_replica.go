@@ -111,7 +111,8 @@ func (cs *ClusterSimulator) eventMembers(inst *InstanceSimulator) []*InstanceSim
 
 // endpointReplica is the replica whose endpoint stands for inst in routing, or nil when inst
 // is its own endpoint: under external DP load balancing every rank is, and a P/D pool's
-// ranks stay individually routable (a documented limitation).
+// ranks stay individually routable -- each then keeps its own KV-event visibility too, the
+// limitation documented below pickRank.
 func (cs *ClusterSimulator) endpointReplica(inst *InstanceSimulator) *dpReplica {
 	if cs.replicaOf == nil || cs.poolsConfigured() || sim.DPEachRankIsAnEndpoint(cs.config.DPLoadBalancing) {
 		return nil
@@ -159,6 +160,14 @@ func (cs *ClusterSimulator) rankFor(inst *InstanceSimulator) *InstanceSimulator 
 // preciseprefixcache/extractor.go:74-80), and a pod behind vLLM's internal balancer is one
 // endpoint of rank index 0, so only rank 0's events reach the index. Ranks 1..dp-1 cache
 // prefixes the router never sees.
+//
+// This file routes a replica's ranks, each its own InstanceSimulator and engine; it enables or
+// disables no rank's events itself. For a live, engine-contract-built DP group the enforcement
+// is the engine's: DPGroup.EnableKVEvents (engines/vllm/core/vllm/dpgroup.go) turns on rank 0's
+// engine alone, so Complete carries only its events (#2677) -- which is what makes the view
+// above hold. A replica built the rank-per-instance way (buildDPReplicas, tests only) has no
+// such gate: each rank's engine is enabled like any other instance's, so that path does not by
+// itself reproduce the rank-1..dp-1 blind spot this comment describes.
 
 // pickRank assigns a request that reached the replica's endpoint at now to a rank. The replica's
 // engine, its data-parallel group, picks it (the engine's PickRank), from the ranks' own counts
