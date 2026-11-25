@@ -9,6 +9,7 @@ package sim
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -20,10 +21,17 @@ import (
 
 // externalDPGroupEngine builds a dp-rank external-balancing vLLM group at a fixed step price.
 func externalDPGroupEngine(t *testing.T, dp int) *vllm.DPGroup {
+	return externalDPGroupEngineAsync(t, dp, false)
+}
+
+// externalDPGroupEngineAsync builds the group with async scheduling on or off. With async on each
+// rank's batch queue holds two steps (InFlightLimit 2), so the leader keeps two lockstep steps in
+// flight -- the in-flight path BC-H2-5 is about; with it off, one.
+func externalDPGroupEngineAsync(t *testing.T, dp int, async bool) *vllm.DPGroup {
 	t.Helper()
 	src := fmt.Sprintf("block_size: 16\nmax_num_seqs: 8\nmax_num_batched_tokens: 256\nmax_model_len: 512\n"+
-		"num_gpu_blocks: 400\nuse_v2_model_runner: false\nasync_scheduling: false\npipeline_parallel_size: 1\n"+
-		"enable_prefix_caching: true\ndata_parallel_size: %d\ndata_parallel_external_lb: true\n", dp)
+		"num_gpu_blocks: 400\nuse_v2_model_runner: %t\nasync_scheduling: %t\npipeline_parallel_size: 1\n"+
+		"enable_prefix_caching: true\ndata_parallel_size: %d\ndata_parallel_external_lb: true\n", async, async, dp)
 	var n yaml.Node
 	if err := yaml.Unmarshal([]byte(src), &n); err != nil {
 		t.Fatal(err)
@@ -186,6 +194,119 @@ func TestExternalDP_PerRankKVEventsReachOwnEndpoint(t *testing.T) {
 	for _, idle := range []int{0, 3} {
 		if stores[idle] != 0 {
 			t.Errorf("idle rank %d's sink saw %d store events; no rank's events may reach an endpoint that served nothing", idle, stores[idle])
+		}
+	}
+}
+
+// collapsedGroupEngine wraps a shared external DP group as one collapsed instance for the normal
+// single-driver kick path: Add places each request on its assigned rank (as the router would place
+// it), while Schedule, Complete and everything else step the whole group. It stands in for the
+// internal-balancer collapsed instance with a fixed, known per-rank assignment, so the collapsed
+// kick and the leader path can run the identical per-rank workload and their step timelines be
+// compared (BC-H2-5). Embedding promotes every engine method; only Add is overridden.
+type collapsedGroupEngine struct {
+	*vllm.DPGroup
+	assign map[string]int
+}
+
+func (e *collapsedGroupEngine) Add(r engine.Request, now engine.Time) error {
+	return e.AddToEndpoint(e.assign[r.ID], r, now)
+}
+
+// TestLeaderPathMatchesCollapsedKickUnderAsync is BC-H2-5's evidence: under async scheduling (two
+// lockstep steps in flight, the whole point of the in-flight rewrite) the leader path's timeline
+// equals the collapsed single-driver kick's over the same engine with the same per-rank
+// assignment. It asserts equal max in-flight depth (and that it exceeds one, so the in-flight path
+// is actually exercised) and, per request, equal finish time, first-token time and inter-token
+// latencies. It fails if groupStepEnd stops re-kicking (requests hang or finish late) or if the
+// group is stepped one at a time (depth 1, timeline shifts).
+func TestLeaderPathMatchesCollapsedKickUnderAsync(t *testing.T) {
+	const dp = 4
+	const n = 24
+	assign := map[string]int{}
+	mkReqs := func() []*Request {
+		rs := make([]*Request, n)
+		for i := range rs {
+			id := fmt.Sprintf("r%d", i)
+			r := &Request{ID: id, InputTokens: tokens(20 + i), OutputTokens: tokens(3 + i%4), ArrivalTime: int64(i * 7)}
+			r.MaxOutputLen = len(r.OutputTokens)
+			rs[i] = r
+			assign[id] = i % dp
+		}
+		return rs
+	}
+
+	// Collapsed kick: one driver over the shared group, forced assignment, async on.
+	gCollapsed := externalDPGroupEngineAsync(t, dp, true)
+	collapsedReqs := mkReqs()
+	cd := NewEngineDriver(&collapsedGroupEngine{DPGroup: gCollapsed, assign: assign}, EngineDriverConfig{Horizon: 1 << 60})
+	for _, r := range collapsedReqs {
+		cd.InjectArrivalAt(r, r.ArrivalTime)
+	}
+	collapsedDepth := 0
+	for range 1_000_000 {
+		if !cd.HasPendingEvents() || cd.PeekNextEventTime() > cd.Horizon {
+			break
+		}
+		cd.ProcessNextEvent()
+		collapsedDepth = max(collapsedDepth, len(cd.inFlight))
+	}
+
+	// Leader path: N view-drivers over a fresh group, same assignment, async on.
+	gLeader := externalDPGroupEngineAsync(t, dp, true)
+	drivers := externalDPDrivers(t, gLeader)
+	leaderReqs := mkReqs()
+	for _, r := range leaderReqs {
+		drivers[assign[r.ID]].InjectArrivalAt(r, r.ArrivalTime)
+	}
+	leaderDepth := 0
+	for range 1_000_000 {
+		best := -1
+		var bt int64
+		for i, d := range drivers {
+			if !d.HasPendingEvents() {
+				continue
+			}
+			if tt := d.PeekNextEventTime(); best == -1 || tt < bt {
+				best, bt = i, tt
+			}
+		}
+		if best == -1 {
+			break
+		}
+		drivers[best].ProcessNextEvent()
+		leaderDepth = max(leaderDepth, len(drivers[0].groupInFlight))
+	}
+
+	if collapsedDepth != leaderDepth {
+		t.Errorf("max in-flight depth: collapsed kick %d, leader path %d; the leader must keep as many lockstep steps in flight as the collapsed kick", collapsedDepth, leaderDepth)
+	}
+	if collapsedDepth < 2 {
+		t.Fatalf("async in-flight depth stayed at %d, not above one: the differential does not exercise the two-steps-in-flight path BC-H2-5 is about", collapsedDepth)
+	}
+
+	byID := func(rs []*Request) map[string]*Request {
+		m := make(map[string]*Request, len(rs))
+		for _, r := range rs {
+			m[r.ID] = r
+		}
+		return m
+	}
+	lead := byID(leaderReqs)
+	for _, c := range collapsedReqs {
+		l := lead[c.ID]
+		if c.State != StateCompleted || l == nil || l.State != StateCompleted {
+			t.Errorf("%s: states collapsed=%q leader=%v; both must complete", c.ID, c.State, l)
+			continue
+		}
+		if c.DepartureTime != l.DepartureTime {
+			t.Errorf("%s: finish time collapsed=%d leader=%d; the leader path's step ends must match the collapsed kick's", c.ID, c.DepartureTime, l.DepartureTime)
+		}
+		if c.FirstTokenTime != l.FirstTokenTime {
+			t.Errorf("%s: first-token time collapsed=%d leader=%d", c.ID, c.FirstTokenTime, l.FirstTokenTime)
+		}
+		if !slices.Equal(c.ITL, l.ITL) {
+			t.Errorf("%s: inter-token latencies collapsed=%v leader=%v", c.ID, c.ITL, l.ITL)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package sim
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
@@ -178,26 +179,24 @@ type groupBatch struct {
 	end    int64
 }
 
-// kickGroup is the leader's kick: the group's lockstep step at now, when it is due, with every
-// member's same-instant arrivals delivered first. It mirrors the normal driver's kick
-// (engine_driver.go): the leader schedules the step, keeps its batch in flight and completes it at
-// the step's end (driverGroupStepEnd), rather than applying the result at the step's start. Each
-// rank with work takes the step's instant as its clock; when rank 0 has none, the leader's clock
-// stays at its last real event. The step-end event re-kicks the leader for the next step, and the
-// dummy / nothing-due cases re-wake through NextWake (rearmWake), as the normal driver does.
-//
-// StepDue mirrors Schedule's own guards (an iteration begins iff no other is open, no dummy is
-// mid-flight, a batch slot is free and some rank has work), and the open guard admits at most one
-// iteration per instant, so one step per call is exact: the loop the normal kick runs to fill the
-// in-flight queue would, for a group, be a single pass — the next step is driven by the step-end.
+// kickGroup is the leader's kick: the group's lockstep steps at now, with every member's
+// same-instant arrivals delivered first. It mirrors the normal driver's kick (engine_driver.go):
+// the leader schedules a step, keeps its batch in flight and completes it at the step's end
+// (driverGroupStepEnd) rather than applying the result at the step's start, and loops to schedule
+// as many steps as the group's batch queue admits — under async scheduling a rank's queue holds
+// two steps (InFlightLimit 2), so the leader fills the queue in one instant exactly as the normal
+// kick does over this engine (BC-H2-5); the engine's own ErrNoCapacity / open / busyUntil guards
+// stop the loop. Each rank with work takes the step's instant as its clock; when rank 0 runs in no
+// step this instant, the leader's clock stays at its last real event. The step-end event re-kicks
+// the leader, and the dummy / nothing-due cases re-wake through NextWake (rearmWake).
 func (d *EngineDriver) kickGroup(now int64) {
 	g, ok := d.eng.(groupEngine)
 	if !ok {
 		panic(fmt.Sprintf("engine driver: the engine %T leads a group but does not step one", d.eng))
 	}
 	if !g.StepDue(now) {
-		// No step is due (one is in flight or mid-dummy, or no rank has work): the leader's rank,
-		// idle, admits its waiting handoffs at once, then re-arms its wake.
+		// No step is due (the queue is full, one is mid-dummy, or no rank has work): the leader's
+		// rank, idle, admits its waiting handoffs at once, then re-arms its wake.
 		d.admitIdle(now)
 		d.rearmWake(now)
 		return
@@ -210,54 +209,60 @@ func (d *EngineDriver) kickGroup(now int64) {
 		o.admitIdle(now)
 	}
 	prev := d.preEventClock
-	before, _ := g.LockstepSteps()
-	b, err := d.eng.Schedule(now)
-	if err != nil {
-		panic(fmt.Sprintf("engine driver: the group's Schedule at %d: %v", now, err))
-	}
-	if after, _ := g.LockstepSteps(); after == before {
-		// Defensive: StepDue held, so Schedule began an iteration. If it somehow did not, nothing
-		// ran this instant.
-		d.rearmWake(now)
-		return
-	}
-	// The pulls the step's schedules admitted, each started by the driver that holds its request.
-	for _, t := range b.TransfersStarted {
-		for _, o := range drivers {
-			if _, ok := o.remote[t.Request]; ok {
-				o.startTransfers([]engine.Transfer{t}, now)
-				break
+	rank0Active := false
+	for {
+		before, _ := g.LockstepSteps()
+		b, err := d.eng.Schedule(now)
+		if errors.Is(err, engine.ErrNoCapacity) {
+			break
+		}
+		if err != nil {
+			panic(fmt.Sprintf("engine driver: the group's Schedule at %d: %v", now, err))
+		}
+		if after, _ := g.LockstepSteps(); after == before {
+			// Schedule began no iteration (its open / busyUntil / not-stepping guards): nothing more
+			// runs this instant.
+			break
+		}
+		// The pulls the step's schedules admitted, each started by the driver that holds its request.
+		for _, t := range b.TransfersStarted {
+			for _, o := range drivers {
+				if _, ok := o.remote[t.Request]; ok {
+					o.startTransfers([]engine.Transfer{t}, now)
+					break
+				}
 			}
 		}
-	}
-	active := g.LastActive()
-	for k, a := range active {
-		if a {
-			drivers[k].Clock = max(drivers[k].Clock, now)
-			drivers[k].stepIdx++
-			drivers[k].noteStep(now)
+		active := g.LastActive()
+		for k, a := range active {
+			if a {
+				drivers[k].Clock = max(drivers[k].Clock, now)
+				drivers[k].stepIdx++
+				drivers[k].noteStep(now)
+			}
 		}
-	}
-	if !active[0] {
-		d.Clock = prev
-	}
-	shares := d.splitGroupBatch(b)
-	for _, o := range drivers {
-		if ob, ran := shares[o]; ran {
-			o.notePreempted(ob)
+		rank0Active = rank0Active || active[0]
+		shares := d.splitGroupBatch(b)
+		for _, o := range drivers {
+			if ob, ran := shares[o]; ran {
+				o.notePreempted(ob)
+			}
 		}
-	}
-	for _, f := range b.Finished {
-		// A request the step ended without running it (engine.Batch.Finished) ends on the rank
-		// that holds it, at the step's start, as the normal driver finishes such a request in kick.
-		if o := d.groupOf(f.ID); o != nil {
-			o.finishUnrun([]engine.Finished{f}, now)
+		for _, f := range b.Finished {
+			// A request the step ended without running it (engine.Batch.Finished) ends on the rank
+			// that holds it, at the step's start, as the normal driver finishes such a request in kick.
+			if o := d.groupOf(f.ID); o != nil {
+				o.finishUnrun([]engine.Finished{f}, now)
+			}
 		}
-	}
-	if !b.Empty() {
-		// A real step runs a forward pass: time it (gpuFreeAt serialises steps exactly as the
-		// normal driver's timeBatch does over this same engine), admit each driver's share at the
-		// step's start, record each rank busy, and keep the batch in flight to complete at its end.
+		if b.Empty() {
+			// A dummy-only step runs no forward pass and is not in flight: the engine sets busyUntil
+			// and the group wakes when the dummy batches end (NextWake). No more runs this instant.
+			break
+		}
+		// A real step runs a forward pass: time it (gpuFreeAt serialises steps exactly as the normal
+		// driver's timeBatch does over this same engine), admit each driver's share at the step's
+		// start, record each rank busy, and keep the batch in flight to complete at its end.
 		start, end := d.timeBatch(b, now)
 		for _, o := range drivers {
 			if ob, ran := shares[o]; ran {
@@ -268,8 +273,11 @@ func (d *EngineDriver) kickGroup(now int64) {
 		d.groupInFlight = append(d.groupInFlight, groupBatch{b: b, shares: shares, end: end})
 		d.schedule(&driverGroupStepEnd{at: end})
 	}
-	// A dummy-only step runs no forward pass and is not in flight: the engine sets busyUntil and
-	// the group wakes when the dummy batches end (NextWake). rearmWake picks that up.
+	if !rank0Active {
+		// Rank 0 ran in no step this instant: its driver's clock stays at its last real event, as the
+		// host loop's group leaves an idle rank 0.
+		d.Clock = prev
+	}
 	d.rearmWake(now)
 	for _, m := range d.members {
 		m.rearmWake(now)
