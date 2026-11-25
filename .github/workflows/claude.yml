@@ -305,7 +305,7 @@ jobs:
           CLAUDE_CODE_DISABLE_THINKING: "1"
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
-          claude_args: '--model aws/claude-opus-5-5 --allowed-tools Skill Agent Bash Read Edit Write'
+          claude_args: "--model ${{ vars.CLAUDE_MODEL || 'aws/claude-opus-5-5' }} --allowed-tools Skill Agent Bash Read Edit Write"
           show_full_output: true
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
@@ -401,7 +401,7 @@ jobs:
           CLAUDE_CODE_DISABLE_THINKING: "1"
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
-          claude_args: '--model aws/claude-opus-5-5 --allowed-tools Skill Agent Bash Read Edit Write'
+          claude_args: "--model ${{ vars.CLAUDE_MODEL || 'aws/claude-opus-5-5' }} --allowed-tools Skill Agent Bash Read Edit Write"
           show_full_output: true
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
