@@ -694,13 +694,10 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 	return hitTokens, false
 }
 
-// AfterAlloc is update_state_after_alloc (scheduler.py:1146-1279): the load job for the hit's
-// chunks into the request's fresh blocks. Every allocated block is noted first, with or without
-// a hit, so that re-allocation flush detection (BuildMeta) also sees the blocks allocated for a
-// request another connector of a MultiConnector loads
-// (vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:1351-1363@4ba787ec).
+// AfterAlloc records blocks that can be the source of a pending store before
+// selecting groups for a restore. The port uses one GPU block pool for all
+// groups (vllm/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py:240-248,1065-1085@0fda86a3).
 func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, external int) {
-	blocks.Groups = selected(s.cfg, blocks.Groups)
 	for _, gb := range blocks.Groups {
 		for _, id := range gb {
 			if id != 0 {
@@ -711,6 +708,7 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 	if external == 0 {
 		return
 	}
+	blocks.Groups = selected(s.cfg, blocks.Groups)
 	st := s.reqs[r.ID]
 	st.loadRanges = st.loadRanges[:0]
 	local := st.localHit
