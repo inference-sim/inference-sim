@@ -77,7 +77,11 @@ running every cell; never edit either by hand.
 
 A scenario names its engine kind: `engine: {kind: vllm}` or `engine: {kind: sglang}`, and states no
 release (a `version` field is refused as unknown). `stack.json` names the engine commits this build runs,
-`blis version` prints them, and every Result records them under `engine`. An SGLang
+`blis version` prints them (`--json` for a caller that parses), and every Result records them under
+`engine`. Per engine kind, `blis version` reports the release whose serving behaviour the build
+prices — the release a benchmarked figure is comparable with, and the one every Result's kernel
+assumptions cite — beside the upstream tree its rules were ported from (provenance: it may be a commit
+with no release tag) and the deployment roles the build can run it in. An SGLang
 pool's `engine:` block states SGLang's own `ServerArgs` field names (`mem_fraction_static`,
 `chunked_prefill_size`, ...) and a name that is not one is refused naming it; `blis fields` prints each
 engine's field list. Two SGLang scenarios run in CI, `testdata/kernel/sglang/glm-5-h200-fp8-sglang-tp8.yaml`

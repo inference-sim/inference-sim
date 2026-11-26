@@ -39,6 +39,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/hardware"
 	specmodel "github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
+	latencykernel "github.com/inference-sim/inference-sim/substrate/kernel"
 )
 
 // The one place inference-sim builds the vLLM engine (#2021 B2). The engine's configuration -- the
@@ -1277,6 +1278,37 @@ func EngineReleases() []stack.Upstream {
 	return []stack.Upstream{
 		{Kind: sk, Version: sv, Commit: sc},
 		{Kind: blisvllm.Kind, Version: blisvllm.Upstream.Version, Commit: blisvllm.Upstream.Commit},
+	}
+}
+
+// vllmEngineModel is the vLLM engine as this build runs it, for `blis version`. Two releases are
+// recorded, and they are different facts:
+//
+//   - ModeledVersion is the release whose serving behaviour the kernel prices (the substrate's
+//     EngineBehaviourVersion), which is the release every Result's kernel assumptions cite. A
+//     benchmarked figure is comparable with it.
+//   - BuildVersion is the upstream tree the engine's rules were ported from
+//     (blisvllm.Upstream). It may be a commit with no release tag, so it is provenance only and a
+//     price is never reported against it.
+//
+// A vLLM pool can take any deployment role: colocated, or one side of a prefill/decode
+// deployment. Whether a particular model can disaggregate (its attention backend may have no KV
+// connector) is a per-model fact the run itself refuses, not a fact about the kind.
+func vllmEngineModel() engineReport {
+	// The upstream tree the rules came from is the build's own pin, read where stack.json and
+	// `blis version` read it, so the two reports cannot drift.
+	upstream := builtEngines()[blisvllm.Kind]
+	return engineReport{
+		Kind:           upstream.Kind,
+		ModeledVersion: latencykernel.EngineBehaviourVersion,
+		ModeledCommit:  latencykernel.EngineBehaviourCommit,
+		BuildVersion:   upstream.Version,
+		BuildCommit:    upstream.Commit,
+		Roles: []deployment.Role{
+			deployment.RoleColocated,
+			deployment.RolePrefill,
+			deployment.RoleDecode,
+		},
 	}
 }
 

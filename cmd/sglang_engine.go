@@ -130,6 +130,25 @@ func sglangEngineRelease() (kind, version, commit string) {
 	return engineKindSGLang, blissglang.Upstream.Version, blissglang.Upstream.Commit
 }
 
+// sglangEngineModel is the SGLang engine as this build runs it, for `blis version`. SGLang has no
+// separate kernel-behaviour pin: the one upstream release the engine models
+// (blissglang.Upstream) is both the release it prices and the tree its rules were ported from, so
+// both members of the record name it.
+//
+// An SGLang pool is colocated only: the engine refuses prefill/decode disaggregation
+// (engines/sglang/core/sglang, Engine.Add, names inference-sim/inference-sim#2351).
+func sglangEngineModel() engineReport {
+	upstream := builtEngines()[engineKindSGLang]
+	return engineReport{
+		Kind:           upstream.Kind,
+		ModeledVersion: upstream.Version,
+		ModeledCommit:  upstream.Commit,
+		BuildVersion:   upstream.Version,
+		BuildCommit:    upstream.Commit,
+		Roles:          []deployment.Role{deployment.RoleColocated},
+	}
+}
+
 // sglangRealScenario is the SGLang scenario file a run reads its engine from, set once the run's
 // host-side state has been adopted from the scenario's vLLM-form twin (adoptSGLangTwin).
 var sglangRealScenario string
