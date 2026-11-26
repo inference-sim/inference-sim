@@ -1,6 +1,9 @@
 package vllmengine
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
@@ -24,9 +27,10 @@ type preparedKV struct {
 			Connector string `yaml:"kv_connector"`
 			Role      string `yaml:"kv_role"`
 			Extra     struct {
-				CPUBytes int64  `yaml:"cpu_bytes_to_use"`
-				Spec     string `yaml:"spec_name"`
-				Eviction string `yaml:"eviction_policy"`
+				CPUBytes       int64            `yaml:"cpu_bytes_to_use"`
+				Spec           string           `yaml:"spec_name"`
+				Eviction       string           `yaml:"eviction_policy"`
+				SecondaryTiers []map[string]any `yaml:"secondary_tiers"`
 			} `yaml:"kv_connector_extra_config"`
 		} `yaml:"connectors"`
 	} `yaml:"kv_connector_extra_config"`
@@ -148,6 +152,55 @@ func TestAHostStatesTheMultiConnectorOrderInItsEngineBlock(t *testing.T) {
 	}
 	if _, err := engine.New(spec); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A disaggregated pool can state a p2p secondary tier on its CPU tier the same way a non-disaggregated
+// one does (offload.connector_options.secondary_tiers), beside pd_transfer.connector: MultiConnector.
+// The p2p tier sits on no device, so it is not one of vLLM's kv_offload keys the MultiConnector check
+// refuses: it moves with the rest of the tier into the offloading child's own kv_connector_extra_config,
+// and kv_offload keeps only what vLLM derives from the model. Before, splitOffload left secondary_tiers
+// in kv_offload, which checkConnectorPair refused unconditionally beside a MultiConnector
+// (inference-sim/inference-sim#2688).
+func TestAMultiConnectorPoolAcceptsAP2PSecondaryTier(t *testing.T) {
+	Register()
+	raw, err := os.ReadFile(roots(t, multiScenario)[RootScenario])
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := strings.Replace(string(raw), "  eviction_policy: lru\n",
+		"  eviction_policy: lru\n  spec: TieringOffloadingSpec\n  connector_options:\n    secondary_tiers: [{type: p2p, port: 5710}]\n", 1)
+	if !strings.Contains(s, "connector: MultiConnector\n") || !strings.Contains(s, "type: p2p") {
+		t.Fatal("fixture edit failed")
+	}
+	path := filepath.Join(t.TempDir(), "p2p-multi.yaml")
+	if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := map[string]string{RootScenario: path}
+	for i, role := range []string{"kv_producer", "kv_consumer"} {
+		kt, off := prepareKV(t, r, i)
+		if kt.Connector != "MultiConnector" || kt.Role != role || len(kt.Extra.Connectors) != 2 ||
+			kt.Extra.Connectors[1].Connector != "OffloadingConnector" {
+			t.Fatalf("pool %d: kv_transfer %+v, want MultiConnector over NixlConnector then OffloadingConnector", i, kt)
+		}
+		child := kt.Extra.Connectors[1].Extra
+		if len(child.SecondaryTiers) != 1 || child.SecondaryTiers[0]["type"] != "p2p" || child.SecondaryTiers[0]["port"] != 5710 {
+			t.Errorf("pool %d: the offloading child's secondary_tiers %v, want the one p2p tier on port 5710", i, child.SecondaryTiers)
+		}
+		if off.CPUBytes != 0 {
+			t.Errorf("pool %d: kv_offload %+v, want no vLLM keys beside a MultiConnector (the tier moved to the child)", i, off)
+		}
+		e, err := engine.New(engine.Spec{Kind: "vllm", UpstreamVersion: "0.34.0+0fda86a35419", Roots: r, Pool: i})
+		if err != nil {
+			t.Fatalf("pool %d: %v", i, err)
+		}
+		p, ok := e.(engine.Peered)
+		if !ok {
+			t.Errorf("pool %d: the engine has no p2p tier", i)
+		} else if !strings.HasSuffix(p.PeerAddr(), ":5710") {
+			t.Errorf("pool %d: the engine is peered at %q, want port 5710", i, p.PeerAddr())
+		}
 	}
 }
 

@@ -241,6 +241,8 @@ var glmMoeDsaConfigs = map[string]string{
 	"22e49334abf8562fecf70ca3292ba3f5b33f5602fb2bf10b52dd64a66cfe65ff": "glm-5.2-fp8",
 	"d3783a603e5aa9cb58eff7a5d8ac9c42d83156b229efe185c72e9e2dc8444923": "glm-5.2-nvfp4",
 	"3ac72612095574542f7fff847ada8e59d9199dd8af44bdf625d7e02615572e69": "glm-5.3",
+	"431f24a513b8eb7a57b103d00584547ffa1c934b9806c81b3bf996631bac6dd4": "glm-5.2-nvfp4-fp8",
+	"6b60cb5262933f94354c727060ed8477bb365fb679254fc7964f83ec693fe34d": "glm-5.3-mxfp4",
 }
 
 // architectureOf is the architecture the rules key on: the graph's own, else GlmMoeDsaForCausalLM

@@ -75,6 +75,15 @@ func (k *Kernel) tailBatchOf(b kernel.Batch) (kernel.Batch, bool) {
 	}
 	t := b
 	t.PadTokens, t.TailFrom, t.TailPadTokens = max(b.TailPadTokens, 0), 0, 0
+	// The tail prices its experts from this rank's own (trimmed) tokens, not the data-parallel
+	// group's real combined load: zeroing GroupTokens here makes step.go's moeDPFunnel split
+	// (moeRows = GroupTokens/funnel) fall back to this rank's own token count, as if every DP
+	// rank carried the tail's tokens in an equal share. The real engine's replay layers instead
+	// gather and price each rank's actual group token count (model_state.py:633-636@0fda86a3),
+	// which can differ from an equal split at dp > 1 under uneven routing. This is an accepted
+	// approximation, documented rather than resolved: TestTailBatchOfZerosGroupTokens
+	// (tail_rows_test.go) pins it, so a future per-rank group-tokens source for the tail changes
+	// this deliberately, not silently.
 	t.GroupTokens = 0
 	t.Reqs = make([]kernel.ReqShape, len(b.Reqs))
 	for i, r := range b.Reqs {

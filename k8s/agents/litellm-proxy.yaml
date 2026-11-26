@@ -1,0 +1,155 @@
+# The LiteLLM proxy for the pr-review runners (README.md).
+# It holds the LiteLLM key, from the secret blis-litellm (keys base-url and api-key), and adds it
+# to each request it relays; a pr-review job holds only a caller token, so the key never enters the
+# reviewer's session. The proxy relays a request only when it carries that token (the secret
+# blis-litellm-proxy-token, which pr-review.yml's review job gets as LITELLM_PROXY_TOKEN), so a
+# fork run that names the pr-review pool, and so gets no secrets, gets a 401. The proxy is its own
+# pod, not a sidecar, so the runner's egress can stay narrower than the proxy's (network.yaml).
+# Only blis-ci-pr-review pods may reach it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-proxy-nginx
+  namespace: blis
+data:
+  nginx.conf: |
+    worker_processes 1;
+    error_log /dev/stderr notice;
+    pid /tmp/nginx.pid;
+    events { worker_connections 1024; }
+    http {
+      include /etc/nginx/mime.types;
+      default_type application/octet-stream;
+      access_log /dev/stdout;
+      include /etc/nginx/conf.d/*.conf;
+    }
+  # proxy_pass takes a variable so nginx resolves the upstream at request time (the resolver below,
+  # the cluster DNS), and a changed load-balancer address never needs a restart. Host is the
+  # upstream's own name, from base-url, and so is the name its certificate is checked against.
+  #
+  # The caller sends the token as x-api-key (Claude Code) or as a Bearer Authorization (qa-review);
+  # $litellm_caller_ok is 1 when either header carries it. The "" and "Bearer " entries keep an
+  # empty token from matching an absent header: an empty token makes them duplicate keys, and
+  # nginx refuses to start. Neither header is logged (the default access log format).
+  default.conf.template: |
+    # Room for "Bearer " and a 64-character token as one map key (the default bucket holds 64).
+    map_hash_bucket_size 128;
+    map $http_x_api_key $litellm_caller_key {
+      default 0;
+      "" 0;
+      "${LITELLM_CALLER_TOKEN}" 1;
+    }
+    map $http_authorization $litellm_caller_bearer {
+      default 0;
+      "Bearer " 0;
+      "Bearer ${LITELLM_CALLER_TOKEN}" 1;
+    }
+    map $litellm_caller_key$litellm_caller_bearer $litellm_caller_ok {
+      default 1;
+      00 0;
+    }
+    server {
+      server_tokens off;
+      listen 0.0.0.0:4000;
+      resolver ${LITELLM_RESOLVER} valid=30s ipv6=off;
+      resolver_timeout 5s;
+      # A long review sends its whole conversation in each request (the default 1m returns 413).
+      client_max_body_size 32m;
+      # Relay streamed (SSE) replies as they come, and wait out a slow non-streamed one.
+      proxy_buffering off;
+      proxy_read_timeout 600s;
+      location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+      }
+      # Only the routes the reviewers call: Claude Code's /v1/messages and its count_tokens,
+      # qa-review's /chat/completions (either prefix) and the preflight's /v1/models. Any other
+      # LiteLLM route would get the real key too, so it is a 404 here. $uri is the normalized path
+      # the location matched, so that is the path sent upstream; the query string goes as is.
+      location ~ ^/(v1/messages(/count_tokens)?|v1/models|(v1/)?chat/completions)$ {
+        # No caller token, no relay: the upstream is never contacted.
+        if ($litellm_caller_ok = 0) {
+          return 401;
+        }
+        set $litellm_upstream ${LITELLM_UPSTREAM};
+        proxy_pass $litellm_upstream$uri$is_args$args;
+        proxy_set_header Authorization "Bearer ${LITELLM_KEY}";
+        proxy_set_header x-api-key "${LITELLM_KEY}";
+        proxy_set_header Host $proxy_host;
+        # Send the key only to a server whose certificate is valid for the upstream's name.
+        proxy_ssl_server_name on;
+        proxy_ssl_name $proxy_host;
+        proxy_ssl_verify on;
+        proxy_ssl_verify_depth 4;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+      }
+      location / {
+        return 404;
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-proxy
+  namespace: blis
+  labels:
+    app: litellm-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm-proxy
+  template:
+    metadata:
+      labels:
+        app: litellm-proxy
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: litellm-proxy
+          # The unprivileged nginx image runs as any uid in group 0, as OpenShift assigns one.
+          image: docker.io/nginxinc/nginx-unprivileged:1.30.6-alpine@sha256:f5116ed4606f3eb015dd4a8e28cb9b351476dc0ad4bc6e9f93b19cec130cdf03
+          env:
+            - name: LITELLM_UPSTREAM
+              valueFrom: {secretKeyRef: {name: blis-litellm, key: base-url}}
+            - name: LITELLM_KEY
+              valueFrom: {secretKeyRef: {name: blis-litellm, key: api-key}}
+            # The token a caller must send (the repository secret LITELLM_PROXY_TOKEN holds it too).
+            - name: LITELLM_CALLER_TOKEN
+              valueFrom: {secretKeyRef: {name: blis-litellm-proxy-token, key: token}}
+            # The cluster DNS service (kubectl -n openshift-dns get svc dns-default).
+            - {name: LITELLM_RESOLVER, value: "172.30.0.10"}
+            # envsubst replaces these alone, so nginx's own $variables stay.
+            - {name: NGINX_ENVSUBST_FILTER, value: "LITELLM_"}
+          ports:
+            - containerPort: 4000
+          volumeMounts:
+            - {name: nginx, mountPath: /etc/nginx/nginx.conf, subPath: nginx.conf}
+            - {name: nginx, mountPath: /etc/nginx/templates/default.conf.template, subPath: default.conf.template}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+      volumes:
+        - name: nginx
+          configMap:
+            name: litellm-proxy-nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-proxy
+  namespace: blis
+spec:
+  selector:
+    app: litellm-proxy
+  ports:
+    - port: 4000
+      targetPort: 4000

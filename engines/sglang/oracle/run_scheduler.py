@@ -20,6 +20,7 @@ environment. BLIS_SGLANG_ALLOW_GOLDEN_UPDATE=1 lets it write into a testdata/gol
 Every SGLANG_* variable of the caller's environment is removed from the scheduler process, which
 sets only those this runner lists (KEPT_SGLANG_ENV).
 """
+import faulthandler
 import json
 import multiprocessing
 import os
@@ -35,6 +36,15 @@ ROOT = os.path.dirname(HERE)
 # (SGLang's default is the Rust one, python/sglang/srt/environ.py:741@297e54fd).
 KEPT_SGLANG_ENV = {"SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND": "python"}
 JOIN_TIMEOUT_S = 600
+# How long before JOIN_TIMEOUT_S a scheduler process that is still running prints its stacks.
+HANG_DUMP_LEAD_S = 30
+
+
+def arm_hang_dump() -> None:
+    """Print every thread's stack to stderr if this scheduler process is still running shortly
+    before the parent gives up on it, so a hang names the call it is blocked in. Nothing else
+    changes: the process keeps running until the parent terminates it."""
+    faulthandler.dump_traceback_later(JOIN_TIMEOUT_S - HANG_DUMP_LEAD_S, exit=False)
 
 
 def server_args(scenario: dict):
@@ -89,6 +99,7 @@ def child(scenario: dict, sglang_root: str, out_path: str, on_step=None, setup=N
     """Run the scenario in this process. on_step is called at the start of every loop iteration,
     and setup after the harness's replacements and before the scheduler is built (both for
     oracle/run_hicache.py)."""
+    arm_hang_dump()
     for name in [n for n in os.environ if n.startswith("SGLANG_")]:
         del os.environ[name]
     os.environ.update(KEPT_SGLANG_ENV)

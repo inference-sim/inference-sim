@@ -76,34 +76,37 @@ func (cs *ClusterSimulator) registerPeer(inst *InstanceSimulator) {
 	cs.peers.byAddr[addr] = inst
 }
 
-// assignPeerAddr gives inst's engine the address "blis-node-<node>:<port>": the hostname the router
-// is told for the instance (EndpointTopology.Hostname), and the port the engine's own address states
-// plus the instance's index among the Peered instances of that node (0 for the first). It runs
-// before the instance is placed with its peers, and so before any engine places a peer by address,
-// and before the engine's first Schedule. A engine that takes no address (no SetPeerAddr) keeps the
-// one it states; an instance with no single hostname (none stated, or one spanning nodes) keeps it
-// too, and registerPeer refuses two instances that then share one. A refused address stops the run.
+// assignPeerAddr gives inst's engine the address "<host>:<port>": the hostname the router is told
+// for the instance (EndpointTopology.Hostname) when it has one, and the port the engine's own
+// address states plus the instance's index among the Peered instances counted against that key (0
+// for the first). An instance with no single hostname (none stated, or one spanning nodes,
+// endpoint_topology.go) has no router-told host to key the count on, so it keys on its own stated
+// host instead: still disambiguating two such instances that state the identical literal port, as a
+// deployment- or sweep-level offload: block applied to every pool does. It runs before the instance
+// is placed with its peers, and so before any engine places a peer by address, and before the
+// engine's first Schedule. A engine that takes no address (no SetPeerAddr) keeps the one it states.
 //
 // Named substitution (inference-sim/inference-sim#2439): this stands for the per-node VLLM_P2P_SIDE_CHANNEL_HOST a
 // deployment sets, and for the distinct side-channel port each engine of one node is given.
 func (cs *ClusterSimulator) assignPeerAddr(inst *InstanceSimulator) {
-	host := inst.endpointTopology.Hostname
-	if host == "" {
-		return
-	}
 	stated := inst.drv.PeerAddr()
 	i := strings.LastIndex(stated, ":")
 	port, err := strconv.Atoi(stated[i+1:])
 	if i < 0 || err != nil {
 		panic(fmt.Sprintf("ClusterSimulator: instance %s states the peer address %q, which is not host:port", inst.id, stated))
 	}
-	addr := fmt.Sprintf("%s:%d", host, port+cs.peers.onNode[host])
+	host, key := inst.endpointTopology.Hostname, inst.endpointTopology.Hostname
+	if host == "" {
+		host = stated[:i]
+		key = "stated:" + host
+	}
+	addr := fmt.Sprintf("%s:%d", host, port+cs.peers.onNode[key])
 	taken, err := inst.drv.SetPeerAddr(addr)
 	if err != nil {
 		panic(fmt.Sprintf("ClusterSimulator: instance %s refused the peer address %q: %v", inst.id, addr, err))
 	}
 	if taken {
-		cs.peers.onNode[host]++
+		cs.peers.onNode[key]++
 	}
 }
 

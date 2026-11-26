@@ -676,7 +676,7 @@ func TestClusterMatrix_UpdateFromSearch(t *testing.T) {
 	var cells []matrixCell
 	next := make(chan job)
 	var wg sync.WaitGroup
-	for w := 0; w < matrixWorkers; w++ {
+	for w, workers := 0, clusterMatrixWorkers(t); w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -798,6 +798,22 @@ func matrixSelected(cells []matrixCell, models []string) []matrixCell {
 	return out
 }
 
+// clusterMatrixWorkers is how many cells are simulated at once: BLIS_CLUSTER_MATRIX_WORKERS when it
+// is set (ci.yml sets it only on a runner with the cores and memory for more), else matrixWorkers.
+// A value that is not a positive integer fails the test rather than falling back silently.
+func clusterMatrixWorkers(t *testing.T) int {
+	t.Helper()
+	v := os.Getenv("BLIS_CLUSTER_MATRIX_WORKERS")
+	if v == "" {
+		return matrixWorkers
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 1 {
+		t.Fatalf("BLIS_CLUSTER_MATRIX_WORKERS=%q is not a positive integer", v)
+	}
+	return n
+}
+
 func TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason(t *testing.T) {
 	if testing.Short() {
 		t.Skip("simulates each cell of the support matrix")
@@ -815,7 +831,7 @@ func TestClusterMatrix_EveryCellSimulatesOrIsRefusedWithItsReason(t *testing.T) 
 	results := make(chan result, len(selected))
 	next := make(chan matrixCell)
 	var wg sync.WaitGroup
-	for w := 0; w < matrixWorkers; w++ {
+	for w, workers := 0, clusterMatrixWorkers(t); w < workers; w++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -1,6 +1,7 @@
 package llmd
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -299,6 +300,84 @@ func TestPrefixCacheAffinityFilterRunsOnTheInFlightLoad(t *testing.T) {
 	err := refusal(t, testDeployment(2), config("latencyPredictor"), nil)
 	if err == nil || !strings.Contains(err.Error(), "reads TTFT from the latency predictor (ttftSource latencyPredictor), an external service") {
 		t.Fatalf("want the latency-predictor source refused, got %v", err)
+	}
+}
+
+// TestUtilizationFilterRunsOnBLISProducedSignals: the fork's utilization-filter is hosted and runs
+// end to end on exactly the signals BLIS produces -- the EPP's in-flight load (active-requests) and
+// the engine's running requests, waiting queue and KV-cache utilization (server.go publishes all
+// three; the in-flight-load producer the fourth). A config gating on all four serves every request;
+// a condition on a metric BLIS cannot produce would be the filter's own validation, not ours, so
+// the audit here is that every metric it reads is one BLIS feeds it. It is StabilityAlpha in the
+// fork, so the config states --allow-experimental-plugins, as a scenario does in router.epp_flags
+// (#2205).
+func TestUtilizationFilterRunsOnBLISProducedSignals(t *testing.T) {
+	config := "apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n" +
+		"- type: metrics-data-source\n- type: core-metrics-extractor\n- type: inflight-load-producer\n" +
+		"- type: utilization-filter\n  parameters:\n    conditions:\n" +
+		"    - {metric: active-requests, maxValue: 1000}\n" +
+		"    - {metric: running-requests, maxValue: 1000}\n" +
+		"    - {metric: waiting-queue, maxValue: 1000}\n" +
+		"    - {metric: kv-cache-utilization, maxValue: 0.99}\n" +
+		"    fallbackOnEmpty: true\n" +
+		"- type: max-score-picker\n- type: single-profile-handler\n" +
+		"dataLayer:\n  sources:\n  - pluginRef: metrics-data-source\n    extractors:\n    - pluginRef: core-metrics-extractor\n" +
+		"schedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: utilization-filter\n  - pluginRef: max-score-picker\n"
+	cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(testRequests(40, 7, 500, 0)), nil)
+	cs.SetGateway(New(Options{Model: "test-model",
+		EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+config)}))
+	if err := cs.Run(); err != nil {
+		t.Fatalf("a utilization-filter on BLIS-produced signals is refused: %v", err)
+	}
+	if got := cs.AggregatedMetrics().CompletedRequests; got != 40 {
+		t.Fatalf("completed %d of 40 with the utilization-filter active (routing-rejected %d)", got, cs.RoutingRejections())
+	}
+}
+
+// TestUtilizationFilterRemovesEndpoints: TestUtilizationFilterRunsOnBLISProducedSignals above only
+// proves the filter runs and that a config no endpoint ever violates serves everything -- it never
+// proves the filter actually removes an endpoint from a routing decision (#2205). A running-requests
+// ceiling of 0 with fallbackOnEmpty false can never be satisfied once any pod has picked up a
+// request, so the candidate set empties and the request is a routing rejection rather than a
+// fallback to every pod; a ceiling the deployment never reaches must reject nothing.
+//
+// running-requests is a scraped signal (metrics-data-source + core-metrics-extractor), refreshed
+// only on the collector's periodic tick (50ms by default, Gateway's warm first sample is at
+// t=0 before any request has run), not on every request. testRequests' default 500us gap bursts
+// all 40 arrivals inside 20ms, every one routed off the stale, all-zero t=0 sample before the
+// first real scrape at t=50ms ever fires -- so maxValue 0 would reject nothing, not because the
+// filter does not work, but because no routing decision in that burst ever sees a fresh sample.
+// The 1500us gap here spans the first scrape (last arrival at 58.5ms), so later requests in the
+// burst are routed against pods the 50ms scrape has already reported as running.
+func TestUtilizationFilterRemovesEndpoints(t *testing.T) {
+	config := func(maxRunning int) string {
+		return fmt.Sprintf("apiVersion: llm-d.ai/v1\nkind: EndpointPickerConfig\nplugins:\n"+
+			"- type: metrics-data-source\n- type: core-metrics-extractor\n"+
+			"- type: utilization-filter\n  parameters:\n    conditions:\n"+
+			"    - {metric: running-requests, maxValue: %d}\n"+
+			"    fallbackOnEmpty: false\n"+
+			"- type: max-score-picker\n- type: single-profile-handler\n"+
+			"dataLayer:\n  sources:\n  - pluginRef: metrics-data-source\n    extractors:\n    - pluginRef: core-metrics-extractor\n"+
+			"schedulingProfiles:\n- name: default\n  plugins:\n  - pluginRef: utilization-filter\n  - pluginRef: max-score-picker\n",
+			maxRunning)
+	}
+	run := func(t *testing.T, maxRunning int) *cluster.ClusterSimulator {
+		t.Helper()
+		cs := newCluster(testDeployment(2), cluster.NewSliceRequestSource(testRequests(40, 7, 1500, 0)), nil)
+		cs.SetGateway(New(Options{Model: "test-model",
+			EPPFlags: append(DefaultEPPFlags(), "--allow-experimental-plugins", "--config-text="+config(maxRunning))}))
+		if err := cs.Run(); err != nil {
+			t.Fatalf("maxRunning=%d: Run: %v", maxRunning, err)
+		}
+		return cs
+	}
+	if cs := run(t, 0); cs.RoutingRejections() == 0 {
+		t.Errorf("running-requests maxValue 0, fallbackOnEmpty false: want routing rejections once a pod "+
+			"has run a request, got 0 (completed %d of 40)", cs.AggregatedMetrics().CompletedRequests)
+	}
+	if cs := run(t, 1000); cs.RoutingRejections() != 0 {
+		t.Errorf("running-requests maxValue 1000: want no endpoint ever excluded, got %d routing rejections",
+			cs.RoutingRejections())
 	}
 }
 

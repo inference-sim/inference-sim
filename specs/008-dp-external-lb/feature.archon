@@ -1,0 +1,70 @@
+# DP external load balancing — per-rank router-visible endpoints (inference-sim#2699, #2233)
+# Base: m321/dp-prefill-kv-fidelity (PR #2688 branch tip), NOT main — the feature stacks on
+# #2688 so it stays compatible with #2688's EnableKVEvents change that H1 extends.
+#
+# The feature modifies mostly-existing packages. The one genuinely new, dist-bearing component
+# is H1's per-rank endpoint view engine, modelled as a new sub-package `dprankview` that wraps
+# DPGroup and implements the engine contract (and the leader's group-step surface). H2 (the
+# `sim` kickGroup in-flight rewrite + the `sim/cluster` N-endpoint registration and leader/
+# member wiring) and H3 (the `cmd` construction + refusal lift) modify existing packages; their
+# contracts are carried in the sub-issue bodies, and their structural delta is the new
+# vllmengine -> dprankview import arrow. cmd builds the per-rank views at its single vLLM build
+# site, but reaches the view engine through the engine module's host facade
+# (vllmengine.DPRankViews) rather than importing dprankview directly: the host reaches the engine
+# only through engine.Engine and the host-facade packages, never the engine's other core packages
+# (TestTheHostReachesTheV032EngineOnlyThroughTheContract). cmd -> vllmengine already exists.
+
+invariant determinism {
+  statement: same resolved input at the same revisions yields byte-identical Result within a fixed topology
+  evidence: property_test, metamorphic_test
+}
+
+invariant request-conservation {
+  statement: N rank endpoints neither create nor drop requests relative to one collapsed instance
+  evidence: property_test
+}
+
+invariant clock-monotonicity {
+  statement: a rank view never observes a step before the group clock has advanced to it
+  evidence: property_test
+}
+
+invariant run-replay-parity {
+  statement: a trace captured against N rank endpoints replays to the same per-rank metrics
+  evidence: differential_test
+}
+
+# Existing packages the plan references.
+box github.com/inference-sim/inference-sim/sim
+box github.com/inference-sim/inference-sim/sim/cluster
+box github.com/inference-sim/inference-sim/sim/llmd
+box github.com/inference-sim/inference-sim/cmd
+box github.com/inference-sim/inference-sim/engines/vllm/core/vllm
+box github.com/inference-sim/inference-sim/engines/vllm/core/build
+box github.com/inference-sim/inference-sim/engines/vllm/vllmengine
+box github.com/inference-sim/inference-sim/substrate/contracts/engine
+
+# H1 — the per-rank endpoint view engine over one shared DPGroup. New sub-package so the view
+# stays behind the engine contract and is reached only through the engine's host facade
+# (vllmengine), which cmd calls at its single vLLM build site (import rule).
+hole github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview {
+  surface:
+    NewEndpointViews(group *DPGroup) []engine.Engine
+  allow:
+    import github.com/inference-sim/inference-sim/engines/vllm/core/vllm
+    import github.com/inference-sim/inference-sim/substrate/contracts/engine
+  contract:
+    BC-H1-1 a request KV lands only on the rank that holds it         [evidenced: property_test]
+    BC-H1-2 leader step reproduces the collapsed timeline under the internal-equivalent assignment [evidenced: differential_test]
+    BC-H1-3 StepDue is true whenever any rank has work, not only rank 0 [evidenced: property_test]
+    BC-H1-4 under external every rank publishes KV events tagged to its endpoint [evidenced: property_test]
+    BC-H1-5 no rank view observes a step before the group clock reaches it [evidenced: property_test]
+  cites:
+    invariant determinism
+    invariant clock-monotonicity
+}
+
+# Declared dependencies (new edges the feature introduces).
+arrow github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview -> github.com/inference-sim/inference-sim/engines/vllm/core/vllm : import
+arrow github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview -> github.com/inference-sim/inference-sim/substrate/contracts/engine : import
+arrow github.com/inference-sim/inference-sim/engines/vllm/vllmengine -> github.com/inference-sim/inference-sim/engines/vllm/core/vllm/dprankview : import

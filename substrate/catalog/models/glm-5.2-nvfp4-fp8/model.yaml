@@ -1,0 +1,10 @@
+name: glm-5.2-nvfp4-fp8
+source:
+  provider: huggingface
+  repo: RedHatAI/GLM-5.2-NVFP4-FP8
+  revision: 68629bdc58d2aa3398f4a32848839be938aad785
+  retrieved: 2026-11-24
+licence:
+  id: MIT
+  evidence: https://huggingface.co/RedHatAI/GLM-5.2-NVFP4-FP8/raw/68629bdc58d2aa3398f4a32848839be938aad785/README.md
+drafters: [speculator]

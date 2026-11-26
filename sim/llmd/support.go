@@ -36,6 +36,12 @@ var supported = map[string]bool{
 	// Its TTFT load gate reads the in-flight load (inflight-load-producer) on its default source;
 	// the fork refuses the latency-predictor source.
 	"prefix-cache-affinity-filter": true,
+	// Drops an endpoint over a threshold on signals BLIS already produces: the EPP's in-flight
+	// load (active-requests, from the inflight-load-producer) and the engine's running requests,
+	// waiting queue and KV-cache utilization (server.go publishes all three). It reads no
+	// predicted latency or other signal BLIS cannot produce (#2205). StabilityAlpha in the fork,
+	// so a scenario using it states --allow-experimental-plugins in router.epp_flags.
+	"utilization-filter": true,
 	// scorers
 	"queue-scorer":                 true,
 	"kv-cache-utilization-scorer":  true,

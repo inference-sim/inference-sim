@@ -33,6 +33,23 @@ func decodes(n int, ctx int64) []*sim.Request {
 	return out
 }
 
+// acrossDP prices one lockstep step through StepTimesAcrossDPOfShapes, the path the engine
+// ships (vllmengine.go's kernelPricer.StepTimesAcrossDP calls StepTimesAcrossDPOfStep, which
+// StepTimesAcrossDPOfShapes forwards to unconditionally). The dpLockstepScenario pool runs no
+// speculative decoding, so shapeOf's plain translation is exactly what batchOf would have
+// produced for these requests.
+func acrossDP(m *Model, batches [][]*sim.Request) []int64 {
+	ranks := make([][]ReqShape, len(batches))
+	for i, b := range batches {
+		shapes := make([]ReqShape, len(b))
+		for j, r := range b {
+			shapes[j] = shapeOf(r)
+		}
+		ranks[i] = shapes
+	}
+	return m.StepTimesAcrossDPOfShapes(ranks)
+}
+
 // A lockstep rank is priced at the group's largest token count when the step runs under a
 // CUDA graph (vLLM's DP padding), so load on one rank raises the other's price; an idle rank
 // runs a dummy batch, never cheaper than an empty step; and past the capture ceiling nothing
@@ -43,8 +60,8 @@ func TestStepTimesAcrossDP_PadsToTheLargestRank(t *testing.T) {
 		t.Fatalf("scenario %s runs CUDA graphs; the capture ceiling must be read from the kernel", dpLockstepScenario)
 	}
 	light := decodes(2, 4096)
-	alone := m.StepTimesAcrossDP([][]*sim.Request{light, light})
-	loaded := m.StepTimesAcrossDP([][]*sim.Request{light, decodes(m.pad.ceiling/2, 4096)})
+	alone := acrossDP(m, [][]*sim.Request{light, light})
+	loaded := acrossDP(m, [][]*sim.Request{light, decodes(m.pad.ceiling/2, 4096)})
 	if loaded[0] <= alone[0] {
 		t.Errorf("rank 0's price did not rise with rank 1's load: %d alone, %d beside a loaded rank", alone[0], loaded[0])
 	}
@@ -52,24 +69,24 @@ func TestStepTimesAcrossDP_PadsToTheLargestRank(t *testing.T) {
 		t.Errorf("equal ranks need no padding: got %d, own price %d", alone[0], m.StepTime(light))
 	}
 
-	idle := m.StepTimesAcrossDP([][]*sim.Request{nil, light})
+	idle := acrossDP(m, [][]*sim.Request{nil, light})
 	if idle[0] < m.StepTime(nil) {
 		t.Errorf("an idle rank's dummy batch priced %d, below an empty step %d", idle[0], m.StepTime(nil))
 	}
 
 	prefill := []*sim.Request{{InputTokens: make([]sim.TokenID, 4*m.pad.ceiling), NumNewTokens: 2 * m.pad.ceiling}}
-	eager := m.StepTimesAcrossDP([][]*sim.Request{light, prefill})
+	eager := acrossDP(m, [][]*sim.Request{light, prefill})
 	if eager[0] <= m.StepTime(light) || eager[1] >= m.StepTime(prefill) {
 		t.Errorf("past the capture ceiling a rank keeps its own attention but shares the experts' tokens with the group: got %v, own %d/%d",
 			eager, m.StepTime(light), m.StepTime(prefill))
 	}
-	alike := m.StepTimesAcrossDP([][]*sim.Request{prefill, prefill})
+	alike := acrossDP(m, [][]*sim.Request{prefill, prefill})
 	if alike[0] != m.StepTime(prefill) || alike[1] != m.StepTime(prefill) {
 		t.Errorf("ranks running alike must cost one rank's price: got %v, own %d", alike, m.StepTime(prefill))
 	}
 	// Unpadded, an idle rank still runs the dummy batch -- one uniform decode, all of it pad --
 	// which costs more than a step with no forward at all.
-	idleEager := m.StepTimesAcrossDP([][]*sim.Request{nil, prefill})
+	idleEager := acrossDP(m, [][]*sim.Request{nil, prefill})
 	if empty := m.StepTime(nil); idleEager[0] <= empty {
 		t.Errorf("an idle rank in an unpadded step priced %d, no more than an empty step %d", idleEager[0], empty)
 	}
@@ -131,7 +148,7 @@ func TestDPPadding_CeilingIffGraphs(t *testing.T) {
 	light := decodes(2, 4096)
 	mixed := []*sim.Request{{InputTokens: make([]sim.TokenID, 256), NumNewTokens: 64}}
 	unpadded := priceInGroup(fdo, light, fdo.batchOf(light).PaddedTokens()+fdo.batchOf(mixed).PaddedTokens())
-	if got := fdo.StepTimesAcrossDP([][]*sim.Request{light, mixed}); got[0] != unpadded {
+	if got := acrossDP(fdo, [][]*sim.Request{light, mixed}); got[0] != unpadded {
 		t.Errorf("FULL_DECODE_ONLY pads a mixed group step: rank 0 priced %d, unpadded %d", got[0], unpadded)
 	}
 }
@@ -162,7 +179,7 @@ func TestStepTimesAcrossDP_Laws(t *testing.T) {
 		for i := range batches {
 			batches[i] = drawRankBatch(rt, fmt.Sprintf("r%d", i), m.pad.ceiling)
 		}
-		out := m.StepTimesAcrossDP(batches)
+		out := acrossDP(m, batches)
 		maxOf := func(d []int64) int64 {
 			best := int64(0)
 			for _, v := range d {
@@ -175,7 +192,7 @@ func TestStepTimesAcrossDP_Laws(t *testing.T) {
 				rt.Fatalf("rank %d priced %d below its own batch %d", i, out[i], alone)
 			}
 		}
-		withIdle := m.StepTimesAcrossDP(append(append([][]*sim.Request{}, batches...), nil))
+		withIdle := acrossDP(m, append(append([][]*sim.Request{}, batches...), nil))
 		if maxOf(withIdle) < maxOf(out) {
 			rt.Fatalf("adding a dummy-only rank lowered the step from %d to %d", maxOf(out), maxOf(withIdle))
 		}
@@ -190,7 +207,7 @@ func TestStepTimesAcrossDP_Laws(t *testing.T) {
 		for i, j := range perm {
 			permuted[i] = batches[j]
 		}
-		pout := m.StepTimesAcrossDP(permuted)
+		pout := acrossDP(m, permuted)
 		for i, j := range perm {
 			if pout[i] != out[j] {
 				rt.Fatalf("permuting the ranks changed rank %d's price: %d vs %d", j, pout[i], out[j])
@@ -210,12 +227,12 @@ func TestStepTimesAcrossDP_ExpertsSeeTheGroupsSummedTokens(t *testing.T) {
 	prefill := []*sim.Request{{InputTokens: make([]sim.TokenID, 4*m.pad.ceiling), NumNewTokens: 2 * m.pad.ceiling}}
 	longer := []*sim.Request{{InputTokens: make([]sim.TokenID, 4*m.pad.ceiling), NumNewTokens: 3 * m.pad.ceiling / 2}}
 
-	mixed := m.StepTimesAcrossDP([][]*sim.Request{light, prefill})
-	both := m.StepTimesAcrossDP([][]*sim.Request{prefill, prefill})
+	mixed := acrossDP(m, [][]*sim.Request{light, prefill})
+	both := acrossDP(m, [][]*sim.Request{prefill, prefill})
 	if mixed[1] >= both[1] {
 		t.Errorf("the prefill rank beside a light rank priced %d, no less than beside an equal prefill %d", mixed[1], both[1])
 	}
-	beside := m.StepTimesAcrossDP([][]*sim.Request{longer, prefill})
+	beside := acrossDP(m, [][]*sim.Request{longer, prefill})
 	if mixed[1] >= beside[1] || beside[1] >= both[1] {
 		t.Errorf("a rank's price must rise with the other rank's tokens: %d beside light, %d beside a smaller prefill, %d beside an equal one",
 			mixed[1], beside[1], both[1])

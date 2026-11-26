@@ -119,12 +119,26 @@ models:
         source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
         sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
     note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
+  - model: glm-5.2-nvfp4-fp8
+    licence: MIT
+    texts:
+      - file: MIT.txt
+        source: https://raw.githubusercontent.com/spdx/license-list-data/279b7e997a87c09be00dd6bdda189519ade502cf/text/MIT.txt
+        sha256: b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5
+    note: "The card names MIT, and the repository holds no licence file and names no copyright holder, so the text is SPDX's MIT licence."
   - model: glm-5.3
     licence: LicenseRef-glm-5.3
     texts:
       - file: LicenseRef-glm-5.3.txt
         source: https://huggingface.co/zai-org/GLM-5.3/raw/aca966e4e02791568aa6a4ced368624b3d897f42/LICENSE
         sha256: 96e1622099fc9d6b70c9760f007d99e66d7497eec636b63c60fe208401e9170c
+  - model: glm-5.3-mxfp4
+    licence: LicenseRef-glm-5.3
+    texts:
+      - file: LicenseRef-glm-5.3.txt
+        source: https://huggingface.co/zai-org/GLM-5.3/raw/aca966e4e02791568aa6a4ced368624b3d897f42/LICENSE
+        sha256: 96e1622099fc9d6b70c9760f007d99e66d7497eec636b63c60fe208401e9170c
+    note: "The RedHatAI MXFP4 quantization inherits the GLM-5.3 model licence; the repository holds no separate licence file, so the text is zai-org/GLM-5.3's LICENSE."
   - model: glm-5.3-flash
     licence: MIT
     texts:

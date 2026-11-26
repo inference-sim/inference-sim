@@ -9,12 +9,3 @@ package runconfig
 // unfinished-request all-reduces: vLLM v0.31.0's dp_sync_interval default
 // (vllm/config/parallel.py:150), which blis-schemas has no field to state.
 const DPSyncInterval = 16
-
-// DPStepPricer prices one lockstep step of a data-parallel group (#1909).
-//
-// batches[i] is rank i's scheduled requests; an empty one is a rank with nothing ready,
-// which runs vLLM's dummy batch. The result is each rank's own step duration in ticks,
-// each >= 1. A pricer applies whatever padding the engine applies across the ranks.
-type DPStepPricer interface {
-	StepTimesAcrossDP(batches [][]*Request) []int64
-}

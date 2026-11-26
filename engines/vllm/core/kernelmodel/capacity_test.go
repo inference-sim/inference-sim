@@ -259,11 +259,11 @@ func TestRaisingMemoryUtilizationNeverLowersTheSequenceCeiling(t *testing.T) {
 //
 // End to end BLIS's own pool differs: the test logs BLIS pool 436776 blocks (47.56 GiB),
 // admitting 22318251 tokens, against vLLM's 61.18 GiB and 28706997 tokens. The fixed per-rank
-// occupancy the pool subtracts is the kernel's own estimate and differs from the engine's, and
-// nothing here localizes the difference or asserts its sign beyond these figures. That gap is
-// not the admission sizing this test pins; the test logs it, and
-// https://github.com/inference-sim/inference-sim/issues/2427 tracks making it an asserted, measured
-// figure.
+// occupancy the pool subtracts is the kernel's own estimate and differs from the engine's. That
+// gap is not the admission sizing this test pins, but it is now asserted with a one-sided band
+// (https://github.com/inference-sim/inference-sim/issues/2427): the pool may sit below vLLM's by
+// up to the tolerance, but a pool above vLLM's admits work the engine would refuse and fails
+// outright.
 func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 	const (
 		scenario    = "deepseek-v4.1-flash-h200-tp8-dspark5-1m.yaml"
@@ -302,8 +302,18 @@ func TestKVCapacityMatchesTheEnginesLoggedFigure(t *testing.T) {
 			"the check does not distinguish the admission charge", steady)
 	}
 
+	// #2427: BLIS's pool is device memory x gpu_memory_utilization minus the kernel's own
+	// fixed-occupancy estimate, which differs from vLLM's; today the pool is ~22% below the
+	// logged one. Tighten poolTolerance as the estimate improves. A pool above vLLM's admits
+	// work the engine would refuse, so that direction fails outright.
+	const poolTolerance = 0.25
+	blisGiB := float64(s.KVBlocks*s.KVBytesPerBlock) / (1 << 30)
 	t.Logf("BLIS pool %d blocks (%.2f GiB) admits %.0f tokens; vLLM's %.2f GiB admits %d",
-		s.KVBlocks, float64(s.KVBlocks*s.KVBytesPerBlock)/(1<<30), capacity(s.KVBlocks), loggedGiB, engine)
+		s.KVBlocks, blisGiB, capacity(s.KVBlocks), loggedGiB, engine)
+	if rel := (loggedGiB - blisGiB) / loggedGiB; rel < 0 || rel > poolTolerance {
+		t.Errorf("deepseek-v4.1-flash/vllm/h200/tp8: BLIS KV pool %.2f GiB is %.1f%% below vLLM's logged "+
+			"%.2f GiB, outside [0, %.0f%%] (#2427)", blisGiB, rel*100, loggedGiB, poolTolerance*100)
+	}
 }
 
 // A deployment too big for its part must be reported as that, not as a defect of the simulator

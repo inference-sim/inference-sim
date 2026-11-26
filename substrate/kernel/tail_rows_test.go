@@ -298,6 +298,24 @@ pools:
 	}
 }
 
+// TestTailBatchOfZerosGroupTokens pins the approximation tail.go documents above t.GroupTokens =
+// 0: the tail always prices its experts from this rank's own (trimmed) token count, never the
+// data-parallel group's real combined load the whole-batch step states in GroupTokens, whatever
+// that step's own GroupTokens was. A future per-rank group-tokens source for the tail changes this
+// deliberately; until then this is the kernel's accepted approximation at dp > 1.
+func TestTailBatchOfZerosGroupTokens(t *testing.T) {
+	k, _, cut := v41TailCase(t)
+	b := kernel.Batch{TailFrom: cut, GroupTokens: 99999, Reqs: []kernel.ReqShape{prefill(4096, 0, 128)}}
+	tail, ok := k.tailBatchOf(b)
+	if !ok {
+		t.Fatal("tailBatchOf reported no tail for a batch stating TailFrom")
+	}
+	if tail.GroupTokens != 0 {
+		t.Errorf("tailBatchOf's batch states GroupTokens %d; the tail prices this rank's own tokens alone, want 0",
+			tail.GroupTokens)
+	}
+}
+
 // The capture sizes the kernel prices from are readable by the engine that states a step's rows:
 // the plan's, ascending, the largest being the ceiling past which a step runs eager.
 func TestTheCaptureSizesEndAtTheCeilingAStepRunsEagerPast(t *testing.T) {

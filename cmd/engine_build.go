@@ -265,7 +265,13 @@ func fatalf(format string, args ...any) { logrus.Fatalf(format, args...) }
 // scenarioEndpointTopology uses the same role-specific kernel placements that price KV
 // handoffs (build.EndpointGroupPlacements), as the cluster's endpoint topology.
 func scenarioEndpointTopology(model *kernelmodel.Model, pools *kernelPools, total, prefill, decode int) (map[cluster.InstanceID]cluster.EndpointTopology, error) {
-	placed, err := build.EndpointGroupPlacements(model, pools.pools(), total, prefill, decode)
+	// A group is one instance (EndpointGroupPlacements), except under external DP load balancing,
+	// where every rank is its own router-visible instance, placed per rank (EndpointPlacements).
+	place := build.EndpointGroupPlacements
+	if externalDPActive() {
+		place = build.EndpointPlacements
+	}
+	placed, err := place(model, pools.pools(), total, prefill, decode)
 	if err != nil || placed == nil {
 		return nil, err
 	}
@@ -630,12 +636,113 @@ func rankInPool(id cluster.InstanceID, firstDecode int) int {
 	return build.RankInPool(string(id), firstDecode)
 }
 
-// requireKernelCapacity refuses a run whose instances do not fit the scenario's pools
-// (build.RequireGroupCapacity). Called once the instance counts are final.
+// requireKernelCapacity refuses a run whose instances do not fit the scenario's pools. Called
+// once the instance counts are final. The host runs a data-parallel group as one instance
+// (build.RequireGroupCapacity: a pool holds whole dp x pp x tp groups), except under external DP
+// load balancing, where every rank is its own router-visible instance (build.RequireCapacity: a
+// pool holds whole ranks).
 func requireKernelCapacity(p *kernelPools) {
-	if err := build.RequireGroupCapacity(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
+	check := build.RequireGroupCapacity
+	if externalDPActive() {
+		check = build.RequireCapacity
+	}
+	if err := check(kernelScenario, kernelOpened, p.pools(), runTopology()); err != nil {
 		logrus.Fatalf("%v", err)
 	}
+}
+
+// externalDP reports the data-parallel width to expose per rank under external load balancing and
+// whether external balancing is active (inference-sim#2699). A colocated run is governed by the
+// run-wide mode. A disaggregated (P/D) run resolves each pool's mode on its own: the run-wide
+// dpLoadBalancing is the flag's value, which for a P/D run RunEngineKnobs leaves at the default
+// (internal) whatever the pools state (engines/vllm/core/build/policy.go), so it cannot be trusted
+// here -- reading it is what made a P/D external deployment build collapsed-internal while the
+// Result reported external.
+//
+// External DP is driven for a colocated deployment and for a disaggregated (P/D) one: each rank is
+// a router-visible endpoint, the shared group steps through the sim leader/member path, and a
+// remote-prefilled decode sub-request completes on its rank through the leader/member split. A P/D
+// deployment must run external at the same data-parallel width on both pools; a mixed-mode or
+// mixed-width disaggregated deployment is refused (not run silently as one collapsed instance), its
+// per-pool handling not driven yet.
+func externalDP() (dp int, active bool) {
+	if kernelPDOpened == nil {
+		if dataParallelism > 1 && dpLoadBalancing == sim.DPLoadBalancingExternal {
+			return dataParallelism, true
+		}
+		return 0, false
+	}
+	pExt, pDP := poolExternalDP(kernelPDOpened.prefill)
+	dExt, dDP := poolExternalDP(kernelPDOpened.decode)
+	if !pExt && !dExt {
+		return 0, false
+	}
+	bothExternalSameWidth := pExt && dExt && pDP == dDP && pDP > 1
+	if !bothExternalSameWidth {
+		logrus.Fatalf("scenario %q: external data-parallel load balancing on a disaggregated deployment needs both pools "+
+			"external at the same data-parallel width; got prefill external=%v/dp%d, decode external=%v/dp%d",
+			kernelScenario, pExt, pDP, dExt, dDP)
+	}
+	return pDP, true
+}
+
+// poolExternalDP is a P/D pool's data-parallel width and whether it resolves to external balancing,
+// from the pool's own kernel model (its stated mode, resolved as vLLM resolves it -- a dp_local=1
+// hybrid resolves to external). A pool that is not a data-parallel group (dp <= 1) is not external.
+func poolExternalDP(m *engineModel) (external bool, dp int) {
+	dp = m.DataParallelWidth()
+	if dp <= 1 {
+		return false, dp
+	}
+	runs := m.ResolveDPLoadBalancing(m.Kernel().Deployment().Parallel)
+	return runs == deployment.DPLBExternal, dp
+}
+
+// externalDPActive reports whether the run drives a data-parallel group under external load
+// balancing: each rank is its own router-visible endpoint (inference-sim#2699).
+func externalDPActive() bool {
+	_, active := externalDP()
+	return active
+}
+
+// effectiveDPLoadBalancing is the DeploymentConfig.DPLoadBalancing the run sets: external when the
+// run drives external balancing (so the cluster's DPEachRankIsAnEndpoint check and the shared-group
+// JoinGroup fire), else the run-wide mode. The run-wide dpLoadBalancing is the flag default for a
+// P/D run and so is internal even when the pools state external; externalDPActive resolves the mode
+// per pool, so this reflects it.
+func effectiveDPLoadBalancing() string {
+	if externalDPActive() {
+		return sim.DPLoadBalancingExternal
+	}
+	return dpLoadBalancing
+}
+
+// externalDPLockstepRanks is the DeploymentConfig.DPLockstepRanks the run sets: the DP width under
+// external balancing (so the cluster groups each run of that many instances into one shared-group
+// replica), and 0 otherwise (a group is one collapsed instance, as before).
+func externalDPLockstepRanks() int {
+	dp, active := externalDP()
+	if active {
+		return dp
+	}
+	return 0
+}
+
+// scaleInstanceCountsForExternalDP multiplies the run's instance counts by the DP width when the
+// run drives external DP load balancing: every rank of a group becomes its own instance. A no-op
+// otherwise. Called once the group counts are final and before the capacity check reads them.
+// External balancing requires every pool's data-parallel width to match (externalDP), so one
+// width scales every pool's count alike.
+func scaleInstanceCountsForExternalDP() {
+	dp, active := externalDP()
+	if !active {
+		return
+	}
+	numInstances *= dp
+	prefillInstances *= dp
+	decodeInstances *= dp
+	prefillDecodeInstances *= dp
+	encodeInstances *= dp
 }
 
 // offloadPricing is what the engine's offload pricing reads from the run.
@@ -1180,6 +1287,16 @@ func EngineReleases() []stack.Upstream {
 // (dataOptions) and passed whole.
 func contractRoots(scenarioPath string) map[string]string {
 	return map[string]string{coreengine.RootScenario: scenarioPath}
+}
+
+// dpRankViews exposes a built external data-parallel group as one engine.Engine per rank — the
+// per-endpoint views the router sees under external load balancing (inference-sim#2699, H3),
+// through the engine module's host facade (vllmengine.DPRankViews). It reports false for any engine
+// that is not such a shared group, so the caller keeps its single collapsed instance. cmd reaches
+// the view engine only through engine.Engine and the facade, never the engine's core/vllm or
+// dprankview packages (the reach-the-engine-only-through-the-contract boundary).
+func dpRankViews(eng engine.Engine) ([]engine.Engine, bool) {
+	return coreengine.DPRankViews(eng)
 }
 
 // newContractEngine builds one engine from spec over the run's opened data. Every engine of a

@@ -140,6 +140,11 @@ type pool struct {
 	maxModelLen int
 	engine      yaml.Node
 	pp, dp      int
+	// externalLB is whether the pool's parallel.data_parallel_load_balancing resolves to external
+	// (inference-sim#2699): the deployment states the mode under parallel, which the engine block
+	// does not carry, so complete() translates it into the engine's data_parallel_external_lb. A
+	// dp_local=1 hybrid resolves to external too.
+	externalLB bool
 	// role is the pool's role and connector the deployment's pd_transfer.connector, which a
 	// prefill or decode pool runs as kv_producer or kv_consumer.
 	role      deployment.Role
@@ -247,7 +252,8 @@ func open(s engine.Spec, given *load.Data) (pool, error) {
 		return pool{}, fmt.Errorf("vllmengine: %s: %w", filepath.Base(path), err)
 	}
 	return pool{model: m, resolved: resolved, blocks: blocks, kvBytes: kvBytes, maxModelLen: st.MaxModelLen, engine: node, pp: max(par.PP, 1), dp: max(par.DP, 1),
-		role: m.Role(), connector: poolConnector, offload: off}, nil
+		externalLB: max(par.DP, 1) > 1 && m.ResolveDPLoadBalancing(par) == deployment.DPLBExternal,
+		role:       m.Role(), connector: poolConnector, offload: off}, nil
 }
 
 // offloadIssue tracks the offload connectors and options the engine does not model (the tier-4
@@ -674,6 +680,13 @@ func (p pool) complete(given yaml.Node) yaml.Node {
 	if p.dp > 1 {
 		// The pool's parallel.dp: the factory builds the data-parallel group behind one endpoint.
 		setIfAbsent(&block, "data_parallel_size", fmt.Sprint(p.dp))
+		if p.externalLB {
+			// The deployment's parallel.data_parallel_load_balancing: external is stated under
+			// parallel, which the engine block does not carry; translate it to the engine's flag so
+			// the group is built with one router-visible endpoint per rank (inference-sim#2699). An
+			// unstated data_parallel_size_local resolves to 1 (external = one rank per client).
+			setIfAbsent(&block, "data_parallel_external_lb", "true")
+		}
 	}
 	if p.model.HasRecurrentLayers() {
 		// The model runs vLLM's Mamba hook, which resolves mamba_cache_mode (core/vllm checkMambaCache).
@@ -995,10 +1008,18 @@ func connectorOf(kt *yaml.Node) string {
 
 // splitOffload separates the deployment's offload block (offloadOf) into what stays in kv_offload (the
 // connector and what vLLM derives from the model) and the tier the offloading child states under vLLM's
-// names: cpu_bytes_to_use, block_size, eviction_policy and spec_name.
+// names: cpu_bytes_to_use, block_size, eviction_policy, spec_name, and (unrenamed, vLLM already uses
+// these names on both sides) blocks_per_chunk, offload_prompt_only, spec_module_path,
+// cache_policy_module_path, secondary_tiers, backpressure and tier_poll_interval_s — a disaggregated
+// (P/D) pool's secondary tiers (e.g. a p2p tier) move with the rest of the tier, rather than being left
+// in kv_offload where checkConnectorPair refuses them beside a MultiConnector.
 func splitOffload(off *yaml.Node) (derived, tier *yaml.Node) {
 	rename := map[string]string{"cpu_bytes": "cpu_bytes_to_use", "block_size": "block_size",
-		"eviction_policy": "eviction_policy", "spec": "spec_name"}
+		"eviction_policy": "eviction_policy", "spec": "spec_name",
+		"blocks_per_chunk": "blocks_per_chunk", "offload_prompt_only": "offload_prompt_only",
+		"spec_module_path": "spec_module_path", "cache_policy_module_path": "cache_policy_module_path",
+		"secondary_tiers": "secondary_tiers", "backpressure": "backpressure",
+		"tier_poll_interval_s": "tier_poll_interval_s"}
 	derived = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	tier = &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 	for i := 0; i+1 < len(off.Content); i += 2 {

@@ -1,0 +1,94 @@
+# gha-runner-scale-set values for blis-ci-agents: the trusted agent jobs (claude.yml, archon.yml,
+# deliver-implement.yml, deliver-verify.yml, deliver-correct.yml), which hold the LiteLLM secrets
+# and a write token (`runs-on: blis-ci-agents`). No pull request code runs here (README.md).
+githubConfigUrl: https://github.com/inference-sim/inference-sim
+githubConfigSecret: blis-ci-github
+runnerScaleSetName: blis-ci-agents
+minRunners: 0
+# The old Deployment's 6 replicas: the number of agent jobs that run at once.
+maxRunners: 6
+# No container mode: no Docker daemon, no Kubernetes mode, no privileged sidecar.
+template:
+  metadata:
+    labels:
+      # What network.yaml in this directory selects: LiteLLM's addresses are open to these pods
+      # alone, never to a CI or pr-review pod.
+      blis-runner: agents
+  spec:
+    # A runner needs no access to the Kubernetes API.
+    automountServiceAccountToken: false
+    enableServiceLinks: false
+    restartPolicy: Never
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1001
+      runAsGroup: 1001
+      fsGroup: 1001
+      seccompProfile: {type: RuntimeDefault}
+    # As in k8s/ci: GitHub's runner image only supplies the runner, and the job runs in
+    # buildpack-deps, which has git, make, curl and python3 (the qa-review scripts use the standard
+    # library only). Both are public images pinned by digest.
+    initContainers:
+      - name: runner-files
+        image: ghcr.io/actions/actions-runner:2.338.1@sha256:e275409999c37162649aa050ca573f03eab2eabcb3a1e7fcc47548de6b4f9690
+        command: ["bash", "-c", "set -o pipefail; tar -C /home/runner -cf - . | tar -C /runner-home -xf - --no-overwrite-dir"]
+        resources:
+          requests: {cpu: "1", memory: 1Gi}
+          limits: {cpu: "1", memory: 1Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+          - {name: home, mountPath: /runner-home}
+      # The tools the agent jobs call that buildpack-deps lacks: gh and jq. Each is checked against
+      # its release's checksum file:
+      # https://github.com/jqlang/jq/releases/download/jq-1.7.1/sha256sum.txt
+      # https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_checksums.txt
+      - name: tools
+        image: docker.io/library/buildpack-deps:noble@sha256:924bf5a2e44d8ad64669df739cc3a7d331dfb0a5b41815f0ca71a4819a503e8a
+        command:
+          - bash
+          - -c
+          - >-
+            set -euo pipefail;
+            mkdir -p /runner-home/tools;
+            curl -sSfL -o /runner-home/tools/jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64;
+            echo "5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5  /runner-home/tools/jq" | sha256sum -c -;
+            chmod 0755 /runner-home/tools/jq;
+            curl -sSfL -o /tmp/gh.tar.gz https://github.com/cli/cli/releases/download/v2.103.3/gh_2.103.3_linux_amd64.tar.gz;
+            echo "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d  /tmp/gh.tar.gz" | sha256sum -c -;
+            tar -C /runner-home/tools -xzf /tmp/gh.tar.gz --strip-components=2 gh_2.103.3_linux_amd64/bin/gh
+        resources:
+          requests: {cpu: "1", memory: 1Gi}
+          limits: {cpu: "1", memory: 1Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+          - {name: home, mountPath: /runner-home}
+    containers:
+      - name: runner
+        image: docker.io/library/buildpack-deps:noble@sha256:924bf5a2e44d8ad64669df739cc3a7d331dfb0a5b41815f0ca71a4819a503e8a
+        command: ["/home/runner/run.sh"]
+        workingDir: /home/runner
+        env:
+          - {name: HOME, value: /home/runner}
+          - {name: PATH, value: "/home/runner/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
+        resources:
+          # 2 CPU and 4 GiB, as the runners these replace, with room for a Go build (archon-build.sh) above it.
+          requests: {cpu: "2", memory: 4Gi, ephemeral-storage: 10Gi}
+          limits: {cpu: "2", memory: 8Gi, ephemeral-storage: 30Gi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+          - {name: home, mountPath: /home/runner}
+          - {name: work, mountPath: /home/runner/_work}
+    volumes:
+      - name: home
+        emptyDir: {sizeLimit: 10Gi}
+      - name: work
+        emptyDir: {sizeLimit: 20Gi}

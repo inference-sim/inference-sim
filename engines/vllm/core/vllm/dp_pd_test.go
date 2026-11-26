@@ -519,6 +519,60 @@ func TestADataParallelGroupOffloadsEachRanksBlocksToItsOwnTier(t *testing.T) {
 	}
 }
 
+// Under vLLM's internal data-parallel balancer a pod is one router endpoint of rank index 0, and
+// only rank 0's KV events reach the router's precise-prefix index (#2677). So a data-parallel
+// group publishes rank 0's stored blocks alone, not the union of every rank's. Driving distinct
+// prompts that land on both ranks, the rank-0-only stream is a strict subset of the stream a group
+// that enabled every rank would publish. This fails if EnableKVEvents is reverted to enable every
+// rank: then the two streams are equal.
+func TestADataParallelGroupPublishesOnlyRank0KVEvents(t *testing.T) {
+	const n = 6
+	storedBlocks := func(enableEveryRank bool) map[string]bool {
+		he := newHostEngine(t, consumer+dpPool(2, 8, 1), 0)
+		h := &host{t: t, engs: []*hostEngine{he}}
+		g := he.e.(*DPGroup)
+		if enableEveryRank {
+			for _, r := range g.ranks { // the pre-#2677 behaviour, for a control
+				r.e.EnableKVEvents()
+			}
+		} else {
+			g.EnableKVEvents()
+		}
+		got := map[string]bool{}
+		he.onResult = func(res engine.Result) {
+			for _, e := range res.KVEvents {
+				if !e.Removed && !e.Cleared {
+					got[e.Hash] = true
+				}
+			}
+		}
+		for i := 0; i < n; i++ {
+			if err := g.Add(req(strings.Repeat("o", i+1), 80, 4), 0); err != nil {
+				t.Fatal(err)
+			}
+		}
+		h.run(func() bool { return len(he.finished) == n && len(he.due) == 0 && len(he.inflight) == 0 })
+		if len(he.finished) != n {
+			t.Fatalf("%d of %d requests finished", len(he.finished), n)
+		}
+		return got
+	}
+	rank0 := storedBlocks(false)
+	everyRank := storedBlocks(true)
+	if len(rank0) == 0 || len(everyRank) == 0 {
+		t.Fatalf("no stored KV events published (rank 0 %d, every rank %d)", len(rank0), len(everyRank))
+	}
+	for hsh := range rank0 {
+		if !everyRank[hsh] {
+			t.Errorf("the rank-0 stream has block %q that the every-rank stream does not", hsh)
+		}
+	}
+	if len(rank0) >= len(everyRank) {
+		t.Errorf("the rank-0 stream (%d blocks) is not fewer than the every-rank stream (%d): ranks 1..dp-1 are still publishing",
+			len(rank0), len(everyRank))
+	}
+}
+
 // A MultiConnector (NIXL beside the offloading connector) runs on each rank of a group as well: the NIXL
 // handoffs and the offload jobs of a rank share one numbering, so no two jobs of the group, of either connector,
 // share an ID.

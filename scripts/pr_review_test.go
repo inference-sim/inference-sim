@@ -9,7 +9,6 @@ package scripts_test
 
 import (
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,58 +18,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-
-// Minimal NetworkPolicy shape for parse-and-assert egress checks (refactor-proof:
-// asserts the except list on the actual :443 rule, not substring presence).
-type npParsed struct {
-	Kind     string `yaml:"kind"`
-	Metadata struct {
-		Name string `yaml:"name"`
-	} `yaml:"metadata"`
-	Spec struct {
-		PodSelector struct {
-			MatchLabels map[string]string `yaml:"matchLabels"`
-		} `yaml:"podSelector"`
-		Egress []struct {
-			To []struct {
-				PodSelector *struct {
-					MatchLabels map[string]string `yaml:"matchLabels"`
-				} `yaml:"podSelector"`
-				IPBlock *struct {
-					CIDR   string   `yaml:"cidr"`
-					Except []string `yaml:"except"`
-				} `yaml:"ipBlock"`
-			} `yaml:"to"`
-			Ports []struct {
-				Protocol string `yaml:"protocol"`
-				Port     int    `yaml:"port"`
-			} `yaml:"ports"`
-		} `yaml:"egress"`
-	} `yaml:"spec"`
-}
-
-// findNetworkPolicy decodes the multi-doc runner manifest and returns the
-// NetworkPolicy with the given name.
-func findNetworkPolicy(t *testing.T, name string) npParsed {
-	t.Helper()
-	data := readFileOrFail(t, filepath.Join("..", "k8s", "pr-review-runner.yaml"))
-	dec := yaml.NewDecoder(strings.NewReader(data))
-	for {
-		var np npParsed
-		err := dec.Decode(&np)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			t.Fatalf("decoding pr-review-runner.yaml: %v", err)
-		}
-		if np.Kind == "NetworkPolicy" && np.Metadata.Name == name {
-			return np
-		}
-	}
-	t.Fatalf("NetworkPolicy %q not found in pr-review-runner.yaml", name)
-	return npParsed{}
-}
 
 func prReviewWorkflowPath() string {
 	return filepath.Join("..", ".github", "workflows", "pr-review.yml")
@@ -214,11 +161,8 @@ func TestPrReviewReviewJobRunsOnDedicatedUntrustedPool(t *testing.T) {
 	p := parsePrReview(t)
 	review := p.Jobs["review"]
 	raw := strings.Join(flattenScalars(review.RunsOn), ",")
-	if !strings.Contains(raw, "pr-review-untrusted") {
-		t.Errorf("the `review` job must run on the dedicated `pr-review-untrusted` pool, got %q", raw)
-	}
-	if raw == "self-hosted" {
-		t.Error("the `review` job must NOT share the delivery loop's `self-hosted` pool")
+	if raw != "blis-ci-pr-review" {
+		t.Errorf("the `review` job must run on the dedicated `blis-ci-pr-review` pool alone, got %q", raw)
 	}
 }
 
@@ -423,9 +367,11 @@ func TestPrReviewActionsArePinnedToSHA(t *testing.T) {
 func TestPrReviewKeyNeverInSession(t *testing.T) {
 	wf := prReviewWorkflow(t)
 	// The real LiteLLM key is a GitHub Actions secret used by the delivery loop;
-	// the external reviewer must NOT reference it — it uses the litellm-proxy + a dummy.
-	if strings.Contains(wf, "secrets.LITELLM_API_KEY") {
-		t.Error("pr-review.yml must NOT reference secrets.LITELLM_API_KEY; the key lives in the litellm-proxy pod")
+	// the external reviewer must NOT reference it: it uses the litellm-proxy + its caller token.
+	for _, secret := range []string{"secrets.LITELLM_API_KEY", "secrets.LITELLM_BASE_URL"} {
+		if strings.Contains(wf, secret) {
+			t.Errorf("pr-review.yml must NOT reference %s; the key and its host live in the litellm-proxy pod", secret)
+		}
 	}
 	if !strings.Contains(wf, "Assert no LiteLLM key in the session") {
 		t.Error("pr-review.yml must assert at runtime that no real LiteLLM key is in the review job env")
@@ -466,65 +412,7 @@ func TestPrReviewSecondRoundHardening(t *testing.T) {
 			t.Errorf("pr-review.yml missing %q — %s", c.needle, c.why)
 		}
 	}
-	// The untrusted runner must be egress-locked (k8s manifest). The proxy now
-	// lives in its OWN pod (so the per-pod NetworkPolicy can confine the runner
-	// tighter than the proxy), replacing the old loopback-bind invariant. Parse
-	// the policy and assert the actual rules — NOT substring presence — so a
-	// refactor that moved an except CIDR onto the proxy's rule or into a comment
-	// would fail here.
-	np := findNetworkPolicy(t, "pr-review-runner-egress")
-	if got := np.Spec.PodSelector.MatchLabels["app"]; got != "github-runner-pr-review" {
-		t.Errorf("runner egress policy must select app=github-runner-pr-review, got %q", got)
-	}
-	// Find the :443 egress rule and assert its ipBlock excludes metadata + the VPC.
-	var except []string
-	var found443, proxyByLabel bool
-	for _, rule := range np.Spec.Egress {
-		has443, has4000 := false, false
-		for _, p := range rule.Ports {
-			if p.Port == 443 {
-				has443 = true
-			}
-			if p.Port == 4000 {
-				has4000 = true
-			}
-		}
-		if has443 {
-			found443 = true
-			for _, peer := range rule.To {
-				if peer.IPBlock != nil {
-					except = peer.IPBlock.Except
-				}
-			}
-		}
-		if has4000 {
-			for _, peer := range rule.To {
-				if peer.PodSelector != nil && peer.PodSelector.MatchLabels["app"] == "litellm-proxy" {
-					proxyByLabel = true
-				}
-			}
-		}
-	}
-	if !found443 {
-		t.Fatal("runner egress policy has no :443 rule")
-	}
-	for _, cidr := range []string{"169.254.0.0/16", "9.0.0.0/8"} {
-		if !slicesContains(except, cidr) {
-			t.Errorf("runner :443 egress must except %s (metadata + IBM VPC must be unreachable); except=%v", cidr, except)
-		}
-	}
-	if !proxyByLabel {
-		t.Error("runner egress must allow :4000 to the litellm-proxy pod by label (app=litellm-proxy)")
-	}
-}
-
-func slicesContains(xs []string, want string) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	// The runner's network laws are checked on the manifests in agent_runners_test.go.
 }
 
 func TestAssembleCommentCapsOversizeBody(t *testing.T) {
@@ -576,12 +464,15 @@ func TestAssembleCommentStaleWithholdsSections(t *testing.T) {
 
 func TestScrubSecretsRedactsButKeepsProse(t *testing.T) {
 	requirePython3(t)
-	in := "normal prose line\nsk-abcdef1234567890 and Bearer AbCdEf123456xyz789\nx-api-key: supersecretvalue123\nkeep this\n"
+	// The proxy's caller token is bare hex, which no pattern catches: it is redacted by value.
+	const proxyToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	t.Setenv("LLM_PROXY_TOKEN", proxyToken)
+	in := "normal prose line\nsk-abcdef1234567890 and Bearer AbCdEf123456xyz789\nx-api-key: supersecretvalue123\nthe value " + proxyToken + " here\nkeep this\n"
 	out, code := runPy(t, in, "pr_review/scrub_secrets.py")
 	if code != 0 {
 		t.Fatalf("scrub_secrets exited %d", code)
 	}
-	for _, leaked := range []string{"sk-abcdef1234567890", "AbCdEf123456xyz789", "supersecretvalue123"} {
+	for _, leaked := range []string{"sk-abcdef1234567890", "AbCdEf123456xyz789", "supersecretvalue123", proxyToken} {
 		if strings.Contains(out, leaked) {
 			t.Errorf("scrub_secrets leaked %q", leaked)
 		}

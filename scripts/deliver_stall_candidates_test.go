@@ -18,18 +18,11 @@ import (
 // there is no harness in this repository that can evaluate a workflow expression or a live API
 // response. Those remain covered by `actionlint` plus a live delivery.
 
-func requireJq(t *testing.T) {
-	t.Helper()
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Skip("jq is not on PATH")
-	}
-}
-
 // candidates runs the committed filter over a `gh pr list` payload and returns the selected PR
 // numbers in the order emitted.
 func candidates(t *testing.T, prListJSON string) []string {
 	t.Helper()
-	requireJq(t)
+	needJQ(t)
 
 	cmd := exec.Command("jq", "-r", "-f", scriptPath(t, "deliver-stall-candidates.jq"))
 	cmd.Stdin = strings.NewReader(prListJSON)

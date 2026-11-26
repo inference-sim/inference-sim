@@ -238,7 +238,8 @@ jobs:
       needs.check-permissions.outputs.allowed == 'true' &&
       needs.check-permissions.outputs.author_allowed == 'true' &&
       needs.check-permissions.outputs.is_review == 'false'
-    runs-on: [self-hosted]
+    # The agent runners, which alone may reach LiteLLM (k8s/agents).
+    runs-on: blis-ci-agents
     timeout-minutes: 60
     permissions:
       contents: write
@@ -304,7 +305,7 @@ jobs:
           CLAUDE_CODE_DISABLE_THINKING: "1"
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
-          claude_args: '--model claude-sonnet-4-6 --allowed-tools Skill Agent Bash Read Edit Write'
+          claude_args: "--model ${{ vars.CLAUDE_MODEL || 'aws/claude-opus-5-5' }} --allowed-tools Skill Agent Bash Read Edit Write"
           show_full_output: true
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git
@@ -351,7 +352,8 @@ jobs:
       needs.check-permissions.outputs.allowed == 'true' &&
       needs.check-permissions.outputs.author_allowed == 'true' &&
       needs.check-permissions.outputs.is_review == 'true'
-    runs-on: [self-hosted]
+    # The agent runners, which alone may reach LiteLLM (k8s/agents).
+    runs-on: blis-ci-agents
     timeout-minutes: 60
     permissions:
       contents: read          # cannot push — the whole point of this job (#1697)
@@ -399,7 +401,7 @@ jobs:
           CLAUDE_CODE_DISABLE_THINKING: "1"
         with:
           anthropic_api_key: ${{ secrets.LITELLM_API_KEY }}
-          claude_args: '--model claude-sonnet-4-6 --allowed-tools Skill Agent Bash Read Edit Write'
+          claude_args: "--model ${{ vars.CLAUDE_MODEL || 'aws/claude-opus-5-5' }} --allowed-tools Skill Agent Bash Read Edit Write"
           show_full_output: true
           plugin_marketplaces: |
             https://github.com/anthropics/claude-plugins-official.git

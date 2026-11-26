@@ -217,12 +217,12 @@ func TestShapeOfReadsEachPoolsLongPrefillThreshold(t *testing.T) {
 	}
 }
 
-// A P/D pool's data-parallel group is one engine behind vLLM's internal balancer, one endpoint.
-// A pool whose stated mode exposes more than one endpoint (external, or hybrid with fewer ranks
-// per node than the group, which vLLM runs as external for one rank per node) would be accepted
-// and run as that single endpoint, the stated mode ignored: it is refused naming the pool, the
-// field and the mode (inference-sim#1988). Each pool resolves its own mode, so the other pool
-// stays free to state internal.
+// A P/D pool's data-parallel group now runs under external balancing too: each rank is its own
+// router-visible endpoint, built host-side (inference-sim#2699). So a pool stating external, or
+// hybrid with one rank per node (which vLLM runs as external), is accepted; only hybrid with
+// several ranks per node -- one endpoint fronting a node's ranks, which the host does not build --
+// is still refused naming the pool, the field and the mode (inference-sim#1988). Each pool resolves
+// its own mode, so the other pool stays free to state internal.
 func TestPoolEngineKnobs_ManyEndpointPoolRefused(t *testing.T) {
 	const (
 		dp2    = poolTP4DP2
@@ -236,8 +236,8 @@ func TestPoolEngineKnobs_ManyEndpointPoolRefused(t *testing.T) {
 		refused                         bool
 		field                           string
 	}{
-		{"external at dp 2", poolTP8DP1, dp2 + "      data_parallel_load_balancing: external\n", deployment.RoleDecode, true, "external"},
-		{"hybrid, one rank per node, runs external", tp8dp2 + "      data_parallel_load_balancing: hybrid\n      dp_local: 1\n", poolTP8DP1, deployment.RolePrefill, true, "hybrid"},
+		{"external at dp 2 runs", poolTP8DP1, dp2 + "      data_parallel_load_balancing: external\n", deployment.RoleDecode, false, ""},
+		{"hybrid, one rank per node, runs external", tp8dp2 + "      data_parallel_load_balancing: hybrid\n      dp_local: 1\n", poolTP8DP1, deployment.RolePrefill, false, ""},
 		{"hybrid, four of eight ranks per node", tp2dp8 + "      data_parallel_load_balancing: hybrid\n      dp_local: 4\n", poolTP8DP1, deployment.RolePrefill, true, "hybrid"},
 		{"hybrid, every rank on one node, is internal", poolTP8DP1, dp2 + "      data_parallel_load_balancing: hybrid\n      dp_local: 2\n", deployment.RoleDecode, false, ""},
 		{"internal at dp 2", dp2 + "      data_parallel_load_balancing: internal\n", poolTP8DP1, deployment.RolePrefill, false, ""},

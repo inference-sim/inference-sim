@@ -1,0 +1,66 @@
+# What the agent pods may reach beyond k8s/ci/network.yaml (README.md). That file covers every pod
+# in blis: ingress denied, egress only to DNS and public addresses outside the intranet
+# (9.0.0.0/8). NetworkPolicies add up, so each policy here opens one path for the pods that carry
+# one label, and no CI pod carries it (the label comes from each scale set's values file):
+#   blis-runner: agents      the trusted agent jobs, which call LiteLLM directly with the secret
+#                            in their step env: LiteLLM's addresses, in the intranet, on 443
+#   blis-runner: pr-review   the untrusted reviewer: the litellm-proxy alone, on 4000
+#   app: litellm-proxy       LiteLLM's addresses on 443, and ingress from pr-review pods only
+# LiteLLM is behind a load balancer whose addresses rotate inside 9.0.0.0/8, so the rules name the
+# range, not the addresses.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-agents-litellm
+  namespace: blis
+spec:
+  podSelector:
+    matchLabels:
+      blis-runner: agents
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: 9.0.0.0/8}
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-pr-review-proxy
+  namespace: blis
+spec:
+  podSelector:
+    matchLabels:
+      blis-runner: pr-review
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: litellm-proxy
+      ports:
+        - {protocol: TCP, port: 4000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: litellm-proxy
+  namespace: blis
+spec:
+  podSelector:
+    matchLabels:
+      app: litellm-proxy
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              blis-runner: pr-review
+      ports:
+        - {protocol: TCP, port: 4000}
+  egress:
+    - to:
+        - ipBlock: {cidr: 9.0.0.0/8}
+      ports:
+        - {protocol: TCP, port: 443}

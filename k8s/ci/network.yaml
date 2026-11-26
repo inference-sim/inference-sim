@@ -1,0 +1,118 @@
+# The runner pods' network (README.md). Ingress is denied whole: a runner only dials out. Egress is
+# denied except DNS and HTTPS/HTTP to public addresses. The EgressFirewall below is meant to narrow
+# that to the hosts CI reads, but this cluster rejects its wildcard rules, so it is not in force
+# (README.md, Egress). Nothing in the cluster's own networks is reachable from a runner: not the API
+# server, not other namespaces, not the node or cloud metadata addresses, not the hosting
+# organization's intranet (9.0.0.0/8, public addresses). All of them cover every pod
+# in blis; allow-arc-api-server adds the API server for the ARC controller and its listeners only,
+# and k8s/agents/network.yaml adds LiteLLM and its proxy for the agent pods only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: blis
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-and-public-web
+  namespace: blis
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - {protocol: UDP, port: 5353}
+        - {protocol: TCP, port: 5353}
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+              # The hosting organization's intranet is on public addresses in 9.0.0.0/8, so the
+              # private ranges above do not cover it. Nothing CI fetches is in it.
+              - 9.0.0.0/8
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 80}
+---
+# The ARC controller and the listeners it starts (README.md setup step 3) run in blis and call the
+# API server; the runner pods, which carry neither label, still cannot. The addresses are the
+# cluster's API server: `kubectl get svc,endpoints kubernetes -n default` (the service address, and
+# the endpoints it forwards to, which are what the policy sees).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-arc-api-server
+  namespace: blis
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/component, operator: In, values: [controller-manager, runner-scale-set-listener]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock: {cidr: 172.30.0.1/32}
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        - ipBlock: {cidr: 192.168.98.146/32}
+        - ipBlock: {cidr: 192.168.98.147/32}
+        - ipBlock: {cidr: 192.168.98.148/32}
+      ports:
+        - {protocol: TCP, port: 6443}
+---
+# OVN-Kubernetes (OpenShift) applies the rules in order; the last denies every other address. The
+# list is what the jobs on these runners fetch:
+#   the runner itself and actions: GitHub, its API, its archive, release and object stores, the
+#     Actions service, results, cache and artifact endpoints (the last on Azure blob storage)
+#   Go: the module proxy and checksum database, and the toolchain download (setup-go)
+#   Python: PyPI, its file host, and the PyTorch CPU wheel index (the vLLM oracle's lock)
+#   the oracles' model configurations: Hugging Face (configuration files only, no weights)
+#   Node, for the github-script parse test (setup-node)
+# README.md setup step 6 says how to confirm the list from a run's egress log. Until the cluster
+# accepts the wildcard dnsName rules (README.md, Egress), none of this is in force.
+apiVersion: k8s.ovn.org/v1
+kind: EgressFirewall
+metadata:
+  name: default
+  namespace: blis
+spec:
+  egress:
+    - {type: Allow, to: {dnsName: github.com}}
+    - {type: Allow, to: {dnsName: api.github.com}}
+    - {type: Allow, to: {dnsName: codeload.github.com}}
+    - {type: Allow, to: {dnsName: "*.githubusercontent.com"}}
+    - {type: Allow, to: {dnsName: "*.actions.githubusercontent.com"}}
+    - {type: Allow, to: {dnsName: "*.blob.core.windows.net"}}
+    - {type: Allow, to: {dnsName: proxy.golang.org}}
+    - {type: Allow, to: {dnsName: sum.golang.org}}
+    - {type: Allow, to: {dnsName: storage.googleapis.com}}
+    - {type: Allow, to: {dnsName: go.dev}}
+    - {type: Allow, to: {dnsName: dl.google.com}}
+    - {type: Allow, to: {dnsName: pypi.org}}
+    - {type: Allow, to: {dnsName: files.pythonhosted.org}}
+    - {type: Allow, to: {dnsName: download.pytorch.org}}
+    - {type: Allow, to: {dnsName: huggingface.co}}
+    - {type: Allow, to: {dnsName: "*.hf.co"}}
+    - {type: Allow, to: {dnsName: nodejs.org}}
+    # The API server's endpoints, for the controller and listeners: allow-arc-api-server above keeps
+    # every other pod from them.
+    - {type: Allow, to: {cidrSelector: 192.168.98.146/32}}
+    - {type: Allow, to: {cidrSelector: 192.168.98.147/32}}
+    - {type: Allow, to: {cidrSelector: 192.168.98.148/32}}
+    - {type: Deny, to: {cidrSelector: 0.0.0.0/0}}

@@ -427,10 +427,10 @@ deepseek-v4-pro	vllm	h100	ib-400g	agg	24	256	runs			measured=114;literature=1;ve
 deepseek-v4-pro	vllm	h100	ib-400g	pd	24	256	runs			measured=228;literature=2;vendor_spec=28;assumed=104;not_charged=2	
 deepseek-v4-pro	vllm	h100	roce-400g	agg	24	256	runs			measured=114;vendor_spec=14;assumed=52;not_charged=1	
 deepseek-v4-pro	vllm	h100	roce-400g	pd	24	256	runs			measured=228;vendor_spec=28;assumed=106;not_charged=2	
-deepseek-v4-pro	vllm	h200	ib-400g	agg	8	256	runs			measured=110;transferred=2;literature=1;vendor_spec=14;assumed=51;not_charged=1	
-deepseek-v4-pro	vllm	h200	ib-400g	pd	8	256	runs			measured=220;transferred=4;literature=2;vendor_spec=28;assumed=104;not_charged=2	
-deepseek-v4-pro	vllm	h200	roce-400g	agg	8	256	runs			measured=110;transferred=2;vendor_spec=14;assumed=52;not_charged=1	
-deepseek-v4-pro	vllm	h200	roce-400g	pd	8	256	runs			measured=220;transferred=4;vendor_spec=28;assumed=106;not_charged=2	
+deepseek-v4-pro	vllm	h200	ib-400g	agg	8	256	runs			measured=110;calibrated=1;transferred=2;literature=1;vendor_spec=14;assumed=50;not_charged=1	
+deepseek-v4-pro	vllm	h200	ib-400g	pd	8	256	runs			measured=220;calibrated=2;transferred=4;literature=2;vendor_spec=28;assumed=102;not_charged=2	
+deepseek-v4-pro	vllm	h200	roce-400g	agg	8	256	runs			measured=110;calibrated=1;transferred=2;vendor_spec=14;assumed=51;not_charged=1	
+deepseek-v4-pro	vllm	h200	roce-400g	pd	8	256	runs			measured=220;calibrated=2;transferred=4;vendor_spec=28;assumed=104;not_charged=2	
 deepseek-v4.1-flash	sglang	b200	ib-400g	agg	64	0	refused	block_size_multiple			block_size 64 on a DeepSeek-V4-family model: its sparse attention and indexer run 128-token kernel blocks on this part, so a stated size must be a multiple of it, and the engine refuses this layout at startup
 deepseek-v4.1-flash	sglang	b200	ib-400g	pd	64	0	refused	block_size_multiple			the scenario's prefill pool: block_size 64 on a DeepSeek-V4-family model: its sparse attention and indexer run 128-token kernel blocks on this part, so a stated size must be a multiple of it, and the engine refuses this layout at startup
 deepseek-v4.1-flash	sglang	b200	roce-400g	agg	64	0	refused	block_size_multiple			block_size 64 on a DeepSeek-V4-family model: its sparse attention and indexer run 128-token kernel blocks on this part, so a stated size must be a multiple of it, and the engine refuses this layout at startup
@@ -815,6 +815,54 @@ glm-5.2-fp8	vllm	h200	ib-400g	agg	8	64	runs			measured=110;transferred=5;literat
 glm-5.2-fp8	vllm	h200	ib-400g	pd	8	64	runs			measured=220;transferred=10;literature=2;vendor_spec=28;assumed=90;not_charged=2	
 glm-5.2-fp8	vllm	h200	roce-400g	agg	8	64	runs			measured=110;transferred=5;vendor_spec=14;assumed=46;not_charged=1	
 glm-5.2-fp8	vllm	h200	roce-400g	pd	8	64	runs			measured=220;transferred=10;vendor_spec=28;assumed=92;not_charged=2	
+glm-5.2-nvfp4-fp8	sglang	b200	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	b200	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	b200	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	b200	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	b300	ib-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	b300	ib-800g	pd	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	b300	roce-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	b300	roce-800g	pd	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	gb200-nvl72	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	gb200-nvl72	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	gb200-nvl72	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	gb200-nvl72	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	gb300	ib-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	gb300	ib-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	gb300	roce-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	gb300	roce-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	h100	ib-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	h100	ib-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	h100	roce-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	h100	roce-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	h200	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	h200	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	h200	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	sglang	h200	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format nvfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.2-nvfp4-fp8	vllm	b200	ib-400g	agg	4	64	runs			measured=110;transferred=4;literature=1;vendor_spec=14;assumed=49;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	b200	ib-400g	pd	4	64	runs			measured=220;transferred=8;literature=2;vendor_spec=28;assumed=98;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	b200	roce-400g	agg	4	64	runs			measured=110;transferred=4;vendor_spec=14;assumed=50;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	b200	roce-400g	pd	4	64	runs			measured=220;transferred=8;vendor_spec=28;assumed=100;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	b300	ib-800g	agg	2	64	runs			measured=110;vendor_spec=14;assumed=50;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	b300	ib-800g	pd	2	64	runs			measured=220;vendor_spec=28;assumed=100;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	b300	roce-800g	agg	2	64	runs			measured=110;vendor_spec=14;assumed=50;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	b300	roce-800g	pd	2	64	runs			measured=220;vendor_spec=28;assumed=100;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	gb200-nvl72	ib-400g	agg	4	64	runs			measured=127;transferred=6;literature=1;vendor_spec=14;assumed=25;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	gb200-nvl72	ib-400g	pd	4	64	runs			measured=254;transferred=12;literature=2;vendor_spec=28;assumed=50;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	gb200-nvl72	roce-400g	agg	4	64	runs			measured=127;transferred=6;vendor_spec=14;assumed=26;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	gb200-nvl72	roce-400g	pd	4	64	runs			measured=254;transferred=12;vendor_spec=28;assumed=52;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	gb300	ib-800g	agg	2	64	runs			measured=93;vendor_spec=14;assumed=62;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	gb300	ib-800g	pd	4	64	runs			measured=186;vendor_spec=28;assumed=124;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	gb300	roce-800g	agg	2	64	runs			measured=93;vendor_spec=14;assumed=62;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	gb300	roce-800g	pd	4	64	runs			measured=186;vendor_spec=28;assumed=124;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	h100	ib-400g	agg	8	64	runs			measured=114;literature=1;vendor_spec=14;assumed=47;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	h100	ib-400g	pd	8	64	runs			measured=228;literature=2;vendor_spec=28;assumed=94;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	h100	roce-400g	agg	8	64	runs			measured=114;vendor_spec=14;assumed=48;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	h100	roce-400g	pd	8	64	runs			measured=228;vendor_spec=28;assumed=96;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	h200	ib-400g	agg	4	64	runs			measured=110;transferred=2;literature=1;vendor_spec=14;assumed=45;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	h200	ib-400g	pd	4	64	runs			measured=220;transferred=4;literature=2;vendor_spec=28;assumed=90;not_charged=2	
+glm-5.2-nvfp4-fp8	vllm	h200	roce-400g	agg	4	64	runs			measured=110;transferred=2;vendor_spec=14;assumed=46;not_charged=1	
+glm-5.2-nvfp4-fp8	vllm	h200	roce-400g	pd	4	64	runs			measured=220;transferred=4;vendor_spec=28;assumed=92;not_charged=2	
 glm-5.2-nvfp4	sglang	b200	ib-400g	agg	4	0	runs			measured=110;transferred=4;literature=1;vendor_spec=14;assumed=50;not_charged=1	
 glm-5.2-nvfp4	sglang	b200	ib-400g	pd	4	0	refused	sglang_pd_not_modelled	inference-sim/inference-sim#2351		sglang: prefill/decode disaggregation is not modelled yet (inference-sim/inference-sim#2351)
 glm-5.2-nvfp4	sglang	b200	roce-400g	agg	4	0	runs			measured=110;transferred=4;vendor_spec=14;assumed=51;not_charged=1	
@@ -1007,6 +1055,54 @@ glm-5.3-flash	vllm	h200	ib-400g	agg	4	16	runs			measured=110;transferred=10;lite
 glm-5.3-flash	vllm	h200	ib-400g	pd	4	16	runs			measured=220;transferred=20;literature=2;vendor_spec=28;assumed=98;not_charged=6	
 glm-5.3-flash	vllm	h200	roce-400g	agg	4	16	runs			measured=110;transferred=10;vendor_spec=14;assumed=50;not_charged=3	
 glm-5.3-flash	vllm	h200	roce-400g	pd	4	16	runs			measured=220;transferred=20;vendor_spec=28;assumed=100;not_charged=6	
+glm-5.3-mxfp4	sglang	b200	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	b200	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	b200	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	b200	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	b300	ib-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	b300	ib-800g	pd	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	b300	roce-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	b300	roce-800g	pd	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	gb200-nvl72	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	gb200-nvl72	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	gb200-nvl72	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	gb200-nvl72	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	gb300	ib-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	gb300	ib-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	gb300	roce-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	gb300	roce-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	h100	ib-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	h100	ib-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	h100	roce-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	h100	roce-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	h200	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	h200	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	h200	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	sglang	h200	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: weight format mxfp4 is not lowered (inference-sim/inference-sim#2344)
+glm-5.3-mxfp4	vllm	b200	ib-400g	agg	4	64	runs			measured=110;transferred=4;literature=1;vendor_spec=14;assumed=48;not_charged=1	
+glm-5.3-mxfp4	vllm	b200	ib-400g	pd	4	64	runs			measured=220;transferred=8;literature=2;vendor_spec=28;assumed=96;not_charged=2	
+glm-5.3-mxfp4	vllm	b200	roce-400g	agg	4	64	runs			measured=110;transferred=4;vendor_spec=14;assumed=49;not_charged=1	
+glm-5.3-mxfp4	vllm	b200	roce-400g	pd	4	64	runs			measured=220;transferred=8;vendor_spec=28;assumed=98;not_charged=2	
+glm-5.3-mxfp4	vllm	b300	ib-800g	agg	2	64	runs			measured=110;vendor_spec=14;assumed=49;not_charged=1	
+glm-5.3-mxfp4	vllm	b300	ib-800g	pd	2	64	runs			measured=220;vendor_spec=28;assumed=98;not_charged=2	
+glm-5.3-mxfp4	vllm	b300	roce-800g	agg	2	64	runs			measured=110;vendor_spec=14;assumed=49;not_charged=1	
+glm-5.3-mxfp4	vllm	b300	roce-800g	pd	2	64	runs			measured=220;vendor_spec=28;assumed=98;not_charged=2	
+glm-5.3-mxfp4	vllm	gb200-nvl72	ib-400g	agg	4	64	runs			measured=127;transferred=6;literature=1;vendor_spec=14;assumed=24;not_charged=1	
+glm-5.3-mxfp4	vllm	gb200-nvl72	ib-400g	pd	4	64	runs			measured=254;transferred=12;literature=2;vendor_spec=28;assumed=48;not_charged=2	
+glm-5.3-mxfp4	vllm	gb200-nvl72	roce-400g	agg	4	64	runs			measured=127;transferred=6;vendor_spec=14;assumed=25;not_charged=1	
+glm-5.3-mxfp4	vllm	gb200-nvl72	roce-400g	pd	4	64	runs			measured=254;transferred=12;vendor_spec=28;assumed=50;not_charged=2	
+glm-5.3-mxfp4	vllm	gb300	ib-800g	agg	2	64	runs			measured=93;vendor_spec=14;assumed=61;not_charged=1	
+glm-5.3-mxfp4	vllm	gb300	ib-800g	pd	4	64	runs			measured=186;vendor_spec=28;assumed=122;not_charged=2	
+glm-5.3-mxfp4	vllm	gb300	roce-800g	agg	2	64	runs			measured=93;vendor_spec=14;assumed=61;not_charged=1	
+glm-5.3-mxfp4	vllm	gb300	roce-800g	pd	4	64	runs			measured=186;vendor_spec=28;assumed=122;not_charged=2	
+glm-5.3-mxfp4	vllm	h100	ib-400g	agg	8	64	runs			measured=114;literature=1;vendor_spec=14;assumed=48;not_charged=1	
+glm-5.3-mxfp4	vllm	h100	ib-400g	pd	8	64	runs			measured=228;literature=2;vendor_spec=28;assumed=96;not_charged=2	
+glm-5.3-mxfp4	vllm	h100	roce-400g	agg	8	64	runs			measured=114;vendor_spec=14;assumed=49;not_charged=1	
+glm-5.3-mxfp4	vllm	h100	roce-400g	pd	8	64	runs			measured=228;vendor_spec=28;assumed=98;not_charged=2	
+glm-5.3-mxfp4	vllm	h200	ib-400g	agg	4	64	runs			measured=110;transferred=2;literature=1;vendor_spec=14;assumed=46;not_charged=1	
+glm-5.3-mxfp4	vllm	h200	ib-400g	pd	4	64	runs			measured=220;transferred=4;literature=2;vendor_spec=28;assumed=92;not_charged=2	
+glm-5.3-mxfp4	vllm	h200	roce-400g	agg	4	64	runs			measured=110;transferred=2;vendor_spec=14;assumed=47;not_charged=1	
+glm-5.3-mxfp4	vllm	h200	roce-400g	pd	4	64	runs			measured=220;transferred=4;vendor_spec=28;assumed=94;not_charged=2	
 glm-5.3-nvfp4	sglang	b200	ib-400g	agg	4	0	runs			measured=110;transferred=4;literature=1;vendor_spec=14;assumed=50;not_charged=1	
 glm-5.3-nvfp4	sglang	b200	ib-400g	pd	4	0	refused	sglang_pd_not_modelled	inference-sim/inference-sim#2351		sglang: prefill/decode disaggregation is not modelled yet (inference-sim/inference-sim#2351)
 glm-5.3-nvfp4	sglang	b200	roce-400g	agg	4	0	runs			measured=110;transferred=4;vendor_spec=14;assumed=51;not_charged=1	
@@ -3119,6 +3215,54 @@ nemotron-3-ultra-550b-a55b-bf16	vllm	h200	ib-400g	agg	16	16	runs			measured=110;
 nemotron-3-ultra-550b-a55b-bf16	vllm	h200	ib-400g	pd	16	16	runs			measured=220;transferred=4;literature=2;vendor_spec=28;assumed=86;not_charged=2	
 nemotron-3-ultra-550b-a55b-bf16	vllm	h200	roce-400g	agg	16	16	runs			measured=110;transferred=2;vendor_spec=14;assumed=44;not_charged=1	
 nemotron-3-ultra-550b-a55b-bf16	vllm	h200	roce-400g	pd	16	16	runs			measured=220;transferred=4;vendor_spec=28;assumed=88;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	b200	ib-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	b200	ib-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	b200	roce-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	b200	roce-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	b300	ib-800g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	b300	ib-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	b300	roce-800g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	b300	roce-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	gb200-nvl72	ib-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	gb200-nvl72	ib-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	gb200-nvl72	roce-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	gb200-nvl72	roce-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	gb300	ib-800g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	gb300	ib-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	gb300	roce-800g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	gb300	roce-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	h100	ib-400g	agg	16	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	h100	ib-400g	pd	16	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	h100	roce-400g	agg	16	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	h100	roce-400g	pd	16	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	h200	ib-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	h200	ib-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	h200	roce-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	sglang	h200	roce-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	b200	ib-400g	agg	8	16	runs			measured=110;transferred=4;literature=1;vendor_spec=14;assumed=47;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	b200	ib-400g	pd	8	16	runs			measured=220;transferred=8;literature=2;vendor_spec=28;assumed=94;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	b200	roce-400g	agg	8	16	runs			measured=110;transferred=4;vendor_spec=14;assumed=48;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	b200	roce-400g	pd	8	16	runs			measured=220;transferred=8;vendor_spec=28;assumed=96;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	b300	ib-800g	agg	4	16	runs			measured=110;vendor_spec=14;assumed=48;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	b300	ib-800g	pd	4	16	runs			measured=220;vendor_spec=28;assumed=96;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	b300	roce-800g	agg	4	16	runs			measured=110;vendor_spec=14;assumed=48;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	b300	roce-800g	pd	4	16	runs			measured=220;vendor_spec=28;assumed=96;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	gb200-nvl72	ib-400g	agg	8	16	runs			measured=127;transferred=6;literature=1;vendor_spec=14;assumed=23;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	gb200-nvl72	ib-400g	pd	8	16	runs			measured=254;transferred=12;literature=2;vendor_spec=28;assumed=46;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	gb200-nvl72	roce-400g	agg	8	16	runs			measured=127;transferred=6;vendor_spec=14;assumed=24;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	gb200-nvl72	roce-400g	pd	8	16	runs			measured=254;transferred=12;vendor_spec=28;assumed=48;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	gb300	ib-800g	agg	4	16	runs			measured=93;vendor_spec=14;assumed=60;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	gb300	ib-800g	pd	4	16	runs			measured=186;vendor_spec=28;assumed=120;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	gb300	roce-800g	agg	4	16	runs			measured=93;vendor_spec=14;assumed=60;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	gb300	roce-800g	pd	4	16	runs			measured=186;vendor_spec=28;assumed=120;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	h100	ib-400g	agg	16	16	runs			measured=114;transferred=3;literature=1;vendor_spec=14;assumed=45;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	h100	ib-400g	pd	16	16	runs			measured=228;transferred=6;literature=2;vendor_spec=28;assumed=90;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	h100	roce-400g	agg	16	16	runs			measured=114;transferred=3;vendor_spec=14;assumed=46;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	h100	roce-400g	pd	16	16	runs			measured=228;transferred=6;vendor_spec=28;assumed=92;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	h200	ib-400g	agg	8	16	runs			measured=110;transferred=5;literature=1;vendor_spec=14;assumed=43;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	h200	ib-400g	pd	8	16	runs			measured=220;transferred=10;literature=2;vendor_spec=28;assumed=86;not_charged=2	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	h200	roce-400g	agg	8	16	runs			measured=110;transferred=5;vendor_spec=14;assumed=44;not_charged=1	
+nemotron-3-ultra-550b-a55b-fp8-block	vllm	h200	roce-400g	pd	8	16	runs			measured=220;transferred=10;vendor_spec=28;assumed=88;not_charged=2	
 nemotron-3-ultra-550b-a55b-nvfp4	sglang	b200	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
 nemotron-3-ultra-550b-a55b-nvfp4	sglang	b200	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
 nemotron-3-ultra-550b-a55b-nvfp4	sglang	b200	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
@@ -3647,6 +3791,54 @@ qwen3.6-35b-a3b	vllm	h200	ib-400g	agg	1	16	runs			measured=110;transferred=2;lit
 qwen3.6-35b-a3b	vllm	h200	ib-400g	pd	1	16	runs			measured=220;transferred=4;literature=2;vendor_spec=28;assumed=86;not_charged=2	
 qwen3.6-35b-a3b	vllm	h200	roce-400g	agg	1	16	runs			measured=110;transferred=2;vendor_spec=14;assumed=44;not_charged=1	
 qwen3.6-35b-a3b	vllm	h200	roce-400g	pd	1	16	runs			measured=220;transferred=4;vendor_spec=28;assumed=88;not_charged=2	
+qwen3.8-27b-int4	sglang	b200	ib-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	b200	ib-400g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	b200	roce-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	b200	roce-400g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	b300	ib-800g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	b300	ib-800g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	b300	roce-800g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	b300	roce-800g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	gb200-nvl72	ib-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	gb200-nvl72	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	gb200-nvl72	roce-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	gb200-nvl72	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	gb300	ib-800g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	gb300	ib-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	gb300	roce-800g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	gb300	roce-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	h100	ib-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	h100	ib-400g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	h100	roce-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	h100	roce-400g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	h200	ib-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	h200	ib-400g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	h200	roce-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	sglang	h200	roce-400g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
+qwen3.8-27b-int4	vllm	b200	ib-400g	agg	1	16	runs			measured=110;transferred=4;literature=1;vendor_spec=14;assumed=46;not_charged=1	
+qwen3.8-27b-int4	vllm	b200	ib-400g	pd	1	16	runs			measured=220;transferred=8;literature=2;vendor_spec=28;assumed=92;not_charged=2	
+qwen3.8-27b-int4	vllm	b200	roce-400g	agg	1	16	runs			measured=110;transferred=4;vendor_spec=14;assumed=47;not_charged=1	
+qwen3.8-27b-int4	vllm	b200	roce-400g	pd	1	16	runs			measured=220;transferred=8;vendor_spec=28;assumed=94;not_charged=2	
+qwen3.8-27b-int4	vllm	b300	ib-800g	agg	1	16	runs			measured=110;vendor_spec=14;assumed=47;not_charged=1	
+qwen3.8-27b-int4	vllm	b300	ib-800g	pd	1	16	runs			measured=220;vendor_spec=28;assumed=94;not_charged=2	
+qwen3.8-27b-int4	vllm	b300	roce-800g	agg	1	16	runs			measured=110;vendor_spec=14;assumed=47;not_charged=1	
+qwen3.8-27b-int4	vllm	b300	roce-800g	pd	1	16	runs			measured=220;vendor_spec=28;assumed=94;not_charged=2	
+qwen3.8-27b-int4	vllm	gb200-nvl72	ib-400g	agg	1	16	runs			measured=127;transferred=6;literature=1;vendor_spec=14;assumed=22;not_charged=1	
+qwen3.8-27b-int4	vllm	gb200-nvl72	ib-400g	pd	4	16	runs			measured=254;transferred=12;literature=2;vendor_spec=28;assumed=46;not_charged=2	
+qwen3.8-27b-int4	vllm	gb200-nvl72	roce-400g	agg	1	16	runs			measured=127;transferred=6;vendor_spec=14;assumed=23;not_charged=1	
+qwen3.8-27b-int4	vllm	gb200-nvl72	roce-400g	pd	4	16	runs			measured=254;transferred=12;vendor_spec=28;assumed=48;not_charged=2	
+qwen3.8-27b-int4	vllm	gb300	ib-800g	agg	1	16	runs			measured=93;vendor_spec=14;assumed=59;not_charged=1	
+qwen3.8-27b-int4	vllm	gb300	ib-800g	pd	4	16	runs			measured=186;vendor_spec=28;assumed=120;not_charged=2	
+qwen3.8-27b-int4	vllm	gb300	roce-800g	agg	1	16	runs			measured=93;vendor_spec=14;assumed=59;not_charged=1	
+qwen3.8-27b-int4	vllm	gb300	roce-800g	pd	4	16	runs			measured=186;vendor_spec=28;assumed=120;not_charged=2	
+qwen3.8-27b-int4	vllm	h100	ib-400g	agg	1	16	runs			measured=114;literature=1;vendor_spec=14;assumed=45;not_charged=1	
+qwen3.8-27b-int4	vllm	h100	ib-400g	pd	1	16	runs			measured=228;literature=2;vendor_spec=28;assumed=90;not_charged=2	
+qwen3.8-27b-int4	vllm	h100	roce-400g	agg	1	16	runs			measured=114;vendor_spec=14;assumed=46;not_charged=1	
+qwen3.8-27b-int4	vllm	h100	roce-400g	pd	1	16	runs			measured=228;vendor_spec=28;assumed=92;not_charged=2	
+qwen3.8-27b-int4	vllm	h200	ib-400g	agg	1	16	runs			measured=110;transferred=2;literature=1;vendor_spec=14;assumed=43;not_charged=1	
+qwen3.8-27b-int4	vllm	h200	ib-400g	pd	1	16	runs			measured=220;transferred=4;literature=2;vendor_spec=28;assumed=86;not_charged=2	
+qwen3.8-27b-int4	vllm	h200	roce-400g	agg	1	16	runs			measured=110;transferred=2;vendor_spec=14;assumed=44;not_charged=1	
+qwen3.8-27b-int4	vllm	h200	roce-400g	pd	1	16	runs			measured=220;transferred=4;vendor_spec=28;assumed=88;not_charged=2	
 qwen3.8-27b	sglang	b200	ib-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
 qwen3.8-27b	sglang	b200	ib-400g	pd	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)
 qwen3.8-27b	sglang	b200	roce-400g	agg	1	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture Qwen3_5ForConditionalGeneration is not lowered (inference-sim/inference-sim#2344)

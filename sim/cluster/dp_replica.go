@@ -81,11 +81,18 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		}
 	}
 	cs.dpReplicas, cs.replicaOf = replicas, replicaOf
+	external := sim.DPEachRankIsAnEndpoint(config.DPLoadBalancing)
 	// A replica endpoint admits requests on one queue before the balancer picks a rank (INV-R1):
-	// its ranks share the stage their engine states. An external-balancer or P/D-pool rank keeps
-	// the stage it was built with: its own endpoint's.
+	// its ranks share the stage their engine states. An internal- or hybrid-balancer replica
+	// shares rank 0's stage (endpointReplica non-nil). An external shared-group replica also
+	// shares one stage, so the N router-visible views admit together exactly as the one collapsed
+	// instance would (the proof's byte-identity), and rank 0 leads the group's lockstep step while
+	// the rest join as members (the sim leader/member path). A replica whose ranks are
+	// separately-built engines (not a shared group) is coordinated at the cluster level alone
+	// (eventMembers), so it is left as built.
 	for _, rep := range replicas {
-		if cs.endpointReplica(rep.ranks[0]) == nil {
+		shared := external && rep.ranks[0].drv.LeadsGroupEngine()
+		if cs.endpointReplica(rep.ranks[0]) == nil && !shared {
 			continue
 		}
 		drivers := make([]*sim.EngineDriver, len(rep.ranks))
@@ -94,6 +101,12 @@ func (cs *ClusterSimulator) buildDPReplicas(config DeploymentConfig, instanceMap
 		}
 		if err := sim.ShareAdmissionStage(drivers); err != nil {
 			return fmt.Errorf("replica %s: %w", rep.id, err)
+		}
+		if shared {
+			// Rank 0's driver leads; the rest join as members in rank order, before the run starts.
+			for k, inst := range rep.ranks {
+				inst.drv.JoinGroup(rep.ranks[0].drv, k)
+			}
 		}
 	}
 	return nil
@@ -111,7 +124,8 @@ func (cs *ClusterSimulator) eventMembers(inst *InstanceSimulator) []*InstanceSim
 
 // endpointReplica is the replica whose endpoint stands for inst in routing, or nil when inst
 // is its own endpoint: under external DP load balancing every rank is, and a P/D pool's
-// ranks stay individually routable (a documented limitation).
+// ranks stay individually routable -- each then keeps its own KV-event visibility too, the
+// limitation documented below pickRank.
 func (cs *ClusterSimulator) endpointReplica(inst *InstanceSimulator) *dpReplica {
 	if cs.replicaOf == nil || cs.poolsConfigured() || sim.DPEachRankIsAnEndpoint(cs.config.DPLoadBalancing) {
 		return nil
@@ -159,6 +173,14 @@ func (cs *ClusterSimulator) rankFor(inst *InstanceSimulator) *InstanceSimulator 
 // preciseprefixcache/extractor.go:74-80), and a pod behind vLLM's internal balancer is one
 // endpoint of rank index 0, so only rank 0's events reach the index. Ranks 1..dp-1 cache
 // prefixes the router never sees.
+//
+// This file routes a replica's ranks, each its own InstanceSimulator and engine; it enables or
+// disables no rank's events itself. For a live, engine-contract-built DP group the enforcement
+// is the engine's: DPGroup.EnableKVEvents (engines/vllm/core/vllm/dpgroup.go) turns on rank 0's
+// engine alone, so Complete carries only its events (#2677) -- which is what makes the view
+// above hold. A replica built the rank-per-instance way (buildDPReplicas, tests only) has no
+// such gate: each rank's engine is enabled like any other instance's, so that path does not by
+// itself reproduce the rank-1..dp-1 blind spot this comment describes.
 
 // pickRank assigns a request that reached the replica's endpoint at now to a rank. The replica's
 // engine, its data-parallel group, picks it (the engine's PickRank), from the ranks' own counts
