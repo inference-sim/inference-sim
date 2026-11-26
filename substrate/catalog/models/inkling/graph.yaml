@@ -13,19 +13,71 @@ global:
   architecture: InklingForConditionalGeneration
   pipeline_boundary_bytes_per_token: 12288
 layer_kinds:
+- id: swa_dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 12288
+    k: 6144
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 64
+    n_kv: 16
+    d_h: 128
+    window: 512
+  - op: GEMM
+    role: o_proj
+    n: 6144
+    k: 8192
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 49152
+    k: 6144
+  - op: GEMM
+    role: mlp_down
+    n: 6144
+    k: 24576
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
 - id: swa_moe
   nodes:
   - op: Elementwise
     role: input_norm
   - op: GEMM
     role: qkv_proj
-    n: 10240
+    n: 12288
     k: 6144
   - op: Attention
     holds_engine_kv: true
     kind: swa
     n_q: 64
-    n_kv: 8
+    n_kv: 16
     d_h: 128
     window: 512
   - op: GEMM
@@ -177,14 +229,22 @@ layer_kinds:
   - - 11
     - 12
 stack:
+  prologue:
+  - swa_dense
+  - swa_dense
   pattern:
   - swa_moe
   - swa_moe
   - swa_moe
+  - full_moe
+  - swa_moe
+  - swa_moe
+  repeat: 10
+  epilogue:
+  - swa_moe
   - swa_moe
   - swa_moe
   - full_moe
-  repeat: 11
 modality: text_decoder_of_multimodal
 encoder:
   towers: []

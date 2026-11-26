@@ -1,0 +1,269 @@
+kind: ModelGraph
+name: longcat-flash-lite-fp8
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: dcbad85b67303e07faba9bacf18be12a215e63637ca9a908c594a8789b018a68
+  deriver_version: 1
+global:
+  hidden_size: 3072
+  vocab_size: 131072
+  tie_word_embeddings: false
+  weight_dtype: fp8
+  architecture: LongcatFlashNgramForCausalLM
+  context_window: 327680
+  weight_scale:
+    elements: 16384
+    bytes: 4
+layer_kinds:
+- id: flash_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm_0
+  - op: GEMM
+    role: qkv_a_proj_0
+    n: 2112
+    k: 3072
+    tp: replicated
+  - op: Elementwise
+    role: q_a_layernorm_0
+    bytes_per_token: 6144
+  - op: Elementwise
+    role: kv_a_layernorm_0
+    bytes_per_token: 2048
+  - op: GEMM
+    role: q_b_proj_0
+    n: 6144
+    k: 1536
+  - op: GEMM
+    role: kv_b_proj_0
+    n: 8192
+    k: 512
+  - op: Attention
+    holds_engine_kv: true
+    kind: mla
+    n_q: 32
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    prefill_qk_head_dim: 192
+    prefill_v_head_dim: 128
+    caches:
+    - name: kv0
+      kind: kv
+      owned: true
+      bytes_per_entry: 1152
+      bytes_by_cache_dtype:
+        fp8: 576
+        fp8_e4m3: 576
+  - op: GEMM
+    role: o_proj_0
+    n: 3072
+    k: 4096
+  - op: AllReduce
+    role: attn_out_0
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm_0
+  - op: GEMM
+    role: router
+    n: 384
+    k: 3072
+    tp: replicated
+    weight_dtype: fp32
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 1024
+    k: 3072
+    experts: 256
+    top_k: 12
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  - op: Elementwise
+    role: zero_expert_identity
+    bytes_per_token: 30720
+  - op: GEMM
+    role: mlp_gate_up_0
+    n: 12288
+    k: 3072
+  - op: GEMM
+    role: mlp_down_0
+    n: 3072
+    k: 6144
+  - op: AllReduce
+    role: mlp_out_0
+    emit: tensor_parallel
+  - op: Elementwise
+    role: input_norm_1
+  - op: GEMM
+    role: qkv_a_proj_1
+    n: 2112
+    k: 3072
+    tp: replicated
+  - op: Elementwise
+    role: q_a_layernorm_1
+    bytes_per_token: 6144
+  - op: Elementwise
+    role: kv_a_layernorm_1
+    bytes_per_token: 2048
+  - op: GEMM
+    role: q_b_proj_1
+    n: 6144
+    k: 1536
+  - op: GEMM
+    role: kv_b_proj_1
+    n: 8192
+    k: 512
+  - op: Attention
+    holds_engine_kv: true
+    kind: mla
+    n_q: 32
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    prefill_qk_head_dim: 192
+    prefill_v_head_dim: 128
+    caches:
+    - name: kv1
+      kind: kv
+      owned: true
+      bytes_per_entry: 1152
+      bytes_by_cache_dtype:
+        fp8: 576
+        fp8_e4m3: 576
+  - op: GEMM
+    role: o_proj_1
+    n: 3072
+    k: 4096
+  - op: AllReduce
+    role: attn_out_1
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm_1
+  - op: GEMM
+    role: mlp_gate_up_1
+    n: 12288
+    k: 3072
+  - op: GEMM
+    role: mlp_down_1
+    n: 3072
+    k: 6144
+  - op: AllReduce
+    role: mlp_out_1
+    emit: tensor_parallel
+  - op: Elementwise
+    role: moe_shortcut_add
+    bytes_per_token: 18432
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+  - - 16
+    - 17
+  - - 17
+    - 18
+  - - 18
+    - 19
+  - - 19
+    - 20
+  - - 20
+    - 21
+  - - 21
+    - 22
+  - - 22
+    - 23
+  - - 23
+    - 24
+  - - 24
+    - 25
+  - - 25
+    - 26
+  - - 26
+    - 27
+  - - 27
+    - 28
+  - - 28
+    - 29
+  - - 29
+    - 30
+  - - 30
+    - 31
+stack:
+  pattern:
+  - flash_moe
+  repeat: 14
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 131072
+  row_bytes: 6144
+  rows_per_token: 1
+  out_bytes_per_token: 6144
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
+- op: Gather
+  role: ngram_embedders
+  rows: 122683536
+  row_bytes: 512
+  rows_per_token: 12
+  out_bytes_per_token: 6144
+  shard: rows
+- op: AllReduce
+  role: ngram_embed_out
+  emit: tensor_parallel
+  bytes_per_token: 6144
+- op: GEMM
+  role: ngram_post_projs
+  n: 36864
+  k: 256
+  tp: replicated
+  weight_dtype: bf16
+- op: Elementwise
+  role: ngram_mean
+  bytes_per_token: 86016
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 131072
+  k: 3072
+  weight_dtype: bf16

@@ -1,0 +1,9 @@
+name: qwen2.5-0.5b-instruct
+source:
+  provider: huggingface
+  repo: Qwen/Qwen2.5-0.5B-Instruct
+  revision: 7ae557604adf67be50417f59c2c2f167def9a775
+  retrieved: 2026-11-26
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct/raw/7ae557604adf67be50417f59c2c2f167def9a775/LICENSE

@@ -1,0 +1,129 @@
+kind: ModelGraph
+name: opt-350m
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 3ec75df0e166476e342cf95226ba775d8155449a7b1e430728b3ca26b425e4ab
+  deriver_version: 1
+global:
+  hidden_size: 1024
+  vocab_size: 50272
+  tie_word_embeddings: true
+  weight_dtype: fp16
+  architecture: OPTForCausalLM
+  context_window: 2048
+layer_kinds:
+- id: opt_layer
+  nodes:
+  - op: GEMM
+    role: qkv_proj
+    n: 3072
+    k: 1024
+    bias_dtype: fp16
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 16
+    n_kv: 16
+    d_h: 64
+  - op: GEMM
+    role: o_proj
+    n: 1024
+    k: 1024
+    bias_dtype: fp16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: residual_add
+    bytes_per_token: 6144
+  - op: Elementwise
+    role: self_attn_layer_norm
+  - op: GEMM
+    role: fc1
+    n: 4096
+    k: 1024
+    bias_dtype: fp16
+  - op: Elementwise
+    role: mlp_act
+    tp: sharded
+    bytes_per_token: 16384
+  - op: GEMM
+    role: fc2
+    n: 1024
+    k: 4096
+    bias_dtype: fp16
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: mlp_residual_add
+    bytes_per_token: 6144
+  - op: Elementwise
+    role: final_layer_norm
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+stack:
+  pattern:
+  - opt_layer
+  repeat: 24
+embedding:
+- op: Gather
+  role: embed_tokens
+  rows: 50272
+  row_bytes: 1024
+  rows_per_token: 1
+  out_bytes_per_token: 1024
+  shard: rows
+- op: AllReduce
+  role: embed_out
+  emit: tensor_parallel
+  bytes_per_token: 1024
+- op: Gather
+  role: embed_positions
+  rows: 2050
+  row_bytes: 2048
+  rows_per_token: 1
+  out_bytes_per_token: 2048
+  shard: replicated
+- op: GEMM
+  role: project_in
+  n: 1024
+  k: 512
+  tp: replicated
+- op: Elementwise
+  role: embed_add
+  bytes_per_token: 6144
+head:
+- op: GEMM
+  role: project_out
+  n: 512
+  k: 1024
+  tp: replicated
+- op: GEMM
+  role: lm_head
+  n: 50272
+  k: 512
+  tp: column
+  aliases: embedding.embed_tokens

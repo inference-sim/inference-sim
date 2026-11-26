@@ -1,0 +1,12 @@
+name: mistral-large-3-675b-instruct-2512
+source:
+  provider: huggingface
+  repo: mistralai/Mistral-Large-3-675B-Instruct-2512
+  revision: 51330c9da67945183568346369a07be224e5e1b0
+  path: params.json
+  retrieved: 2026-11-26
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/mistralai/Mistral-Large-3-675B-Instruct-2512/raw/51330c9da67945183568346369a07be224e5e1b0/README.md
+config:
+  sha256: c142d4eb0664efe71df035bfa8cc1342438adef2352096c847790ec5cafd644c

@@ -339,7 +339,8 @@ def test_attention_shape_matches_config(d: Path):
             assert n["n_q"] == heads
             assert n["d_h"] == dim
             continue
-        assert n["n_q"] == t["num_attention_heads"]
+        if not (n["kind"] == "swa" and config_of(d).get("architectures") == ["InklingForConditionalGeneration"]):
+            assert n["n_q"] == t["num_attention_heads"]
         if n["kind"] in ("mla", "sparse_mla"):
             # A latent cache holds one vector per token whatever the config's KV head
             # count says, so the engine pins it to one.
@@ -349,6 +350,10 @@ def test_attention_shape_matches_config(d: Path):
             # Gemma 4's full-attention layers take num_global_key_value_heads where
             # attention_k_eq_v is set (transformers' per_layer_config, which vLLM reads).
             assert n["n_kv"] == t["num_global_key_value_heads"]
+        elif n["kind"] == "swa" and config_of(d).get("architectures") == ["InklingForConditionalGeneration"]:
+            # Inkling's window layers state their own head counts (transformers'
+            # modeling_inkling.py: swa_num_key_value_heads where a layer is sliding).
+            assert (n["n_q"], n["n_kv"]) == (t["swa_num_attention_heads"], t["swa_num_key_value_heads"])
         elif n["kind"] == "swa" and config_of(d).get("architectures") == ["MiMoV2ForCausalLM"]:
             # MiMo-V2's window layers state their own key/value head count (swa_num_key_value_heads);
             # num_key_value_heads is the full-attention layers' (mimo_v2.py MiMoV2DecoderLayer).
@@ -1688,6 +1693,12 @@ EXPECTED_IDENTICAL = {
     # signature reads.
     frozenset({"llama-2-70b-hf", "llama-3.1-70b-instruct"}):
         "identical compute shapes; they differ in vocab, context length and rope theta",
+    frozenset({"gemma-4-31b-it", "gemma-4-31b-it-fp8-dynamic"}):
+        "one architecture and one set of shapes at two stored widths. RedHatAI's FP8-dynamic "
+        "release quantizes every language-model linear (its compressed-tensors ignore list names "
+        "the vision tower, lm_head and the embeddings), which the graph states as the global "
+        "width, and this signature reads node widths only. "
+        "test_gemma_4_31b_fp8_dynamic_stores_the_linears_at_fp8 states the difference",
 }
 
 
@@ -6189,6 +6200,7 @@ BOUNDARY_BYTES = {
     "deepseek-v4.1-flash": 4 * 5120 * 2 + 4 * 4,
     # hidden_states alone (inkling/nvidia/model.py:294-296, 354-359@v0.32.0).
     "inkling": 6144 * 2,
+    "inkling-nvfp4": 6144 * 2,
 }
 
 
@@ -7240,7 +7252,8 @@ def test_the_graphs_that_state_a_scale_are_the_block_scaled_ones():
     block = {"elements": 16384, "bytes": 4}
     assert {n for n, sc in scaled.items() if sc == block} == {
         "deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.1-fp8", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash",
-        "mimo-v2-flash", "minimax-m2.5", "minimax-m2.7", "mistral-large-4-1t-a52b", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
+        "longcat-flash-lite-fp8", "mimo-v2-flash", "minimax-m2.5", "minimax-m2.7",
+        "mistral-large-3-675b-instruct-2512", "mistral-large-4-1t-a52b", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
     assert {n for n, sc in scaled.items() if sc != block} == {
         "minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
         "deepseek-v4.1-flash"}
@@ -10584,6 +10597,151 @@ def test_mistral_large4_committed_graphs_census(model, layers_indexed, sharers):
     assert g["derived_from"]["format"] == "mistral_params_json"
 
 
+# --- Mistral-Large-3 (params.json, a DeepSeek-V3-style MLA MoE) -------------------------------------
+# A scaled-down document with the real key set of the two Mistral-Large-3 repos: 5 layers, the
+# first 2 dense, a 48-wide head (32 nope + 16 rope), a low-rank query.
+
+_L3_FP8_IGNORE = ["model.embed_tokens", "re:patch_merger.*", "re:vision_encoder.*",
+                  "re:vision_language_adapter.*", "re:.*kv_a_proj_with_mqa$", "re:.*q_a_proj$",
+                  "re:.*gate$", "lm_head"]
+_L3_NVFP4_IGNORE = ["model.embed_tokens", "re:patch_merger.*", "re:vision_encoder.*",
+                    "re:vision_language_adapter.*", "re:.*attn.*", "re:.*gate$", "lm_head"]
+
+
+def _large3_quant(nvfp4=False, ignore=None):
+    if nvfp4:
+        group = {"format": "nvfp4-pack-quantized", "output_activations": None, "targets": ["Linear"],
+                 "weights": {"num_bits": 4, "group_size": 16, "strategy": "tensor_group",
+                             "symmetric": True, "type": "float", "block_structure": None}}
+    else:
+        group = {"format": "float-quantized", "output_activations": None, "targets": ["Linear"],
+                 "weights": {"num_bits": 8, "group_size": None, "strategy": "block", "symmetric": True,
+                             "type": "float", "block_structure": [128, 128]}}
+    return {"config_groups": {"G": group}, "format": group["format"], "quant_method": "compressed-tensors",
+            "ignore": ignore or (_L3_NVFP4_IGNORE if nvfp4 else _L3_FP8_IGNORE), "kv_cache_scheme": None,
+            "sparsity_config": {}}
+
+
+def _large3_params(nvfp4=False, **edit) -> dict:
+    p = {"dim": 256, "head_dim": 48, "hidden_dim": 512, "kv_lora_rank": 64,
+         "llama_4_scaling": {"beta": 0.1, "original_max_position_embeddings": 8192},
+         "max_position_embeddings": 4096,
+         "moe": {"expert_hidden_dim": 96, "expert_model_parallel": 1, "expert_parallel": 1,
+                 "first_k_dense_replace": 2, "num_expert_groups": 1, "num_expert_groups_per_tok": 1,
+                 "num_experts": 8, "num_experts_per_tok": 2, "num_shared_experts": 1,
+                 "route_every_n": 1, "routed_scale": 1.0},
+         "n_heads": 4, "n_kv_heads": 4, "n_layers": 5, "norm_eps": 1e-06, "q_lora_rank": 80,
+         "qk_nope_head_dim": 32, "qk_rope_head_dim": 16, "quantization_config": _large3_quant(nvfp4),
+         "rope_theta": 10000.0, "tied_embeddings": False, "v_head_dim": 32, "vocab_size": 1000,
+         "vision_encoder": json.loads(_mistral_params_text_vision()),
+         "yarn": {"alpha": 1, "apply_scale": False, "beta": 32, "factor": 36,
+                  "original_max_position_embeddings": 8192}}
+    p.update(edit)
+    return p
+
+
+def _mistral_params_text_vision() -> str:
+    return json.dumps(_mistral_params()["vision_encoder"])
+
+
+def _large3(tmp_path, **kw):
+    return _mistral_derive(tmp_path, _large3_params(**kw))
+
+
+def _large3_roles(g, kid="attn_moe"):
+    return {n.get("role"): n for n in _mistral_kind(g, kid)["nodes"] if n.get("role")}
+
+
+def test_large3_is_a_deepseek_style_mla_stack_with_a_low_rank_query(tmp_path):
+    g = _large3(tmp_path)
+    assert layer_sequence(g["stack"]) == ["attn_dense"] * 2 + ["attn_moe"] * 3
+    r = _large3_roles(g)
+    # One fused A-projection over [q_lora_rank, kv_lora_rank + rope], then the two up-projections.
+    assert (r["qkv_a_proj"]["n"], r["qkv_a_proj"]["k"]) == (80 + 64 + 16, 256)
+    assert (r["q_b_proj"]["n"], r["q_b_proj"]["k"]) == (4 * 48, 80)
+    assert (r["kv_b_proj"]["n"], r["kv_b_proj"]["k"]) == (4 * (32 + 32), 64)
+    attn = next(n for n in _mistral_kind(g, "attn_moe")["nodes"] if n["op"] == "Attention")
+    assert (attn["kind"], attn["n_kv"], attn["d_h"]) == ("mla", 1, 64 + 16)
+    assert (r["experts"]["experts"], r["experts"]["top_k"], r["experts"]["n"]) == (8, 2, 96)
+    assert r["shared_gate_up"]["n"] == 2 * 96
+    dense = _large3_roles(g, "attn_dense")
+    assert dense["mlp_gate_up"]["n"] == 2 * 512 and "router" not in dense
+    assert g["global"]["context_window"] == 4096 and g["modality"] == "multimodal"
+
+
+def test_large3_block_fp8_keeps_the_ignored_latent_projections_and_head_at_bf16(tmp_path):
+    g = _large3(tmp_path)
+    assert (g["global"]["weight_dtype"], g["global"]["weight_scale"]) == ("fp8", {"elements": 16384, "bytes": 4})
+    r = _large3_roles(g)
+    for role in ("qkv_a_proj", "router"):
+        assert r[role]["weight_dtype"] == "bf16", role
+    for role in ("q_b_proj", "kv_b_proj", "o_proj", "experts", "shared_gate_up", "shared_down"):
+        assert "weight_dtype" not in r[role], role
+    assert "weight_dtype" not in _large3_roles(g, "attn_dense")["mlp_gate_up"]
+    assert _node({"nodes": g["head"]}, "lm_head")["weight_dtype"] == "bf16"
+
+
+def test_large3_nvfp4_keeps_attention_at_bf16_and_quantizes_every_mlp(tmp_path):
+    g = _large3(tmp_path, nvfp4=True)
+    assert g["global"]["weight_dtype"] == "nvfp4" and "weight_scale" not in g["global"]
+    r = _large3_roles(g)
+    for role in ("qkv_a_proj", "q_b_proj", "kv_b_proj", "o_proj", "router"):
+        assert r[role]["weight_dtype"] == "bf16", role
+    for role in ("experts", "shared_gate_up", "shared_down"):
+        assert "weight_dtype" not in r[role], role
+    d = _large3_roles(g, "attn_dense")
+    assert "weight_dtype" not in d["mlp_gate_up"] and "weight_dtype" not in d["mlp_down"]
+
+
+def test_large3_ignore_list_decides_each_module_not_the_scheme(tmp_path):
+    # Dropping the attention exclusion from the NVFP4 list quantizes the attention linears.
+    ignore = [e for e in _L3_NVFP4_IGNORE if e != "re:.*attn.*"]
+    g = _large3(tmp_path, nvfp4=True, quantization_config=_large3_quant(True, ignore))
+    r = _large3_roles(g)
+    assert all("weight_dtype" not in r[x] for x in ("q_b_proj", "o_proj", "kv_b_proj"))
+
+
+@pytest.mark.parametrize("edit,match", [
+    ({"tied_embeddings": True}, "tied_embeddings"),
+    ({"mtp": {"n_layers": 1}}, "mtp"),
+    ({"ragged_attention": "64"}, "ragged_attention"),
+    ({"llama_4_scaling": None}, "llama_4_scaling"),
+    ({"llama_4_scaling": {"beta": 0.1}}, "llama_4_scaling"),
+    ({"yarn": {"factor": 2, "surprise": 1}}, "surprise"),
+    ({"n_kv_heads": 2}, "n_kv_heads"),
+    ({"head_dim": 64}, "head_dim"),
+    ({"surprise_key": 1}, "surprise_key"),
+    ({"quantization_config": None}, "quantization_config"),
+])
+def test_large3_refuses_what_it_does_not_price(tmp_path, edit, match):
+    with pytest.raises(Exception, match=match):
+        _large3(tmp_path, **edit)
+
+
+def test_large3_refuses_a_head_the_ignore_list_leaves_quantized(tmp_path):
+    ignore = [e for e in _L3_FP8_IGNORE if e != "lm_head"]
+    with pytest.raises(Exception, match="lm_head"):
+        _large3(tmp_path, quantization_config=_large3_quant(False, ignore))
+
+
+def test_large3_refuses_a_module_quantized_on_some_layers_only(tmp_path):
+    ignore = _L3_FP8_IGNORE + ["model.layers.0.self_attn.o_proj"]
+    with pytest.raises(Exception, match="some layers"):
+        _large3(tmp_path, quantization_config=_large3_quant(False, ignore))
+
+
+def test_large3_refuses_a_scheme_it_has_not_read(tmp_path):
+    q = _large3_quant(False)
+    q["config_groups"]["G"]["weights"]["strategy"] = "tensor"
+    with pytest.raises(Exception, match="neither 128 x 128 block FP8 nor NVFP4"):
+        _large3(tmp_path, quantization_config=q)
+
+
+def test_large4_params_with_a_dsa_block_still_refuse_a_low_rank_query(tmp_path):
+    with pytest.raises(Exception, match="q_lora_rank"):
+        _mistral_derive(tmp_path, _mistral_params(q_lora_rank=1536))
+
+
 # --- HYV3ForCausalLM and MiMoV2ForCausalLM (inference-sim/inference-sim#2412) ----------------------------
 
 HY3 = MODELS / "hy3-fp8"
@@ -10789,3 +10947,677 @@ def test_mimo_vision_tower_is_bf16_and_audio_is_a_recorded_omission():
         assert nodes["attention"].get("window") == window
         assert (nodes["attention"]["n_heads"], nodes["attention"]["d_h"]) == (32, 64)
     assert [(o["modality"], o["issue"]) for o in enc["omitted"]] == [("audio", "inference-sim/inference-sim#2474")]
+
+
+# --- NemotronH under a ragged MIXED_PRECISION map (nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4) ---
+# Its quantized_layers map stores the same module at different widths on different layers: the shared
+# down projection NVFP4 on the first MoE layer and FP8 on the rest, one shared projection left out of
+# the map (so unquantized) on a few layers. These tests give the committed Nemotron-3-Ultra BF16 config
+# such a map and read the layout back from the derived graph, layer by layer.
+
+
+def _nemotron_ragged_raw(edit=None):
+    raw = config_of(NEMOTRON_ULTRA_BF16)
+    kinds = raw["layers_block_type"]
+    experts = int(raw["n_routed_experts"])
+    layers = {}
+    for i, kind in enumerate(kinds):
+        p = f"backbone.layers.{i}.mixer."
+        if kind == "moe":
+            for e in range(experts):
+                layers[f"{p}experts.{e}.up_proj"] = {"quant_algo": "NVFP4", "group_size": 16}
+                layers[f"{p}experts.{e}.down_proj"] = {"quant_algo": "NVFP4", "group_size": 16}
+            layers[p + "shared_experts.up_proj"] = {"quant_algo": "FP8"}
+            layers[p + "shared_experts.down_proj"] = {"quant_algo": "FP8"}
+        elif kind == "mamba":
+            layers[p + "in_proj"] = {"quant_algo": "FP8"}
+            layers[p + "out_proj"] = {"quant_algo": "FP8"}
+    raw["quantization_config"] = {"quant_method": "modelopt", "quant_algo": "MIXED_PRECISION",
+                                  "ignore": [], "quantized_layers": layers}
+    if edit:
+        edit(raw["quantization_config"]["quantized_layers"], kinds)
+    return raw
+
+
+def _widths_by_layer(g: dict, role: str) -> list:
+    """The stored width of the GEMM or grouped GEMM `role` on every layer that has one."""
+    out = []
+    for layer, ids in enumerate(layer_sequence(g["stack"])):
+        kind = {k["id"]: k for k in g["layer_kinds"]}[ids]
+        for n in kind["nodes"]:
+            if n.get("role") == role and n["op"] in ("GEMM", "GroupedGEMM"):
+                out.append((layer, n.get("weight_dtype", g["global"]["weight_dtype"])))
+    return out
+
+
+def test_nemotron_h_ragged_quantized_layers_give_each_outcome_its_own_layer_kind(tmp_path):
+    """One shared down projection stored NVFP4, one left out of the map, the rest FP8: every
+    layer is priced at the width the map gives it (a module the map does not name is stored
+    unquantized, ModelOptMixedPrecisionConfig.get_quant_method, modelopt.py:1844-1915@v0.33.0),
+    the width most layers share keeps the kind's name, and every other outcome is a kind of its own."""
+    moe = [i for i, k in enumerate(_nemotron_ragged_raw()["layers_block_type"]) if k == "moe"]
+    first, last = moe[0], moe[-1]
+
+    def edit(layers, kinds):
+        layers[f"backbone.layers.{first}.mixer.shared_experts.down_proj"] = {"quant_algo": "NVFP4",
+                                                                           "group_size": 16}
+        del layers[f"backbone.layers.{last}.mixer.shared_experts.up_proj"]
+
+    g = _derive_raw(_nemotron_ragged_raw(edit), tmp_path, "nemotron-ragged-test")
+    down = dict(_widths_by_layer(g, "shared_down"))
+    up = dict(_widths_by_layer(g, "shared_up"))
+    assert down[first] == "nvfp4" and all(down[i] == "fp8" for i in moe[1:])
+    assert up[last] == "bf16" and all(up[i] == "fp8" for i in moe[:-1])
+    assert {w for _, w in _widths_by_layer(g, "experts")} == {"nvfp4"}
+    # Three outcomes among the MoE layers: the common one under its own name, and one kind apiece.
+    ids = layer_sequence(g["stack"])
+    assert ids[moe[1]] == "moe" and len({ids[i] for i in moe}) == 3
+    assert ids[first] != "moe" and ids[last] != "moe" and ids[first] != ids[last]
+    # The split changes nothing but widths: every kind of one type has the same shapes.
+    shapes = lambda kind: [(n["op"], n.get("role"), n.get("n"), n.get("k")) for n in kind["nodes"]]
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    assert shapes(kinds[ids[first]]) == shapes(kinds["moe"]) == shapes(kinds[ids[last]])
+    assert len(ids) == len(_nemotron_ragged_raw()["layers_block_type"])
+    assert g["global"]["weight_dtype"] == "bf16"
+
+
+def test_nemotron_h_a_ragged_map_that_agrees_with_itself_adds_no_kinds(tmp_path):
+    """The same map with nothing ragged in it gives one kind a type, as the class placement does."""
+    g = _derive_raw(_nemotron_ragged_raw(), tmp_path, "nemotron-ragged-test")
+    assert set(layer_sequence(g["stack"])) == {"mamba", "moe", "attention"}
+    assert {k["id"] for k in g["layer_kinds"]} == {"mamba", "moe", "attention", "mtp_moe"}
+
+
+def test_nemotron_h_one_layer_storing_its_experts_at_two_widths_is_refused(tmp_path):
+    """The experts of one layer are one grouped GEMM, so a map that quantizes some of them NVFP4
+    and others FP8 cannot be priced."""
+    def edit(layers, kinds):
+        moe = next(i for i, k in enumerate(kinds) if k == "moe")
+        layers[f"backbone.layers.{moe}.mixer.experts.0.up_proj"] = {"quant_algo": "FP8"}
+
+    with pytest.raises(deriver().DeriveError, match="fuses shards|cannot price both"):
+        _derive_raw(_nemotron_ragged_raw(edit), tmp_path, "nemotron-ragged-test")
+# --- Glm4MoeForCausalLM (zai-org/GLM-4.6) ------------------------------------------------------
+
+def _glm4_moe_cfg(**over) -> dict:
+    """A small Glm4MoeForCausalLM config with GLM-4.6's structure: GQA with a qkv bias and a per-head
+    q/k norm, 2 dense layers then routed layers with one shared expert, one MTP layer."""
+    cfg = {
+        "architectures": ["Glm4MoeForCausalLM"], "model_type": "glm4_moe", "torch_dtype": "bfloat16",
+        "attention_bias": True, "use_qk_norm": True, "partial_rotary_factor": 0.5,
+        "head_dim": 64, "hidden_size": 512, "intermediate_size": 1536, "moe_intermediate_size": 256,
+        "num_attention_heads": 12, "num_key_value_heads": 4, "num_hidden_layers": 6,
+        "first_k_dense_replace": 2, "n_routed_experts": 16, "n_shared_experts": 1,
+        "num_experts_per_tok": 4, "num_nextn_predict_layers": 1, "vocab_size": 1000,
+        "tie_word_embeddings": False, "hidden_act": "silu", "n_group": 1, "topk_group": 1,
+    }
+    cfg.update(over)
+    return cfg
+
+
+def test_glm4_moe_stack_is_a_dense_prologue_then_routed_layers(tmp_path):
+    g = _derive_raw(_glm4_moe_cfg(), tmp_path, "glm4-test")
+    assert layer_sequence(g["stack"]) == ["attn_dense"] * 2 + ["attn_moe"] * 4
+    dense, moe = _kind(g, "attn_dense"), _kind(g, "attn_moe")
+    gu, dn = _node(dense, "mlp_gate_up"), _node(dense, "mlp_down")
+    assert (gu["n"], gu["k"], dn["n"], dn["k"]) == (2 * 1536, 512, 512, 1536)
+    ex, r = _node(moe, "experts"), _node(moe, "router")
+    assert (ex["n"], ex["k"], ex["experts"], ex["top_k"]) == (256, 512, 16, 4)
+    assert (r["n"], r["k"], r["weight_dtype"], r["tp"]) == (16, 512, "fp32", "replicated")
+    # One shared expert of the routed width (Glm4MoE: moe_intermediate_size x n_shared_experts).
+    assert (_node(moe, "shared_gate_up")["n"], _node(moe, "shared_down")["k"]) == (2 * 256, 256)
+
+
+def test_glm4_moe_qkv_carries_a_bias_and_o_proj_does_not(tmp_path):
+    g = _derive_raw(_glm4_moe_cfg(), tmp_path, "glm4-test")
+    for kid in ("attn_dense", "attn_moe"):
+        k = _kind(g, kid)
+        qkv, o = _node(k, "qkv_proj"), _node(k, "o_proj")
+        assert (qkv["n"], qkv["k"], qkv["bias_dtype"]) == ((12 + 2 * 4) * 64, 512, "bf16")
+        assert (o["n"], o["k"]) == (512, 12 * 64) and "bias_dtype" not in o
+    g = _derive_raw(_glm4_moe_cfg(attention_bias=False), tmp_path, "glm4-test")
+    assert "bias_dtype" not in _node(_kind(g, "attn_moe"), "qkv_proj")
+
+
+def test_glm4_moe_mtp_layer_is_a_routed_layer_behind_the_deepseek_input_stage(tmp_path):
+    """Glm4MoeMultiTokenPredictorLayer: enorm, hnorm, a bf16 eh_proj over 2 x hidden, a
+    Glm4MoeDecoderLayer at index num_hidden_layers (routed, as 6 >= first_k_dense_replace), then the
+    shared head's norm."""
+    g = _derive_raw(_glm4_moe_cfg(), tmp_path, "glm4-test")
+    s = g["speculator"]
+    assert (s["method"], s["num_spec_tokens"]) == ("mtp", 1)
+    assert layer_sequence(s["stack"]) == ["mtp_moe"]
+    k = _kind(g, "mtp_moe")
+    roles = _roles(k)
+    assert roles[:3] == ["mtp_enorm", "mtp_hnorm", "mtp_eh_proj"]
+    assert roles[-1] == "mtp_final_norm" and "experts" in roles
+    eh = _node(k, "mtp_eh_proj")
+    assert (eh["n"], eh["k"], eh["weight_dtype"], eh["tp"]) == (512, 1024, "bf16", "replicated")
+
+
+def test_glm4_moe_refuses_a_config_that_names_no_routed_experts(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph
+    raw = _glm4_moe_cfg()
+    del raw["n_routed_experts"]
+    with pytest.raises(derive_graph.DeriveError):
+        _derive_raw(raw, tmp_path, "glm4-test")
+
+
+def test_glm_4_6_committed_graph_is_the_checkpoints():
+    """The committed graph of zai-org/GLM-4.6 (config pinned by hash): 92 layers, 3 dense then 89
+    routed, 96 query and 8 key/value heads of 128, 160 routed experts of 1536 top 8 and one shared
+    expert; widths agree with the checkpoint's safetensors headers (q_proj [12288, 5120], k_proj
+    [1024, 5120], o_proj [5120, 12288], mlp.gate [160, 5120], eh_proj [5120, 10240])."""
+    g = graph_of(MODELS / "glm-4.6")
+    assert g["global"]["weight_dtype"] == "bf16" and g["global"]["vocab_size"] == 151552
+    assert layer_sequence(g["stack"]) == ["attn_dense"] * 3 + ["attn_moe"] * 89
+    k = _kind(g, "attn_moe")
+    assert (_node(k, "qkv_proj")["n"], _node(k, "o_proj")["k"]) == (14336, 12288)
+    assert (_node(k, "router")["n"], _node(k, "experts")["experts"]) == (160, 160)
+    assert _node(_kind(g, "mtp_moe"), "mtp_eh_proj")["k"] == 10240
+
+
+# --- LagunaForCausalLM (poolside/Laguna-S-2.1-NVFP4, Laguna-XS-2.1-NVFP4) ------------------------
+
+def _laguna_cfg(**over) -> dict:
+    """A small Laguna config with the checkpoints' structure: 8 layers, a window layer after every
+    full one with its own query-head count, layer 0 dense, a per-head output gate, and an NVFP4
+    compressed-tensors block that targets the routed experts and ignores the last two layers'."""
+    n = 8
+    cfg = {
+        "architectures": ["LagunaForCausalLM"], "model_type": "laguna", "torch_dtype": "bfloat16",
+        "hidden_size": 256, "intermediate_size": 768, "moe_intermediate_size": 128,
+        "shared_expert_intermediate_size": 128, "num_hidden_layers": n, "head_dim": 32,
+        "num_attention_heads": 8, "num_key_value_heads": 2, "vocab_size": 1000,
+        "num_experts": 16, "num_experts_per_tok": 4, "decoder_sparse_step": 1, "mlp_only_layers": [0],
+        "sliding_window": 64, "tie_word_embeddings": False, "gating": "per-head",
+        "layer_types": ["full_attention" if i % 4 == 0 else "sliding_attention" for i in range(n)],
+        "num_attention_heads_per_layer": [8 if i % 4 == 0 else 12 for i in range(n)],
+        "mlp_layer_types": ["dense"] + ["sparse"] * (n - 1),
+        "gating_types": ["per_head"] * n,
+        "quantization_config": {
+            "quant_method": "compressed-tensors", "format": "nvfp4-pack-quantized",
+            "config_groups": {"group_0": {
+                "format": "nvfp4-pack-quantized",
+                "targets": [r"re:.*experts\.[0-9]+\.(gate_proj|up_proj|down_proj)$"],
+                "weights": {"num_bits": 4, "type": "float", "group_size": 16}}},
+            "ignore": ["lm_head", r"re:.*\.self_attn\.(q|k|v|o|g)_proj$", r"re:.*\.mlp\.gate$",
+                       "model.layers.0.mlp.gate_proj", "model.layers.0.mlp.up_proj",
+                       "model.layers.0.mlp.down_proj",
+                       r"re:.*\.mlp\.shared_expert\.(gate|up|down)_proj$",
+                       r"re:^model\.layers\.[67]\.mlp\.experts(\..*)?$"],
+        },
+    }
+    cfg.update(over)
+    return cfg
+
+
+def test_laguna_layers_follow_the_per_layer_vectors(tmp_path):
+    g = _derive_raw(_laguna_cfg(), tmp_path, "laguna-test")
+    seq = layer_sequence(g["stack"])
+    assert seq == ["full_dense", "swa_moe_nvfp4", "swa_moe_nvfp4", "swa_moe_nvfp4", "full_moe",
+                   "swa_moe_nvfp4", "swa_moe_bf16", "swa_moe_bf16"]
+    full, swa = _kind(g, "full_moe"), _kind(g, "swa_moe_nvfp4")
+    fa = [n for n in full["nodes"] if n["op"] == "Attention"][0]
+    sa = [n for n in swa["nodes"] if n["op"] == "Attention"][0]
+    assert (fa["kind"], fa["n_q"], fa["n_kv"], fa["d_h"], "window" in fa) == ("gqa", 8, 2, 32, False)
+    assert (sa["kind"], sa["n_q"], sa["n_kv"], sa["d_h"], sa["window"]) == ("swa", 12, 2, 32, 64)
+    # q, k and v rows follow the layer's own head count; o_proj reads it.
+    assert (_node(full, "qkv_proj")["n"], _node(full, "o_proj")["k"]) == ((8 + 4) * 32, 8 * 32)
+    assert (_node(swa, "qkv_proj")["n"], _node(swa, "o_proj")["k"]) == ((12 + 4) * 32, 12 * 32)
+
+
+def test_laguna_output_gate_is_one_row_per_head_or_per_channel(tmp_path):
+    g = _derive_raw(_laguna_cfg(), tmp_path, "laguna-test")
+    assert (_node(_kind(g, "full_moe"), "g_proj")["n"], _node(_kind(g, "swa_moe_nvfp4"), "g_proj")["n"],
+            _node(_kind(g, "swa_moe_nvfp4"), "g_proj")["k"]) == (8, 12, 256)
+    raw = _laguna_cfg(gating="per-element", gating_types=["per_element"] * 8)
+    g = _derive_raw(raw, tmp_path, "laguna-test")
+    assert _node(_kind(g, "swa_moe_nvfp4"), "g_proj")["n"] == 12 * 32
+    g = _derive_raw(_laguna_cfg(gating=False, gating_types=None), tmp_path, "laguna-test")
+    assert "g_proj" not in _roles(_kind(g, "swa_moe_nvfp4"))
+
+
+def test_laguna_widths_follow_the_ignore_list_and_the_group_targets(tmp_path):
+    """Routed experts are NVFP4 where no ignore entry names them and a target matches; the last two
+    layers' experts, attention, router, dense layer and (here) the shared expert stay bf16."""
+    g = _derive_raw(_laguna_cfg(), tmp_path, "laguna-test")
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _node(_kind(g, "swa_moe_nvfp4"), "experts")["weight_dtype"] == "nvfp4"
+    assert _node(_kind(g, "swa_moe_bf16"), "experts")["weight_dtype"] == "bf16"
+    for kid in ("full_dense", "swa_moe_nvfp4"):
+        k = _kind(g, kid)
+        assert {_node(k, r)["weight_dtype"] for r in ("qkv_proj", "o_proj", "g_proj")} == {"bf16"}
+    assert _node(_kind(g, "full_dense"), "mlp_gate_up")["weight_dtype"] == "bf16"
+    assert _node(_kind(g, "swa_moe_nvfp4"), "shared_gate_up")["weight_dtype"] == "bf16"
+    assert _node(_kind(g, "swa_moe_nvfp4"), "router")["weight_dtype"] == "bf16"
+    # Dropping the shared-expert ignore and adding its target makes the shared expert NVFP4.
+    raw = _laguna_cfg()
+    q = raw["quantization_config"]
+    q["ignore"] = [e for e in q["ignore"] if "shared_expert" not in e]
+    q["config_groups"]["group_0"]["targets"].append(r"re:.*shared_expert\.(gate_proj|up_proj|down_proj)$")
+    g = _derive_raw(raw, tmp_path, "laguna-test")
+    k = _kind(g, "swa_moe_nvfp4")
+    assert (_node(k, "shared_gate_up")["weight_dtype"], _node(k, "shared_down")["weight_dtype"]) == \
+        ("nvfp4", "nvfp4")
+
+
+def test_laguna_unquantized_checkpoint_is_bf16_throughout(tmp_path):
+    raw = _laguna_cfg()
+    del raw["quantization_config"]
+    g = _derive_raw(raw, tmp_path, "laguna-test")
+    assert layer_sequence(g["stack"]) == ["full_dense"] + ["swa_moe", "swa_moe", "swa_moe", "full_moe",
+                                                          "swa_moe", "swa_moe", "swa_moe"]
+    assert _node(_kind(g, "swa_moe"), "experts")["weight_dtype"] == "bf16"
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda c: c.update(mlp_layer_types=["sparse"] * 8), "mlp_layer_types"),
+    (lambda c: c.update(gating=True), "gating"),
+    (lambda c: c.update(gating_types=["per_head"] * 7 + ["per_element"]), "gating_types"),
+    (lambda c: c.update(swa_attention_sink_enabled=True), "sink"),
+    (lambda c: c.update(layer_types=c["layer_types"][:-1]), "layer_types"),
+    (lambda c: c["quantization_config"]["config_groups"]["group_0"]["weights"].update(group_size=32),
+     "NVFP4"),
+    (lambda c: c["quantization_config"].update(quant_method="modelopt"), "compressed-tensors"),
+], ids=["mlp-vector", "gating-true", "gating-types", "sink", "short-vector", "group-32", "other-method"])
+def test_laguna_refuses_what_it_would_misprice(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph
+    raw = _laguna_cfg()
+    edit(raw)
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "laguna-test")
+
+
+def test_laguna_refuses_a_fused_qkv_whose_shards_are_treated_differently(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph
+    raw = _laguna_cfg()
+    raw["quantization_config"]["ignore"].remove(r"re:.*\.self_attn\.(q|k|v|o|g)_proj$")
+    raw["quantization_config"]["ignore"].append(r"re:.*\.self_attn\.q_proj$")
+    raw["quantization_config"]["config_groups"]["group_0"]["targets"].append(
+        r"re:.*self_attn\.(k|v|o|g)_proj$")
+    with pytest.raises(derive_graph.DeriveError, match="fused module"):
+        _derive_raw(raw, tmp_path, "laguna-test")
+
+
+def test_laguna_committed_graphs_are_the_checkpoints():
+    """Laguna-S (48 layers, 12 full at 48 query heads and 36 window at 72, hidden 3072, 256 experts
+    of 1024 top 10, NVFP4 routed experts in layers 1-39 and bf16 in 40-47) and Laguna-XS (40 layers,
+    10 full at 48 and 30 window at 64, hidden 2048, 256 experts of 512 top 8, NVFP4 routed and shared
+    experts). Every width agrees with the pinned checkpoints' safetensors headers, e.g. S layer 1
+    q_proj [9216, 3072], g_proj [72, 3072], experts.0.gate_proj.weight_packed U8 [1024, 1536],
+    shared_expert BF16; XS layer 1 shared_expert.gate_proj.weight_packed U8 [512, 1024]."""
+    s = graph_of(MODELS / "laguna-s-2.1-nvfp4")
+    seq = layer_sequence(s["stack"])
+    assert len(seq) == 48 and seq[0] == "full_dense"
+    assert [i for i, k in enumerate(seq) if k.startswith("full")] == [0] + list(range(4, 48, 4))
+    assert {k for k in seq[1:40] if k.endswith("bf16")} == set() and all(k.endswith("bf16") for k in seq[40:])
+    assert _node(_kind(s, "swa_moe_nvfp4"), "qkv_proj")["n"] == (72 + 16) * 128
+    assert _node(_kind(s, "swa_moe_nvfp4"), "shared_gate_up")["weight_dtype"] == "bf16"
+    x = graph_of(MODELS / "laguna-xs-2.1-nvfp4")
+    seq = layer_sequence(x["stack"])
+    assert len(seq) == 40 and seq.count("full_moe") == 9 and seq.count("swa_moe") == 30
+    k = _kind(x, "swa_moe")
+    assert _node(k, "qkv_proj")["n"] == (64 + 16) * 128
+    assert (_node(k, "experts")["n"], _node(k, "experts")["top_k"], _node(k, "shared_down")["weight_dtype"]) == \
+        (512, 8, "nvfp4")
+# --- LongcatFlashNgramForCausalLM (LongCat-Flash-Lite) ---------------------------------------------------
+
+LONGCAT = MODELS / "longcat-flash-lite-fp8"
+
+
+def _longcat_raw(**edit) -> dict:
+    """A small LongCat-Flash-Lite-shaped config: the real one's keys at toy widths, so a test
+    can state every number it expects from them. Four n-gram tables (2 splits x 2 neighbours),
+    each 12 wide at hidden 48; 6 routed and 2 zero-computation experts."""
+    raw = {
+        "architectures": ["LongcatFlashNgramForCausalLM"],
+        "hidden_size": 48, "num_layers": 3, "num_attention_heads": 4, "vocab_size": 100,
+        "ffn_hidden_size": 64, "expert_ffn_hidden_size": 32, "n_routed_experts": 6,
+        "zero_expert_num": 2, "zero_expert_type": "identity", "moe_topk": 3,
+        "q_lora_rank": 16, "kv_lora_rank": 8, "qk_nope_head_dim": 8, "qk_rope_head_dim": 4,
+        "v_head_dim": 8, "hidden_act": "silu", "attention_bias": False,
+        "max_position_embeddings": 4096, "rope_scaling": {"rope_type": "yarn", "factor": 4},
+        "emb_neighbor_num": 3, "emb_split_num": 2, "ngram_vocab_size_ratio": 5,
+        "torch_dtype": "bfloat16", "tie_word_embeddings": False,
+        "quantization_config": {"quant_method": "fp8", "weight_block_size": [128, 128],
+                                "ignored_layers": ["lm_head", "model.embed_tokens"]},
+    }
+    raw.update(edit)
+    return raw
+
+
+def _longcat(tmp_path, **edit) -> dict:
+    return _derive_cfg(tmp_path, _longcat_raw(**edit), "longcat-probe")
+
+
+def test_longcat_layer_is_two_attentions_two_mlps_and_one_moe(tmp_path):
+    g = _longcat(tmp_path)
+    assert layer_sequence(g["stack"]) == ["flash_moe"] * 3
+    layer = _kind(g, "flash_moe")
+    attentions = [n for n in layer["nodes"] if n["op"] == "Attention"]
+    assert len(attentions) == 2
+    assert all((a["kind"], a["n_q"], a["n_kv"], a["d_h"], a["holds_engine_kv"])
+               == ("mla", 4, 1, 12, True) for a in attentions)
+    # Each attention holds its own latent cache, one (8 + 4)-wide bf16 entry a token: a layer
+    # that stated one would size half the model's KV.
+    caches = [c for a in attentions for c in a["caches"]]
+    assert sorted(c["name"] for c in caches) == ["kv0", "kv1"]
+    assert {c["bytes_per_entry"] for c in caches} == {24}
+    for suffix in ("0", "1"):
+        assert _node(layer, f"qkv_a_proj_{suffix}")["n"] == 16 + 8 + 4
+        assert (_node(layer, f"q_b_proj_{suffix}")["n"], _node(layer, f"kv_b_proj_{suffix}")["n"]) \
+            == (4 * (8 + 4), 4 * (8 + 8))
+        assert (_node(layer, f"mlp_gate_up_{suffix}")["n"], _node(layer, f"mlp_down_{suffix}")["k"]) \
+            == (2 * 64, 64)
+    assert [n["role"] for n in layer["nodes"] if n["op"] == "GroupedGEMM"] == ["experts"]
+
+
+def test_longcat_router_scores_zero_experts_and_the_grouped_gemm_runs_every_slot(tmp_path):
+    layer = _kind(_longcat(tmp_path), "flash_moe")
+    router, experts = _node(layer, "router"), _node(layer, "experts")
+    # 6 routed + 2 zero-computation logits, fp32 and whole on every rank.
+    assert (router["n"], router["k"], router["weight_dtype"], router["tp"]) == (8, 48, "fp32", "replicated")
+    # The slots routed to a zero-computation expert are remapped to expert 0 at weight 0 and
+    # still run, so the GEMM prices moe_topk slots over the 6 routed experts alone.
+    assert (experts["experts"], experts["top_k"], experts["n"], experts["k"]) == (6, 3, 32, 48)
+    assert "weight_dtype" not in experts
+    assert not [r for r in _roles(layer) if r.startswith("shared_")]
+
+
+def test_longcat_embedding_is_the_word_table_and_the_hashed_ngram_tables(tmp_path):
+    g = _longcat(tmp_path)
+    emb = {n["role"]: n for n in g["embedding"]}
+    assert (emb["embed_tokens"]["rows"], emb["embed_tokens"]["row_bytes"]) == (100, 48 * 2)
+    tables = emb["ngram_embedders"]
+    # Table i has int(m + 2i + 1) rows with m = 5 x 100: four tables of 501, 503, 505, 507.
+    assert tables["rows"] == 501 + 503 + 505 + 507
+    assert (tables["row_bytes"], tables["rows_per_token"], tables["out_bytes_per_token"]) \
+        == (12 * 2, 4, 4 * 12 * 2)
+    proj = emb["ngram_post_projs"]
+    assert (proj["n"], proj["k"], proj["weight_dtype"], proj["tp"]) == (4 * 48, 12, "bf16", "replicated")
+
+
+def test_longcat_embedding_head_and_router_stay_at_the_base_width_beside_fp8_linears(tmp_path):
+    g = _longcat(tmp_path)
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert g["global"]["weight_scale"] == {"elements": 16384, "bytes": 4}
+    assert g["global"]["context_window"] == 4096
+    lm = _node({"nodes": g["head"]}, "lm_head")
+    assert (lm["n"], lm["k"], lm["weight_dtype"]) == (100, 48, "bf16")
+    assert {n["role"] for n in g["embedding"] if n["op"] == "GEMM"} == {"ngram_post_projs"}
+
+
+def test_longcat_ngram_table_count_follows_the_config(tmp_path):
+    g = _longcat(tmp_path, emb_neighbor_num=4, emb_split_num=1)
+    tables = {n["role"]: n for n in g["embedding"]}["ngram_embedders"]
+    assert tables["rows_per_token"] == 3 and tables["row_bytes"] == 16 * 2
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"zero_expert_type": "zero"}, "identity zero-computation expert only"),
+    ({"zero_expert_num": 0}, "no zero_expert_num"),
+    ({"hidden_size": 50}, "not a multiple of the 4 n-gram tables"),
+    ({"ngram_vocab_size_ratio": None}, "ngram_vocab_size_ratio"),
+    ({"emb_neighbor_num": 1}, "describe no n-gram tables"),
+    ({"hidden_act": "gelu"}, "silu only"),
+    ({"disable_quant_module": ["mlps"]}, "builds the named modules unquantized"),
+    ({"quantization_config": None}, "fp8 checkpoint"),
+])
+def test_longcat_refuses_a_config_it_would_misprice(tmp_path, edit, why):
+    raw = _longcat_raw(**edit)
+    raw = {k: v for k, v in raw.items() if v is not None}
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_cfg(tmp_path, raw, "longcat-probe")
+
+
+def test_longcat_flash_lite_fp8_graph_is_the_checkpoints_tensors():
+    """Shapes read from the pinned shard headers (revision aa89b99c): the router is
+    [384, 3072] FP32, embedders.0 [10223617, 256] and embedders.11 [10223639, 256], post_projs
+    [3072, 256] BF16, mlps [6144, 3072], experts [1024, 3072], kv_a_proj_with_mqa [576, 3072],
+    q_a_proj [1536, 3072], q_b_proj [6144, 1536], kv_b_proj [8192, 512], o_proj [3072, 4096]."""
+    g = graph_of(LONGCAT)
+    assert g["global"]["architecture"] == "LongcatFlashNgramForCausalLM"
+    assert len(layer_sequence(g["stack"])) == 14
+    layer = _kind(g, "flash_moe")
+    router = _node(layer, "router")
+    assert (router["n"], router["k"], router["weight_dtype"]) == (384, 3072, "fp32")
+    for i in ("0", "1"):
+        assert _node(layer, f"qkv_a_proj_{i}")["n"] == 1536 + 576
+        assert (_node(layer, f"q_b_proj_{i}")["n"], _node(layer, f"q_b_proj_{i}")["k"]) == (6144, 1536)
+        assert (_node(layer, f"kv_b_proj_{i}")["n"], _node(layer, f"kv_b_proj_{i}")["k"]) == (8192, 512)
+        assert (_node(layer, f"o_proj_{i}")["n"], _node(layer, f"o_proj_{i}")["k"]) == (3072, 4096)
+        assert (_node(layer, f"mlp_gate_up_{i}")["n"], _node(layer, f"mlp_down_{i}")["k"]) == (2 * 6144, 6144)
+    experts = _node(layer, "experts")
+    assert (experts["experts"], experts["top_k"], experts["n"], experts["k"]) == (256, 12, 1024, 3072)
+    emb = {n["role"]: n for n in g["embedding"]}
+    assert emb["ngram_embedders"]["rows"] == sum(10223616 + 2 * i + 1 for i in range(12))
+    assert (emb["ngram_post_projs"]["n"], emb["ngram_post_projs"]["k"]) == (12 * 3072, 256)
+
+
+# --- OPTForCausalLM (OPT-350m) ------------------------------------------------------------------------------
+
+OPT = MODELS / "opt-350m"
+
+
+def _opt_raw(**edit) -> dict:
+    """A small OPT-350m-shaped config: post-norm layers, a 12-wide word embedding projected to a
+    24-wide hidden size, learned positions."""
+    raw = {
+        "architectures": ["OPTForCausalLM"], "model_type": "opt", "hidden_size": 24,
+        "word_embed_proj_dim": 12, "num_hidden_layers": 3, "num_attention_heads": 4,
+        "ffn_dim": 96, "vocab_size": 50, "max_position_embeddings": 64,
+        "do_layer_norm_before": False, "activation_function": "relu", "torch_dtype": "float16",
+    }
+    raw.update(edit)
+    return raw
+
+
+def _opt(tmp_path, **edit) -> dict:
+    return _derive_cfg(tmp_path, {k: v for k, v in _opt_raw(**edit).items() if v is not None}, "opt-probe")
+
+
+def test_opt_post_norm_layer_adds_then_normalizes_and_ends_without_a_final_norm(tmp_path):
+    g = _opt(tmp_path)
+    assert layer_sequence(g["stack"]) == ["opt_layer"] * 3
+    roles = _roles(_kind(g, "opt_layer"))
+    # No norm ahead of the attention; each sub-layer's residual add is followed by its norm.
+    assert roles[0] == "qkv_proj"
+    assert roles.index("self_attn_layer_norm") == roles.index("residual_add") + 1
+    assert roles[-2:] == ["mlp_residual_add", "final_layer_norm"]
+    assert "final_norm" not in [n["role"] for n in g["head"]]
+    layer = _kind(g, "opt_layer")
+    assert (_node(layer, "qkv_proj")["n"], _node(layer, "fc1")["n"], _node(layer, "fc2")["k"]) == (72, 96, 96)
+    attn = next(n for n in layer["nodes"] if n["op"] == "Attention")
+    assert (attn["kind"], attn["n_q"], attn["n_kv"], attn["d_h"]) == ("gqa", 4, 4, 6)
+
+
+def test_opt_pre_norm_layer_normalizes_first_and_the_head_has_a_final_norm(tmp_path):
+    g = _opt(tmp_path, do_layer_norm_before=True, word_embed_proj_dim=None)
+    roles = _roles(_kind(g, "opt_layer"))
+    assert roles[0] == "self_attn_layer_norm"
+    assert roles.index("final_layer_norm") == roles.index("residual_add") + 1
+    assert [n["role"] for n in g["head"]] == ["final_norm", "lm_head"]
+    assert "project_in" not in [n["role"] for n in g["embedding"]]
+    assert _node({"nodes": g["head"]}, "lm_head")["k"] == 24
+    # OPT's checkpoints that dropped the final norm for older fine-tunes say so.
+    g = _opt(tmp_path, do_layer_norm_before=True, word_embed_proj_dim=None, _remove_final_layer_norm=True)
+    assert [n["role"] for n in g["head"]] == ["lm_head"]
+
+
+def test_opt_word_embedding_is_narrow_and_projected_either_side_of_the_stack(tmp_path):
+    g = _opt(tmp_path)
+    emb = {n["role"]: n for n in g["embedding"]}
+    assert (emb["embed_tokens"]["rows"], emb["embed_tokens"]["row_bytes"]) == (50, 12 * 2)
+    # 64 learned positions plus OPT's offset of 2, each a hidden-wide row, replicated.
+    assert (emb["embed_positions"]["rows"], emb["embed_positions"]["row_bytes"],
+            emb["embed_positions"]["shard"]) == (66, 24 * 2, "replicated")
+    assert (emb["project_in"]["n"], emb["project_in"]["k"], emb["project_in"]["tp"]) == (24, 12, "replicated")
+    head = {n["role"]: n for n in g["head"]}
+    assert (head["project_out"]["n"], head["project_out"]["k"]) == (12, 24)
+    # The head reads the narrow states, and is the word table read again.
+    assert (head["lm_head"]["n"], head["lm_head"]["k"], head["lm_head"]["aliases"]) \
+        == (50, 12, "embedding.embed_tokens")
+    assert g["global"]["tie_word_embeddings"] is True
+
+
+def test_opt_untied_head_owns_its_weights(tmp_path):
+    g = _opt(tmp_path, tie_word_embeddings=False)
+    assert g["global"]["tie_word_embeddings"] is False
+    assert "aliases" not in _node({"nodes": g["head"]}, "lm_head")
+
+
+def test_opt_projections_carry_a_bias_and_weights_are_fp16(tmp_path):
+    g = _opt(tmp_path)
+    layer = _kind(g, "opt_layer")
+    for role in ("qkv_proj", "o_proj", "fc1", "fc2"):
+        assert _node(layer, role)["bias_dtype"] == "fp16", role
+    assert g["global"]["weight_dtype"] == "fp16"
+    assert g["global"]["context_window"] == 64
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"enable_bias": False}, "enable_bias is false"),
+    ({"activation_function": "gelu"}, "activation_function"),
+    ({"hidden_size": 26}, "not a multiple of 4 heads"),
+    ({"rope_scaling": {"rope_type": "linear", "factor": 2.0}}, "scales its RoPE"),
+    ({"ffn_dim": None}, "ffn_dim"),
+    ({"_remove_final_layer_norm": True}, "_remove_final_layer_norm with a post-norm layer"),
+])
+def test_opt_refuses_a_config_it_would_misprice(tmp_path, edit, why):
+    with pytest.raises(deriver().DeriveError, match=why):
+        _opt(tmp_path, **edit)
+
+
+def test_a_handler_head_must_read_the_width_the_handler_states(tmp_path, monkeypatch):
+    """The LM head reads hidden_size unless a handler says a projection narrowed it first; a
+    head at the narrow width with no such statement describes another model."""
+    d = deriver()
+    real = d.HANDLERS["OPTForCausalLM"]
+
+    def without_the_width(cfg, raw, model):
+        kinds, stack, extras = real(cfg, raw, model)
+        return kinds, stack, {k: v for k, v in extras.items() if k != "head_input_width"}
+    monkeypatch.setitem(d.HANDLERS, "OPTForCausalLM", without_the_width)
+    with pytest.raises(d.DeriveError, match="handler head does not state one 50 x 24 lm_head"):
+        _opt(tmp_path)
+
+
+def test_opt_350m_graph_is_the_checkpoints_shape():
+    """opt-350m: 24 post-norm layers of 1024 hidden, 16 heads, ffn 4096; a 512-wide word table of
+    50272 rows, 2050 position rows (2048 + 2), project_in 512 -> 1024 and project_out 1024 -> 512."""
+    g = graph_of(OPT)
+    assert len(layer_sequence(g["stack"])) == 24
+    layer = _kind(g, "opt_layer")
+    assert (_node(layer, "qkv_proj")["n"], _node(layer, "fc1")["n"], _node(layer, "fc2")["k"]) == (3072, 4096, 4096)
+    emb = {n["role"]: n for n in g["embedding"]}
+    assert (emb["embed_tokens"]["rows"], emb["embed_tokens"]["row_bytes"]) == (50272, 512 * 2)
+    assert emb["embed_positions"]["rows"] == 2050
+    head = {n["role"]: n for n in g["head"]}
+    assert (head["lm_head"]["n"], head["lm_head"]["k"]) == (50272, 512)
+    assert g["global"]["weight_dtype"] == "fp16" and g["global"]["tie_word_embeddings"] is True
+
+
+def test_gemma_4_31b_fp8_dynamic_stores_the_linears_at_fp8():
+    """The FP8-dynamic release of Gemma-4-31B-it has the original's shapes, with the language
+    model's linears stored FP8 (per-channel scales) where the original stores bf16."""
+    bf16, fp8 = graph_of(MODELS / "gemma-4-31b-it"), graph_of(MODELS / "gemma-4-31b-it-fp8-dynamic")
+    assert (bf16["global"]["weight_dtype"], fp8["global"]["weight_dtype"]) == ("bf16", "fp8")
+    shapes = lambda g: [[(n["op"], n.get("n"), n.get("k")) for n in k["nodes"]] for k in g["layer_kinds"]]
+    assert shapes(bf16) == shapes(fp8)
+    # The head aliases the embedding table (a graph may not give an alias a width of its own), and
+    # the ignore list leaves the table bf16: its rows are hidden x 2 bytes.
+    table = next(n for n in fp8["embedding"] if n["role"] == "embed_tokens")
+    assert table["row_bytes"] == fp8["global"]["hidden_size"] * 2
+    assert next(n for n in fp8["head"] if n["role"] == "lm_head")["aliases"] == "embedding.embed_tokens"
+
+
+# --- Inkling: dense leading layers, sliding-window head geometry, and stored expert widths ---------
+# thinkingmachines/Inkling and Inkling-NVFP4 share one config.json. Its first dense_mlp_idx layers
+# have a dense MLP of dense_intermediate_size, a sliding-window layer reads swa_num_attention_heads
+# and swa_num_key_value_heads, and the NVFP4 checkpoint's ModelOpt block is in hf_quant_config.json,
+# not config.json, so only the shard headers say which layers store their experts at four bits.
+
+INKLING = MODELS / "inkling"
+INKLING_NVFP4 = MODELS / "inkling-nvfp4"
+
+
+def _inkling_nodes(g: dict, layer: int) -> dict:
+    kind = _kind_of(g, layer)
+    return {(n.get("role") or n["op"]): n for n in kind["nodes"]}
+
+
+def test_inkling_dense_layers_sliding_window_geometry_and_the_experts_are_priced_from_the_config():
+    g, t = graph_of(INKLING), text_config(config_of(INKLING))
+    dense = t["dense_mlp_idx"]
+    local = set(t["local_layer_ids"])
+    for layer in range(t["num_hidden_layers"]):
+        nodes = _inkling_nodes(g, layer)
+        if layer < dense:
+            assert "experts" not in nodes
+            assert nodes["mlp_gate_up"]["n"] == 2 * t["dense_intermediate_size"]
+            assert nodes["mlp_down"]["k"] == t["dense_intermediate_size"]
+        else:
+            assert nodes["experts"]["n"] == t["intermediate_size"] and "mlp_gate_up" not in nodes
+        attn = nodes["Attention"]
+        if layer in local:
+            assert (attn["n_q"], attn["n_kv"], attn["kind"]) == (
+                t["swa_num_attention_heads"], t["swa_num_key_value_heads"], "swa")
+        else:
+            assert (attn["n_q"], attn["n_kv"], attn["kind"]) == (
+                t["num_attention_heads"], t["num_key_value_heads"], "gqa")
+
+
+def test_inkling_nvfp4_experts_are_stored_at_the_width_the_headers_state(tmp_path):
+    """Headers that store layer 2's experts BF16 and every other sparse layer's U8 with an
+    F8_E4M3 scale per 16 values give that layer bf16 experts and the rest nvfp4, as the published
+    checkpoint is; a layer stored any other way, or a shape the config does not give, is refused."""
+    d = deriver()
+    t = text_config(config_of(INKLING_NVFP4))
+    E, hid, inner, layers, dense = (t["n_routed_experts"], t["hidden_size"], t["intermediate_size"],
+                                    t["num_hidden_layers"], t["dense_mlp_idx"])
+
+    def headers(bf16_layers=(2,), skew=None):
+        h = {}
+        for i in range(dense, layers):
+            pre = f"model.llm.layers.{i}.mlp.experts."
+            if i in bf16_layers:
+                h[pre + "w13_weight"] = {"dtype": "BF16", "shape": [E, hid, 2 * inner]}
+                h[pre + "w2_weight"] = {"dtype": "BF16", "shape": [E, hid, inner]}
+            else:
+                h[pre + "w13_weight"] = {"dtype": "U8", "shape": [E, hid, inner]}
+                h[pre + "w2_weight"] = {"dtype": "U8", "shape": [E, hid, inner // 2]}
+                h[pre + "w13_weight.scale"] = {"dtype": "F8_E4M3", "shape": [E, hid, 2 * inner // 16]}
+                h[pre + "w2_weight.scale"] = {"dtype": "F8_E4M3", "shape": [E, hid, inner // 16]}
+        if skew:
+            skew(h)
+        return h
+
+    def derived(h):
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config_of(INKLING_NVFP4)))
+        return d.derive(path, "inkling-test", headers=h)
+
+    g = derived(headers())
+    widths = {layer: _inkling_nodes(g, layer)["experts"].get("weight_dtype", "bf16")
+              for layer in range(dense, layers)}
+    assert widths[2] == "bf16" and {w for i, w in widths.items() if i != 2} == {"nvfp4"}
+    assert [_inkling_nodes(g, i).get("experts") for i in range(dense)] == [None] * dense
+
+    def bad_layout(h):
+        h["model.llm.layers.5.mlp.experts.w13_weight"]["dtype"] = "F8_E4M3"
+    with pytest.raises(d.DeriveError, match="neither NVFP4 nor BF16"):
+        derived(headers(skew=bad_layout))
+
+    def bad_shape(h):
+        h["model.llm.layers.5.mlp.experts.w2_weight"]["shape"] = [E, hid, 1]
+    with pytest.raises(d.DeriveError, match="w2 is"):
+        derived(headers(skew=bad_shape))
+
+    def fp8_attention(h):
+        h["model.llm.layers.5.attn.wq_du.weight"] = {"dtype": "F8_E4M3", "shape": [1, 1]}
+    with pytest.raises(d.DeriveError, match="outside the routed experts"):
+        derived(headers(skew=fp8_attention))

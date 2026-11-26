@@ -1,0 +1,287 @@
+kind: ModelGraph
+name: laguna-xs-2.1-nvfp4
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 8bba8588c6197aa04be89a405a0af640e1914c6323934f7e0860f7cedc528f4e
+  deriver_version: 1
+global:
+  hidden_size: 2048
+  vocab_size: 100352
+  tie_word_embeddings: false
+  weight_dtype: bf16
+  architecture: LagunaForCausalLM
+layer_kinds:
+- id: full_dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 8192
+    k: 2048
+    weight_dtype: bf16
+  - op: GEMM
+    role: g_proj
+    n: 48
+    k: 2048
+    tp: column
+    weight_dtype: bf16
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 2048
+    k: 6144
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 16384
+    k: 2048
+    weight_dtype: bf16
+  - op: GEMM
+    role: mlp_down
+    n: 2048
+    k: 8192
+    weight_dtype: bf16
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+- id: swa_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 10240
+    k: 2048
+    weight_dtype: bf16
+  - op: GEMM
+    role: g_proj
+    n: 64
+    k: 2048
+    tp: column
+    weight_dtype: bf16
+  - op: Attention
+    holds_engine_kv: true
+    kind: swa
+    n_q: 64
+    n_kv: 8
+    d_h: 128
+    window: 512
+  - op: GEMM
+    role: o_proj
+    n: 2048
+    k: 8192
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 2048
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 512
+    k: 2048
+    experts: 256
+    top_k: 8
+    weight_dtype: nvfp4
+  - op: GEMM
+    role: shared_gate_up
+    n: 1024
+    k: 2048
+    weight_dtype: nvfp4
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 3072
+  - op: GEMM
+    role: shared_down
+    n: 2048
+    k: 512
+    weight_dtype: nvfp4
+    tp: row
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+- id: full_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 8192
+    k: 2048
+    weight_dtype: bf16
+  - op: GEMM
+    role: g_proj
+    n: 48
+    k: 2048
+    tp: column
+    weight_dtype: bf16
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 48
+    n_kv: 8
+    d_h: 128
+  - op: GEMM
+    role: o_proj
+    n: 2048
+    k: 6144
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 256
+    k: 2048
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 512
+    k: 2048
+    experts: 256
+    top_k: 8
+    weight_dtype: nvfp4
+  - op: GEMM
+    role: shared_gate_up
+    n: 1024
+    k: 2048
+    weight_dtype: nvfp4
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 3072
+  - op: GEMM
+    role: shared_down
+    n: 2048
+    k: 512
+    weight_dtype: nvfp4
+    tp: row
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+stack:
+  prologue:
+  - full_dense
+  pattern:
+  - swa_moe
+  - swa_moe
+  - swa_moe
+  - full_moe
+  repeat: 9
+  epilogue:
+  - swa_moe
+  - swa_moe
+  - swa_moe
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 100352
+  k: 2048
+  weight_dtype: bf16

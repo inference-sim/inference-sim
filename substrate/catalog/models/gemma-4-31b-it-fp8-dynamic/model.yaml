@@ -1,0 +1,9 @@
+name: gemma-4-31b-it-fp8-dynamic
+source:
+  provider: huggingface
+  repo: RedHatAI/gemma-4-31B-it-FP8-dynamic
+  revision: d4ab4f579dd3516f97d8a6a4c98d0653480bad15
+  retrieved: 2026-11-26
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/RedHatAI/gemma-4-31B-it-FP8-dynamic/raw/d4ab4f579dd3516f97d8a6a4c98d0653480bad15/README.md

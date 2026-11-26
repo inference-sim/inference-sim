@@ -1,0 +1,81 @@
+name: inkling-nvfp4
+source:
+  provider: huggingface
+  repo: thinkingmachines/Inkling-NVFP4
+  revision: 42a75a99a40eb2ba1e0717db6357a0bf15205044
+  retrieved: 2026-11-26
+licence:
+  id: Apache-2.0
+  evidence: https://huggingface.co/thinkingmachines/Inkling-NVFP4/raw/42a75a99a40eb2ba1e0717db6357a0bf15205044/README.md
+shard_index:
+  path: model.safetensors.index.json
+  sha256: 23e5784d569500563c2603920d0d2e7240caab5daa627bb5928e3d092fc6e560
+headers:
+  - path: model-00001-of-00033.safetensors
+    sha256: c910477a8133fbe242e88dc83269c190917c3f7ddb4d16f03d214671909d8c7b
+  - path: model-00002-of-00033.safetensors
+    sha256: 114a19aa186c4d0317ff68febc878f81c21652b7a259cd872c6e8485c49ec35e
+  - path: model-00003-of-00033.safetensors
+    sha256: 804ac4ae5348cb856cf02615a7336a173b3fc48b575b9f7abc3b0e8cc0d2c8ea
+  - path: model-00004-of-00033.safetensors
+    sha256: 4427af07bfd8ffc123fc14ae0a23fe367a62d8a84db0addcee3d2ad85da8540a
+  - path: model-00005-of-00033.safetensors
+    sha256: e41c7fddfb86c5b68375936072eaebb9f9b55041dac0b3e2b3b9d24528e06b3a
+  - path: model-00006-of-00033.safetensors
+    sha256: c243885c36b185a1276fec7aa9cb649abd4bca56ad1c7104f13781ed4414b6d7
+  - path: model-00007-of-00033.safetensors
+    sha256: e5488c5cbc7f1f276716fe2a3619c20279c0356af29a233ba7a8824df5e413f1
+  - path: model-00008-of-00033.safetensors
+    sha256: fa208e189f08b5736b33ad8d13925c909a57dddbe6c16a5edd4714ec6883c294
+  - path: model-00009-of-00033.safetensors
+    sha256: cb1c97efceb990e35de244a1a1c07d152b965132e5cc7dfb30220f2971c9639f
+  - path: model-00010-of-00033.safetensors
+    sha256: dfda4137a82a4ffd6cf6c315be59d80af0777c31cc6fb48371e9e32bf13db292
+  - path: model-00011-of-00033.safetensors
+    sha256: 74746a321849d5a7d4e4f5ef5ee95aa39633acda8daeaebdc7306dc210063a94
+  - path: model-00012-of-00033.safetensors
+    sha256: 8e43e452830ea93f03ee3054b14f9d1b6ca9a7eb1e0af8b61ec9ab964b549453
+  - path: model-00013-of-00033.safetensors
+    sha256: a8835cbd4b36e936381703e653db0bb2ded687179483b13082ce1fb8fdade321
+  - path: model-00014-of-00033.safetensors
+    sha256: 1ae13cbdceb03e6e5cd85baa0cf559d7df300bed7d80acecb410ad62cbebf9e9
+  - path: model-00015-of-00033.safetensors
+    sha256: 6f0667403122b43f7304e9d7126b41c3154fe4486763e1ad609ec7907490633f
+  - path: model-00016-of-00033.safetensors
+    sha256: a029e46d05a84389e6cba0b041d55f1ab4256fee6dcd2dc1a28aa07cf371a935
+  - path: model-00017-of-00033.safetensors
+    sha256: 975c51e65c0d64bc0dc2e5cfba58bdad7893dfc653a2ed0ce5a1feaf534c0e8d
+  - path: model-00018-of-00033.safetensors
+    sha256: ae3bf288c21a59d445acfd5de8dd2f42e6b341014d148539ea2569bfce45ee5c
+  - path: model-00019-of-00033.safetensors
+    sha256: 9d368c7e7a1e84d4f57090c6df5dfcfa1c5ec1169228cdf099dba1a5ef5d3074
+  - path: model-00020-of-00033.safetensors
+    sha256: 091b81830cc2095564aaa2fb9a42537a3b093dc603dbecc1dce25a8ce7087b59
+  - path: model-00021-of-00033.safetensors
+    sha256: 1f955441a57a4be5e312419cae490d1204de24b2527ed8a2529c4c46fde08200
+  - path: model-00022-of-00033.safetensors
+    sha256: ec3a8822172cf396fc13574a10c6b8e384ed99d3e0ee1226748e60baf74adb13
+  - path: model-00023-of-00033.safetensors
+    sha256: 279f7a59d4f351847b57c177761857642ea013e70a7009f42a2caf20c60a3b26
+  - path: model-00024-of-00033.safetensors
+    sha256: 83db70f3d49cb2b9f05d1b0e7bd39f5cffe8d86ea7c0efa6eab74d658ba96025
+  - path: model-00025-of-00033.safetensors
+    sha256: 08ecb4fc9f5c64ff84dffb0c52d1d3e1f45f7fcb197f502c42b9ea68f988f15c
+  - path: model-00026-of-00033.safetensors
+    sha256: e371975a039d27ae2429450b347bc4d1ca86fcdd208ff0b0d69b10acbbde348e
+  - path: model-00027-of-00033.safetensors
+    sha256: 397b46f100849cba62aeed1039a97d41ec74d313e0d4e39e080daa6d0fdb19af
+  - path: model-00028-of-00033.safetensors
+    sha256: 4f5e3afb337e147c29df5347a82551bd4a5360b05b9e6b4b1b890c7a0f4467a7
+  - path: model-00029-of-00033.safetensors
+    sha256: 6321fb8c35f230d09ba768b165ac26f77abdc1284d9ce1b3a63598fec31bae2d
+  - path: model-00030-of-00033.safetensors
+    sha256: a3531f218570ac847dd6d3e99c4d3f1af998523905655fa4243d1e64950d1907
+  - path: model-00031-of-00033.safetensors
+    sha256: e6a3ddf6734a21d746c844246cb704eca621ef9cb8d9a63936375ed47bd34693
+  - path: model-00032-of-00033.safetensors
+    sha256: 0c93876f217f494d98a97b6ffb52e45bc345ae1dbf05b38f3632e351e2a358ab
+  - path: model-00033-of-00033.safetensors
+    sha256: 27ee30740d31db5a6ad9be30834f9c37171943df2879fecfafaad044d45054bb
+  - path: mtp.safetensors
+    sha256: 9a9cf85fd997a46a13f8906733f19f3963bed02cc352ab07c06177e6ff92a381

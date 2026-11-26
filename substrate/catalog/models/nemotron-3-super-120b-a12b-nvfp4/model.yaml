@@ -1,0 +1,13 @@
+name: nemotron-3-super-120b-a12b-nvfp4
+# config.json states a ModelOpt MIXED_PRECISION checkpoint: a quantized_layers map names each quantized module by layer. The routed experts are NVFP4 (group 16) and nearly every Mamba projection, latent projection and shared expert is FP8, but the map is ragged: the first MoE layer stores its shared down projection NVFP4 beside an FP8 up projection, and three layers leave one shared projection out of the map, which vLLM stores unquantized. The deriver gives each outcome its own layer kind. The card licence is the NVIDIA Nemotron Open Model License, which is not on the allow-list, so only the config hash and the derived graph are committed (X12).
+source:
+  provider: huggingface
+  repo: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+  revision: ff433f5493e25d631c9f12b5d55c674229923d02
+  retrieved: 2026-11-26
+licence:
+  id: LicenseRef-nvidia-nemotron-open-model-license
+  evidence: https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4/raw/ff433f5493e25d631c9f12b5d55c674229923d02/README.md
+config:
+  sha256: 14a1ad3ab6ec49e09e9c30f8686c8e3ca5b5338ee0eb0c79dff4f285fc29778d
+drafters: [speculator]

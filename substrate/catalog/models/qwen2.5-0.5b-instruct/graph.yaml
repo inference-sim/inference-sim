@@ -1,0 +1,76 @@
+kind: ModelGraph
+name: qwen2.5-0.5b-instruct
+derived_from:
+  format: hf_config_json
+  path: config.json
+  sha256: 18e18afcaccafade98daf13a54092927904649e1dd4eba8299ab717d5d94ff45
+  deriver_version: 1
+global:
+  hidden_size: 896
+  vocab_size: 151936
+  tie_word_embeddings: true
+  weight_dtype: bf16
+  architecture: Qwen2ForCausalLM
+layer_kinds:
+- id: dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_proj
+    n: 1152
+    k: 896
+  - op: Attention
+    holds_engine_kv: true
+    kind: gqa
+    n_q: 14
+    n_kv: 2
+    d_h: 64
+  - op: GEMM
+    role: o_proj
+    n: 896
+    k: 896
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 9728
+    k: 896
+  - op: GEMM
+    role: mlp_down
+    n: 896
+    k: 4864
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+stack:
+  pattern:
+  - dense
+  repeat: 24
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 151936
+  k: 896
