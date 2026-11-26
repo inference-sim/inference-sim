@@ -53,8 +53,24 @@ func Args(in PoolInput) (map[string]any, error) {
 		args = map[string]any{}
 	}
 	pl := pool.Parallel
-	if pl.PP > 1 || pl.DCP > 1 || pl.PCP > 1 || pl.EnableExpertParallel {
-		return nil, &NotLowered{Name: "pool parallelism beyond tensor and data (pp, dcp, pcp, expert parallel)", Issue: issueLower}
+	if pl.PP > 1 || pl.DCP > 1 || pl.PCP > 1 {
+		return nil, &NotLowered{Name: "pool parallelism beyond tensor and data (pp, dcp, pcp)", Issue: issueLower}
+	}
+	if pl.EnableExpertParallel {
+		// Expert parallel is SGLang's ep_size: the experts shard over ep_size ranks of the
+		// tensor-parallel group (moe_ep_size = ep_size, tp_size % ep_size == 0). A pool that enables
+		// expert parallel spans the experts over the whole tensor-parallel group, the form SGLang
+		// recipes pass (--tp N --ep-size N). Data parallelism beside it is not lowered: the experts'
+		// width would then be tp x dp, which SGLang's ep_size cannot state.
+		if max(pl.DP, 1) > 1 {
+			return nil, &NotLowered{Name: "expert parallel beside data parallel", Issue: issueLower}
+		}
+		if got, ok := args["ep_size"]; ok {
+			if n, isInt := asInt(got); !isInt || n != max(pl.TP, 1) {
+				return nil, fmt.Errorf("the engine block states ep_size %v and the pool's expert parallelism spans tp_size %d: they must agree", got, max(pl.TP, 1))
+			}
+		}
+		args["ep_size"] = max(pl.TP, 1)
 	}
 	for name, want := range map[string]int{"tp_size": max(pl.TP, 1), "dp_size": max(pl.DP, 1)} {
 		if got, ok := args[name]; ok {
@@ -407,6 +423,14 @@ func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.
 		// nvfp4 form (trtllm_fp4_block_scale_moe) are priced.
 		switch routedExpertsDType(g) {
 		case model.DTypeFP8, model.DTypeNVFP4:
+		case model.DTypeBF16:
+			// FlashInfer's bf16 TRT-LLM MoE (trtllm_bf16_moe) takes router logits like the other two
+			// forms; the substrate prices it from the routed experts' bf16 format and the grouped-GEMM
+			// ramp the registry holds for the chip. Only an architecture whose routing is stated below
+			// reaches it.
+			if g.Global.Architecture != "Qwen3_5MoeForConditionalGeneration" {
+				return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + string(routedExpertsDType(g)) + " experts", Issue: issueLower}
+			}
 		default:
 			return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + string(routedExpertsDType(g)) + " experts", Issue: issueLower}
 		}
@@ -425,6 +449,19 @@ func expertsKernel(a *config.ServerArgs, g *model.Graph) (plan.KernelImpl, plan.
 			return plan.KernelImpl{}, plan.RoutingFused, nil
 		case "DeepseekV4ForCausalLM":
 			return plan.KernelImpl{}, plan.RoutingSeparate, nil
+		case "Qwen3_5MoeForConditionalGeneration":
+			// Qwen2MoeSparseMoeBlock builds TopK(top_k, renormalize=norm_topk_prob) with a plain softmax
+			// (no grouped top-k, no correction bias) and binds RoutingMethodType.RenormalizeNaive
+			// (models/qwen2_moe.py:307-345@297e54fd); its shared expert is a separate MLP here (fusion is
+			// off unless enable_cuda_shared_expert_fusion, which qwen3_5.py:1148-1160 does not pass), so
+			// num_shared_topk_slots is 0. The bypass test (_can_bypass_trtllm_routing, topk.py:613-650)
+			// then holds iff scoring is softmax and renormalize is true. ASSUMED: norm_topk_prob is true.
+			// The checkpoint's config.json does not state it; vLLM reads this family with
+			// getattr(config, "norm_topk_prob", True) (qwen3_next.py:232@4ba787ec), and Hugging Face's
+			// Qwen3.5 router divides the top-k weights by their sum unconditionally. If it were false the
+			// experts would be selected by a launch of SGLang's own (RoutingSeparate), a small step-time
+			// difference.
+			return plan.KernelImpl{}, plan.RoutingFused, nil
 		}
 		return plan.KernelImpl{}, "", &NotLowered{Name: "moe_runner_backend=flashinfer_trtllm on " + g.Global.Architecture +
 			" (whether SGLang bypasses its own top-k depends on the router's method, scoring and renormalisation, which the graph does not carry; " +
