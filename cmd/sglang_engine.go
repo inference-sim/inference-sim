@@ -130,7 +130,7 @@ func sglangEngineRelease() (kind, version, commit string) {
 	return engineKindSGLang, blissglang.Upstream.Version, blissglang.Upstream.Commit
 }
 
-// sglangEngineModel is the SGLang engine as this build runs it, for `blis engines`. SGLang has no
+// sglangEngineModel is the SGLang engine as this build runs it, for `blis version`. SGLang has no
 // separate kernel-behaviour pin: the one upstream release the engine models
 // (blissglang.Upstream) is both the release it prices and the tree its rules were ported from, so
 // both members of the record name it.

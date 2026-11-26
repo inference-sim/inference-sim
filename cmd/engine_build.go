@@ -1174,7 +1174,7 @@ func EngineReleases() []stack.Upstream {
 	}
 }
 
-// vllmEngineModel is the vLLM engine as this build runs it, for `blis engines`. Two releases are
+// vllmEngineModel is the vLLM engine as this build runs it, for `blis version`. Two releases are
 // recorded, and they are different facts:
 //
 //   - ModeledVersion is the release whose serving behaviour the kernel prices (the substrate's
