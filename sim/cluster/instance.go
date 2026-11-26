@@ -244,6 +244,20 @@ func (i *InstanceSimulator) TotalKVBlocks() int64 {
 	return i.drv.Snapshot().KVBlocksTotal
 }
 
+// PerRankKVBlocks returns one data-parallel rank's usable KV cache blocks for this instance.
+// An instance holding a multi-rank DP group sums KVBlocksTotal across its ranks in Snapshot(),
+// so this divides by the group's rank count.
+func (i *InstanceSimulator) PerRankKVBlocks() int64 {
+	if i.drv == nil {
+		return 0
+	}
+	n := i.drv.Snapshot().KVBlocksTotal
+	if r, ok := i.drv.Engine().(interface{ Ranks() int }); ok && r.Ranks() > 1 {
+		return n / int64(r.Ranks())
+	}
+	return n
+}
+
 // PreemptionCount returns the cumulative number of preemption events on this instance.
 func (i *InstanceSimulator) PreemptionCount() int64 {
 	return i.Metrics().PreemptionCount
