@@ -30,8 +30,9 @@ var catalogListCmd = &cobra.Command{
 		"state: the source repository and revision, the architecture, the context window the " +
 		"engine admits, the stack's layer count and the global shapes, the attention heads and " +
 		"expert routing of the layer kinds that state them (omitted where the model has none), " +
-		"and the drafters the entry lists. A chip's record states its datasheet figures, " +
-		"its packaging (gpus_per_node and gpus_per_rack, each null where the entry leaves the " +
+		"and the drafters the entry lists. A chip's record states its datasheet figures " +
+		"(compute, memory, bandwidth, and the board power where the entry states one), its " +
+		"packaging (gpus_per_node and gpus_per_rack, each null where the entry leaves the " +
 		"count to the scenario), compute capability and host CPU, with its provenance and any " +
 		"per-field provenance. A fabric's record states its nominal inter-node bandwidth, " +
 		"whether it keeps the CPU out of the data path, and its provenance. With --json the " +
@@ -280,8 +281,14 @@ func printCatalogListing(w io.Writer, l catalogListing) error {
 		return err
 	}
 	for _, c := range l.Chips {
-		if _, err := fmt.Fprintf(w, "  %s  %.2f GiB, %.2f TB/s, %.1f TFLOP/s bf16, %d SMs\n",
-			c.Name, c.MemoryGiB, c.MemoryBandwidthTBs, c.BF16TFlops, c.SMCount); err != nil {
+		// Board power is printed only where the entry states it: an unstated figure is a
+		// property of the part the catalog leaves out, not a zero-watt part.
+		power := ""
+		if c.TDPWatts > 0 {
+			power = fmt.Sprintf(", %g W", c.TDPWatts)
+		}
+		if _, err := fmt.Fprintf(w, "  %s  %.2f GiB, %.2f TB/s, %.1f TFLOP/s bf16, %d SMs%s\n",
+			c.Name, c.MemoryGiB, c.MemoryBandwidthTBs, c.BF16TFlops, c.SMCount, power); err != nil {
 			return err
 		}
 	}

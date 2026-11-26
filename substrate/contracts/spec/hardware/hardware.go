@@ -28,8 +28,8 @@ import (
 )
 
 // The catalog's files carry free-text keys prefixed with "_comment" — _comment,
-// _comment_interconnect, _comment_sm, _comment_pd_transfer — holding the provenance
-// narrative for each number.
+// _comment_interconnect, _comment_sm, _comment_tdp, _comment_pd_transfer — holding the
+// provenance narrative for each number.
 // They are deliberate content rather than stray fields, so a strict decoder must accept
 // them while still rejecting a misspelled real field.
 //
@@ -91,6 +91,18 @@ type Chip struct {
 	// it into an achievable rate is a coefficient, not a chip fact.
 	MemoryBandwidthTBs float64 `yaml:"BwPeakTBs"`
 	MemoryGiB          float64 `yaml:"MemoryGiB"`
+
+	// TDPWatts is the board power the vendor specifies for the part as shipped, in
+	// watts, per GPU. It is a packaging fact rather than a rate, and it leaves the
+	// simulator: a deployment that owns its GPUs prices electricity by multiplying it
+	// by the hours those GPUs run, so a fabricated or inferred figure would make an
+	// owned-cost comparison look precise where it is not. A client reads it from the
+	// catalog record (`blis catalog list`) and must not substitute a sibling SKU's.
+	//
+	// Zero means not stated. A part whose board power no public source states is left
+	// unstated rather than filled in from another configuration: the vendor bins these
+	// parts at different powers over one die, so 350 W and 700 W parts can share it.
+	TDPWatts float64 `yaml:"TDPWatts,omitempty"`
 
 	// IntraNodeBwGBps is per-GPU unidirectional on-node bandwidth: NVLink where
 	// present. It stays on the chip because it is a die-and-package property.

@@ -26,6 +26,11 @@ type chipFacts struct {
 	BF16TFlops  float64 `json:"bf16_tflops"`
 	FP8TFlops   float64 `json:"fp8_tflops"`
 	NVFP4TFlops float64 `json:"nvfp4_tflops,omitempty"`
+	// TDPWatts is the board power the vendor specifies for the part as shipped, watts per GPU,
+	// omitted where the entry states none. It is a packaging maximum a client prices electricity
+	// with, not a measured draw, so a client must read the omission as unavailable rather than as
+	// a zero-watt part and must not substitute another configuration's figure.
+	TDPWatts float64 `json:"tdp_watts,omitempty"`
 	// MemoryGiB is the device's memory in GiB, the unit the catalog states it in; a client showing
 	// bytes multiplies by 2^30.
 	MemoryGiB          float64 `json:"memory_gib"`
@@ -53,6 +58,7 @@ func chipFactsOf(c *hardware.Chip) chipFacts {
 		BF16TFlops:         c.BF16Peak,
 		FP8TFlops:          c.FP8Peak,
 		NVFP4TFlops:        c.NVFP4Peak,
+		TDPWatts:           c.TDPWatts,
 		MemoryGiB:          c.MemoryGiB,
 		MemoryBandwidthTBs: c.MemoryBandwidthTBs,
 		IntraNodeBwGBps:    c.IntraNodeBwGBps,
@@ -106,6 +112,7 @@ var chipFieldNames = map[string]string{
 	"TFlopsPeak":        "bf16_tflops",
 	"TFlopsFP8":         "fp8_tflops",
 	"TFlopsNVFP4":       "nvfp4_tflops",
+	"TDPWatts":          "tdp_watts",
 	"MemoryGiB":         "memory_gib",
 	"BwPeakTBs":         "memory_bandwidth_tbs",
 	"IntraNodeBwGBps":   "intra_node_bw_gbps",

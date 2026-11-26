@@ -49,6 +49,7 @@ func (c *Chip) Validate() *validate.Problems {
 	memFinite := p.FiniteField("MemoryGiB", c.MemoryGiB)
 	intraNodeFinite := p.FiniteField("IntraNodeBwGBps", c.IntraNodeBwGBps)
 	intraRackFinite := p.FiniteField("IntraRackBwGBps", c.IntraRackBwGBps)
+	tdpFinite := p.FiniteField("TDPWatts", c.TDPWatts)
 	if bf16Finite && c.BF16Peak <= 0 {
 		p.Field("TFlopsPeak", "must be positive")
 	}
@@ -66,6 +67,12 @@ func (c *Chip) Validate() *validate.Problems {
 	}
 	if nvfp4Finite && c.NVFP4Peak < 0 {
 		p.Field("TFlopsNVFP4", "must not be negative; omit it where the format is emulated")
+	}
+	// Board power is zero when unstated (the key is omitempty), so a stated one only has to
+	// avoid a negative or non-finite value. A negative figure would price a GPU's electricity
+	// below zero, which is never a data-entry outcome but a sign slip.
+	if tdpFinite && c.TDPWatts < 0 {
+		p.Field("TDPWatts", "must not be negative; omit it where the board power is unstated")
 	}
 	// FP8 at or below BF16 would mean the narrower format buys nothing, which is not
 	// a property any shipped part has. It is far more likely a transcription slip. Only

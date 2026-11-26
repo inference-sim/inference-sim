@@ -73,6 +73,9 @@ func TestChipRejects(t *testing.T) {
 		{"zero intra-node bandwidth", func(c *Chip) { c.IntraNodeBwGBps = 0 }},
 		{"negative fp8 peak", func(c *Chip) { c.FP8Peak = -1 }},
 		{"fp8 not above bf16", func(c *Chip) { c.FP8Peak = 500 }},
+		// Board power prices electricity for a GPU a deployment owns. A negative figure is a
+		// sign slip, never a value; zero stays the unstated encoding.
+		{"negative board power", func(c *Chip) { c.TDPWatts = -1 }},
 		{"rack not a multiple of node", func(c *Chip) { c.GPUsPerRack = 70 }},
 		{"negative GPUsPerNode", func(c *Chip) { c.GPUsPerNode = -8 }},
 		{"negative GPUsPerRack", func(c *Chip) { c.GPUsPerRack = -72 }},
@@ -88,6 +91,8 @@ func TestChipRejects(t *testing.T) {
 		// A NaN intra-rack bandwidth must not pass as "no tier": NaN > 0 is false, so the
 		// presence guard alone would silently accept it.
 		{"NaN intra-rack bandwidth", func(c *Chip) { c.IntraRackBwGBps = math.NaN() }},
+		{"NaN board power", func(c *Chip) { c.TDPWatts = math.NaN() }},
+		{"Inf board power", func(c *Chip) { c.TDPWatts = math.Inf(1) }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -330,6 +335,35 @@ func TestChipValidatesHostCPU(t *testing.T) {
 	var c Chip
 	if err := yaml.Unmarshal([]byte("HostCPU: x86\n"), &c); err != nil || c.HostCPU != "x86" {
 		t.Errorf("HostCPU is a chip fact read from the catalog: %v %q", err, c.HostCPU)
+	}
+}
+
+// TDPWatts is the board power a reader prices electricity with, per GPU. The wire key and
+// the unstated encoding both matter: a stated figure decodes and validates, and an omitted
+// one stays valid and unstated rather than becoming a zero-watt part.
+func TestChipDecodesBoardPower(t *testing.T) {
+	var stated Chip
+	if err := yaml.Unmarshal([]byte(cleanChipYAML+"TDPWatts: 700\n"), &stated); err != nil {
+		t.Fatalf("TDPWatts should decode as a chip fact, got: %v", err)
+	}
+	if stated.TDPWatts != 700 {
+		t.Errorf("TDPWatts = %v, want 700", stated.TDPWatts)
+	}
+	stated.Name = "h200"
+	if p := stated.Validate(); !p.OK() {
+		t.Fatalf("a chip stating its board power was rejected:\n%s", p.Error())
+	}
+
+	var unstated Chip
+	if err := yaml.Unmarshal([]byte(cleanChipYAML), &unstated); err != nil {
+		t.Fatalf("a chip without a board power should decode, got: %v", err)
+	}
+	unstated.Name = "h200"
+	if unstated.TDPWatts != 0 {
+		t.Errorf("an omitted TDPWatts = %v, want 0 (unstated)", unstated.TDPWatts)
+	}
+	if p := unstated.Validate(); !p.OK() {
+		t.Fatalf("a chip without a stated board power was rejected:\n%s", p.Error())
 	}
 }
 

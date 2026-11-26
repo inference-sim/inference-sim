@@ -207,12 +207,69 @@ func TestCatalogListStatesChipProvenance(t *testing.T) {
 	if c.SMCount != 132 || c.ComputeCapability != "9.0" || c.HostCPU != "x86" {
 		t.Errorf("sm_count %d, compute %q, host %q", c.SMCount, c.ComputeCapability, c.HostCPU)
 	}
+	// Board power is a per-GPU figure the entry states, and it needs no field_provenance
+	// entry because the file's own provenance covers it.
+	if c.TDPWatts != 700 {
+		t.Errorf("tdp_watts %v, want the catalog's 700", c.TDPWatts)
+	}
+}
+
+// A chip's board power is a packaging maximum a client prices electricity with. It is reported
+// under its own key, and a chip whose entry states none leaves it out so a client reads the
+// omission as unavailable rather than as a zero-watt part. A field_provenance entry naming the
+// catalog's TDPWatts is rekeyed like every other fact, so a client can read its source.
+func TestCatalogChipReportsStatedBoardPower(t *testing.T) {
+	stated := catalogChip{Name: "h200", chipFacts: chipFactsOf(&hardware.Chip{
+		Name: "h200", TDPWatts: 700,
+		FieldProvenance: map[string]string{"TDPWatts": "vendor_spec"},
+	})}
+	var fields map[string]any
+	raw, err := json.Marshal(stated)
+	if err != nil {
+		t.Fatalf("marshalling a chip: %v", err)
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshalling a chip: %v", err)
+	}
+	if fields["tdp_watts"] != 700.0 {
+		t.Errorf("tdp_watts = %v, want 700 under its own key: %s", fields["tdp_watts"], raw)
+	}
+	// The provenance map is keyed by this record's field names, not the catalog's.
+	prov, ok := fields["field_provenance"].(map[string]any)
+	if !ok || prov["tdp_watts"] != "vendor_spec" {
+		t.Errorf("field_provenance = %v, want tdp_watts keyed by this record's name", fields["field_provenance"])
+	}
+	if _, unmapped := prov["TDPWatts"]; unmapped {
+		t.Errorf("field_provenance is keyed by the catalog's field names: %v", prov)
+	}
+
+	unstated, err := json.Marshal(catalogChip{Name: "x", chipFacts: chipFactsOf(&hardware.Chip{Name: "x"})})
+	if err != nil {
+		t.Fatalf("marshalling a chip: %v", err)
+	}
+	if strings.Contains(string(unstated), "tdp_watts") {
+		t.Errorf("a chip stating no board power reports one: %s", unstated)
+	}
+}
+
+// Every shipped chip states a board power: each catalog hardware entry names the vendor's maximum,
+// so a chip reporting none is an omission to fix rather than a part with no rating.
+func TestCatalogListStatesBoardPowerForEveryChip(t *testing.T) {
+	l := catalogListingOfCLI(t)
+	if len(l.Chips) == 0 {
+		t.Fatal("the listing has no chips")
+	}
+	for _, c := range l.Chips {
+		if c.TDPWatts <= 0 {
+			t.Errorf("%s reports no tdp_watts, want the board power its entry states", c.Name)
+		}
+	}
 }
 
 // The text form names every entity, so the command is useful without --json.
 func TestCatalogListPrintsInText(t *testing.T) {
 	out := runCatalogCLI(t, "catalog", "list")
-	for _, want := range []string{"models: ", "chips: ", "fabrics: ", "codellama-34b-instruct-hf", "h200", "ib-400g"} {
+	for _, want := range []string{"models: ", "chips: ", "fabrics: ", "codellama-34b-instruct-hf", "h200", "ib-400g", "700 W"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the text listing does not contain %q:\n%s", want, out)
 		}
