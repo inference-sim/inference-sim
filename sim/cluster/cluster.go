@@ -1990,15 +1990,12 @@ func (c *ClusterSimulator) aggregateMetrics() *sim.Metrics {
 
 // projectPDMetrics replaces sub-request entries in per-request metric maps
 // with parent-level entries. For each ParentRequest:
-//   - Served parents (terminal AND the decode sub-request emitted ≥1 token):
+//   - Parents whose decode sub-request emitted tokens:
 //     sub-request entries are replaced with parent-keyed entries using
-//     true user-facing values (e.g., E2E = decodeSchedulingDelay + decodeOwnE2E).
-//   - Incomplete parents, and terminal-but-no-token parents (decode-side drops
-//     with nil DecodeSubReq, or decode-timeout-while-queued with empty ITL): the
-//     sub-request entries are removed and NO parent entry is created. These
-//     requests produced no output; they are accounted for by the drop/timeout
-//     counters only (DroppedUnservable / TimedOutRequests), never by the latency
-//     distributions (issue #1511, INV-PD-6).
+//     user-facing values. An unfinished parent retains its partial output and
+//     first-token time. Its end-to-end latency is only recorded on completion.
+//   - Parents whose decode sub-request emitted no tokens have no projected
+//     output or latency entry (issue #1511, INV-PD-6).
 //
 // This is a no-op when disaggregation is not active (parentRequests is empty).
 func (c *ClusterSimulator) projectPDMetrics() {
@@ -2011,35 +2008,21 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		pfx := parent.PrefillSubReqID // "req_N_prefill"
 		dec := parent.DecodeSubReqID  // "req_N_decode"
 		pid := parent.ID              // "req_N"
-		completed := parent.CompletionTime > 0 && parent.DecodeInstanceID != ""
-
-		// servedFirstToken: the decode sub-request has ≥1 un-discarded ITL entry at
-		// finalization — i.e. a client-visible first-token measurement survived to the end.
-		// It is false for the no-token TERMINAL outcomes (issue #1511):
-		//   - decode-side drop at transfer start / transfer complete — DecodeSubReq is
-		//     nil (nilled by dropAtStart / the late-drop path before the decode sub-request
-		//     runs);
-		//   - decode-timeout-while-queued — DecodeSubReq != nil but ITL is empty because it
-		//     never ran a decode step; and
-		//   - (a decode sub-request preempted after emitting tokens keeps them and its ITL,
-		//     as vLLM keeps a preempted request's output, so it stays served.)
-		// Each reaches a terminal CompletionTime with a DecodeInstanceID assigned (so
-		// `completed` is true) yet has no surviving first token. Such a parent belongs to the
-		// drop/timeout counters (DroppedUnservable via droppedAtDecodeKV; TimedOutRequests via
-		// pdDecodeTimedOutCount) ONLY and must contribute NO per-request metric entry —
-		// otherwise it is double-represented as both a drop and a latency sample, polluting
-		// the TTFT/E2E/scheduling-delay distributions (INV-PD-6). `served` folds that
-		// requirement into the projection gate below. A decode sub-request that emitted a
-		// first token and THEN timed out mid-generation WITHOUT an intervening preemption
-		// keeps a non-empty ITL, so it is still served: it keeps its TTFT, scheduling delay
-		// and request row (the user did receive that token), but gets no E2E or completion
-		// stamp, since it did not complete (the E2E block below).
-		//
-		// A request whose whole output is one token has no inter-token gap, so its ITL is empty
-		// although it was served: the engine stamped its first-token time (TTFTSet) instead, and
-		// that, not a gap, is what says a token reached the client.
-		servedFirstToken := parent.DecodeSubReq != nil && (len(parent.DecodeSubReq.ITL) > 0 || parent.DecodeSubReq.TTFTSet)
-		served := completed && servedFirstToken
+		// A one-token response has a first-token stamp but no inter-token gap.
+		// A timeout or the run horizon can leave either kind of partial response.
+		decode := parent.DecodeSubReq
+		served := decode != nil && (len(decode.ITL) > 0 || decode.TTFTSet)
+		if served && decode.TTFTSet {
+			// Host processing can put the first token after a deadline or run cutoff
+			// even when the engine step that produced it happened before that time.
+			first := decode.ArrivalTime + decode.FirstTokenTime
+			switch {
+			case decode.State == sim.StateTimedOut:
+				served = first <= parent.CompletionTime
+			case parent.CompletionTime == 0 && c.config.Horizon > 0:
+				served = first <= c.config.Horizon
+			}
+		}
 
 		// Read the decode sub-request's own per-instance measurements before the
 		// per-metric delete/rekey blocks below consume them (R1: no silent data
@@ -2165,7 +2148,7 @@ func (c *ClusterSimulator) projectPDMetrics() {
 		// above (shared with the E2E block); RequestSchedulingDelays[dec] is not
 		// deleted until the scheduling-delay block below.
 		//
-		// Gate on `served` (terminal AND the decode sub-request emitted ≥1 token). A
+		// Gate on `served` (the decode sub-request emitted at least one token). A
 		// terminal-but-no-token parent — a decode-side drop (nil DecodeSubReq, both the
 		// transfer-start and late-drop paths) or a decode-timeout-while-queued (non-nil
 		// DecodeSubReq with empty ITL) — contributes NO parent TTFT (issue #1511,
