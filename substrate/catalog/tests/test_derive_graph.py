@@ -10789,3 +10789,93 @@ def test_mimo_vision_tower_is_bf16_and_audio_is_a_recorded_omission():
         assert nodes["attention"].get("window") == window
         assert (nodes["attention"]["n_heads"], nodes["attention"]["d_h"]) == (32, 64)
     assert [(o["modality"], o["issue"]) for o in enc["omitted"]] == [("audio", "inference-sim/inference-sim#2474")]
+
+
+# --- NemotronH under a ragged MIXED_PRECISION map (nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4) ---
+# Its quantized_layers map stores the same module at different widths on different layers: the shared
+# down projection NVFP4 on the first MoE layer and FP8 on the rest, one shared projection left out of
+# the map (so unquantized) on a few layers. These tests give the committed Nemotron-3-Ultra BF16 config
+# such a map and read the layout back from the derived graph, layer by layer.
+
+
+def _nemotron_ragged_raw(edit=None):
+    raw = config_of(NEMOTRON_ULTRA_BF16)
+    kinds = raw["layers_block_type"]
+    experts = int(raw["n_routed_experts"])
+    layers = {}
+    for i, kind in enumerate(kinds):
+        p = f"backbone.layers.{i}.mixer."
+        if kind == "moe":
+            for e in range(experts):
+                layers[f"{p}experts.{e}.up_proj"] = {"quant_algo": "NVFP4", "group_size": 16}
+                layers[f"{p}experts.{e}.down_proj"] = {"quant_algo": "NVFP4", "group_size": 16}
+            layers[p + "shared_experts.up_proj"] = {"quant_algo": "FP8"}
+            layers[p + "shared_experts.down_proj"] = {"quant_algo": "FP8"}
+        elif kind == "mamba":
+            layers[p + "in_proj"] = {"quant_algo": "FP8"}
+            layers[p + "out_proj"] = {"quant_algo": "FP8"}
+    raw["quantization_config"] = {"quant_method": "modelopt", "quant_algo": "MIXED_PRECISION",
+                                  "ignore": [], "quantized_layers": layers}
+    if edit:
+        edit(raw["quantization_config"]["quantized_layers"], kinds)
+    return raw
+
+
+def _widths_by_layer(g: dict, role: str) -> list:
+    """The stored width of the GEMM or grouped GEMM `role` on every layer that has one."""
+    out = []
+    for layer, ids in enumerate(layer_sequence(g["stack"])):
+        kind = {k["id"]: k for k in g["layer_kinds"]}[ids]
+        for n in kind["nodes"]:
+            if n.get("role") == role and n["op"] in ("GEMM", "GroupedGEMM"):
+                out.append((layer, n.get("weight_dtype", g["global"]["weight_dtype"])))
+    return out
+
+
+def test_nemotron_h_ragged_quantized_layers_give_each_outcome_its_own_layer_kind(tmp_path):
+    """One shared down projection stored NVFP4, one left out of the map, the rest FP8: every
+    layer is priced at the width the map gives it (a module the map does not name is stored
+    unquantized, ModelOptMixedPrecisionConfig.get_quant_method, modelopt.py:1844-1915@v0.33.0),
+    the width most layers share keeps the kind's name, and every other outcome is a kind of its own."""
+    moe = [i for i, k in enumerate(_nemotron_ragged_raw()["layers_block_type"]) if k == "moe"]
+    first, last = moe[0], moe[-1]
+
+    def edit(layers, kinds):
+        layers[f"backbone.layers.{first}.mixer.shared_experts.down_proj"] = {"quant_algo": "NVFP4",
+                                                                           "group_size": 16}
+        del layers[f"backbone.layers.{last}.mixer.shared_experts.up_proj"]
+
+    g = _derive_raw(_nemotron_ragged_raw(edit), tmp_path, "nemotron-ragged-test")
+    down = dict(_widths_by_layer(g, "shared_down"))
+    up = dict(_widths_by_layer(g, "shared_up"))
+    assert down[first] == "nvfp4" and all(down[i] == "fp8" for i in moe[1:])
+    assert up[last] == "bf16" and all(up[i] == "fp8" for i in moe[:-1])
+    assert {w for _, w in _widths_by_layer(g, "experts")} == {"nvfp4"}
+    # Three outcomes among the MoE layers: the common one under its own name, and one kind apiece.
+    ids = layer_sequence(g["stack"])
+    assert ids[moe[1]] == "moe" and len({ids[i] for i in moe}) == 3
+    assert ids[first] != "moe" and ids[last] != "moe" and ids[first] != ids[last]
+    # The split changes nothing but widths: every kind of one type has the same shapes.
+    shapes = lambda kind: [(n["op"], n.get("role"), n.get("n"), n.get("k")) for n in kind["nodes"]]
+    kinds = {k["id"]: k for k in g["layer_kinds"]}
+    assert shapes(kinds[ids[first]]) == shapes(kinds["moe"]) == shapes(kinds[ids[last]])
+    assert len(ids) == len(_nemotron_ragged_raw()["layers_block_type"])
+    assert g["global"]["weight_dtype"] == "bf16"
+
+
+def test_nemotron_h_a_ragged_map_that_agrees_with_itself_adds_no_kinds(tmp_path):
+    """The same map with nothing ragged in it gives one kind a type, as the class placement does."""
+    g = _derive_raw(_nemotron_ragged_raw(), tmp_path, "nemotron-ragged-test")
+    assert set(layer_sequence(g["stack"])) == {"mamba", "moe", "attention"}
+    assert {k["id"] for k in g["layer_kinds"]} == {"mamba", "moe", "attention", "mtp_moe"}
+
+
+def test_nemotron_h_one_layer_storing_its_experts_at_two_widths_is_refused(tmp_path):
+    """The experts of one layer are one grouped GEMM, so a map that quantizes some of them NVFP4
+    and others FP8 cannot be priced."""
+    def edit(layers, kinds):
+        moe = next(i for i, k in enumerate(kinds) if k == "moe")
+        layers[f"backbone.layers.{moe}.mixer.experts.0.up_proj"] = {"quant_algo": "FP8"}
+
+    with pytest.raises(deriver().DeriveError, match="fuses shards|cannot price both"):
+        _derive_raw(_nemotron_ragged_raw(edit), tmp_path, "nemotron-ragged-test")

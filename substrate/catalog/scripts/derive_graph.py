@@ -385,6 +385,13 @@ def quantized_classes(cfg: dict[str, Any], model: str) -> dict[str, str]:
         if match is None:
             continue
         found.setdefault(QUANT_ROLE_CLASSES[match], set()).add(width)
+    # A map whose layers differ among themselves (Nemotron-3-Super-NVFP4: one layer's shared
+    # down projection NVFP4 beside FP8 on the rest) has no width per class. An architecture in
+    # MODELOPT_RAGGED_ARCHS places each module at the width the map gives it, layer by layer
+    # (modelopt_place_widths), so no class width is read for it.
+    if (any(len(w) > 1 for w in found.values())
+            and (cfg.get("architectures") or [None])[0] in MODELOPT_RAGGED_ARCHS):
+        return {}
     out = {}
     for role, widths in found.items():
         if len(widths) > 1:
@@ -415,7 +422,15 @@ MODELOPT_PER_NODE_ARCHS = frozenset({
 # names have not been read against a real map.
 MODELOPT_MIXED_ARCHS = frozenset({"GlmMoeDsaForCausalLM", "Qwen3_5MoeForConditionalGeneration",
                                   "Qwen4ExpForConditionalGeneration",
-                                  "PixtralForConditionalGeneration"})
+                                  "PixtralForConditionalGeneration", "NemotronHForCausalLM"})
+
+# The MIXED_PRECISION architectures whose checkpoints state a different width for the same role
+# on different layers, so one layer kind has one node per outcome: the same module is FP8 on
+# most layers and NVFP4, or left unquantized, on a few (nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-
+# NVFP4 at ff433f54, quantized_layers). modelopt_place_widths gives each outcome its own kind and
+# reports which layer takes which. Every other architecture refuses such a map, as its checkpoints
+# have not been read for it.
+MODELOPT_RAGGED_ARCHS = frozenset({"NemotronHForCausalLM"})
 
 # The quant_method spellings vLLM v0.33.0 builds a ModelOpt config from for a mixed checkpoint:
 # "modelopt", which ModelOptMixedPrecisionConfig.override_quantization_method turns into
@@ -826,8 +841,13 @@ def modelopt_placed_width(raw: dict[str, Any], model: str, arch: str):
                 raise DeriveError(f"{model}: quantized_layers names {key} at "
                                   f"{(info or {}).get('quant_algo')!r}, which this deriver "
                                   f"does not place")
-            # The map is read as written: vLLM applies the loader's renames to the exclusion
-            # list only, and matches these keys through its own candidates below.
+            # vLLM v0.33.0 applies the loader's prefix renames to this map as well as to the
+            # exclusion list (ModelOptMixedPrecisionConfig.apply_vllm_mapper,
+            # modelopt.py:1916-1919: `quantized_layers = hf_to_vllm_mapper.apply_dict(...)`), and
+            # matches the keys through its own candidates below. NemotronH's "backbone" becomes
+            # "model", so the map names the modules the model builds.
+            if arch in MODELOPT_RAGGED_ARCHS:
+                key = renamed(key)
             recipe[key] = got
         packed = quant.get("packed_modules_mapping") or {}
         # The model's packed_modules_mapping, which vLLM sets on the quant config: every
@@ -1005,7 +1025,8 @@ def header_width_of(spec: dict[str, Any], model: str):
 def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
                           raw: dict[str, Any], model: str,
                           draft: tuple[str, list[int]] | None = None,
-                          drafts: list[tuple[str, list[int]]] | None = None) -> list[dict[str, Any]]:
+                          drafts: list[tuple[str, list[int]]] | None = None,
+                          relabel: dict[int, str] | None = None) -> list[dict[str, Any]]:
     """Give each weight node of a ModelOpt checkpoint the width vLLM stores it at.
 
     The global width stays the base dtype and a quantized node carries the quantized one,
@@ -1020,6 +1041,14 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
     The router and Qwen's shared-expert gate are GateLinear and ReplicatedLinear built with no
     quant config in every architecture listed here (MOE_FAMILIES), so no exclusion list
     reaches them: they keep the width moe_block gives them.
+
+    Where the caller passes `relabel` (an architecture in MODELOPT_RAGGED_ARCHS, reading a
+    MIXED_PRECISION map), a role stored at different widths on different layers of one kind is not
+    refused: the kind is split, one kind per distinct outcome. The outcome the most layers share
+    keeps the kind's id (the first such, on a tie); each other is named for how it differs,
+    `<kind>__<role>_<width>`, a role left at the base width reading `base`. `relabel` is filled
+    with the kind id of every decoder layer by index, which the caller turns into the stack.
+    Without it, as for a uniform ModelOpt list, such a role is refused.
 
     `draft`, where given, is (kind id, module indices): a draft kind whose layers the engine
     builds under the architecture's draft_layer prefix at those indices, asked at those
@@ -1063,9 +1092,9 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
         # A gated shared expert fuses gate and up (shared_gate_up); NemotronH's is ungated (shared_up).
         up = "shared_gate_up" if spec["shared"][0].endswith("gate_up_proj") else "shared_up"
         roles.update({up: spec["shared"][0], "shared_down": spec["shared"][1]})
-    out = []
-    for kind in kinds:
-        idx = layers_of.get(kind["id"], [])
+
+    def placed_nodes(kind, idx):
+        """The kind's nodes at the widths the layers `idx` store them at; one width a node."""
         nodes = []
         for node in kind["nodes"]:
             role = node.get("role")
@@ -1086,7 +1115,36 @@ def modelopt_place_widths(kinds: list[dict[str, Any]], stack: dict[str, Any],
             if placed:
                 node = dict(node, weight_dtype=placed)
             nodes.append(node)
-        out.append(dict(kind, nodes=nodes))
+        return nodes
+
+    ragged = relabel is not None
+    if ragged and arch not in MODELOPT_RAGGED_ARCHS:
+        raise DeriveError(f"{model}: {arch} is not read for a map that stores one role at "
+                          f"different widths on different layers; only "
+                          f"{sorted(MODELOPT_RAGGED_ARCHS)} are")
+    out = []
+    for kind in kinds:
+        idx = layers_of.get(kind["id"], [])
+        if not (ragged and idx and kind["id"] not in draft_kinds):
+            out.append(dict(kind, nodes=placed_nodes(kind, idx)))
+            continue
+        # One outcome per distinct tuple of node widths among this kind's layers.
+        by_outcome: dict[tuple, tuple[list, list[int]]] = {}
+        for one in idx:
+            nodes = placed_nodes(kind, [one])
+            key = tuple(n.get("weight_dtype") for n in nodes)
+            by_outcome.setdefault(key, (nodes, []))[1].append(one[1])
+        # max() returns the first of equals, and by_outcome is in first-layer order.
+        main = max(by_outcome, key=lambda k: len(by_outcome[k][1]))
+        for key, (nodes, layers_at) in by_outcome.items():
+            if key == main:
+                kid = kind["id"]
+            else:
+                diff = [f"{n['role']}_{w or 'base'}" for n, w, m in zip(nodes, key, main) if w != m]
+                kid = f"{kind['id']}__{'_'.join(diff)}"
+            out.append(dict(kind, id=kid, nodes=nodes))
+            for i in layers_at:
+                relabel[i] = kid
     return out
 
 
@@ -6122,7 +6180,19 @@ def handler_nemotron_h(cfg, raw, model):
     window = unscaled_context_window(cfg, raw, model)
     quant = raw.get("quantization_config") or {}
     method = str(quant.get("quant_method", "")).lower()
-    uniform = method == "modelopt" and str(quant.get("quant_algo", "")).upper() != "MIXED_PRECISION"
+    algo = str(quant.get("quant_algo", "")).upper()
+    uniform = method == "modelopt" and algo != "MIXED_PRECISION"
+    # A MIXED_PRECISION map names each quantized module by layer; modelopt_place_widths reads it
+    # module by module and splits a layer kind whose layers are stored at different widths.
+    # A map whose classes are each stored at one width keeps the class placement of
+    # nemotron_h_kinds; only one that is not, which quantized_classes leaves empty, is read here.
+    mixed = (method in MODELOPT_METHODS and algo == "MIXED_PRECISION" and bool(quant.get("quantized_layers"))
+             and not quantized_classes(cfg, model))
+    if mixed:
+        relabel: dict[int, str] = {}
+        kinds = modelopt_place_widths(kinds, stack, raw, model, relabel=relabel)
+        vector = [relabel[i] for i in range(len(vector))]
+        stack = compress(vector)
 
     spec = int(pick(cfg, "num_spec_tokens") or 0)
     mtp_vector = cfg.get("mtp_layers_block_type") or cfg.get("mtp_hybrid_override_pattern")
