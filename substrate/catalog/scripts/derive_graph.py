@@ -1206,6 +1206,11 @@ def weight_dtype(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> str:
         if architecture_of(raw, model) in KIMI_K3_ARCHS:
             kimi_k3_expert_width(cfg, raw, model)
             return base_dtype(cfg, raw, model)
+        # Laguna's NVFP4 block targets routed experts (and, on Laguna-XS, the shared expert) by
+        # regex and leaves every other linear at the base width (laguna_widths).
+        if architecture_of(raw, model) == LAGUNA_ARCH:
+            laguna_quant(raw, cfg, model)
+            return base_dtype(cfg, raw, model)
         # MiniMax-M3's MIXED_PRECISION checkpoint: MXFP8 on every linear and NVFP4 on the
         # routed experts. Its linears are the global width and the experts carry the narrow
         # one (minimax_m3_mixed_precision), so this is answered before the generic map below,
@@ -1791,6 +1796,10 @@ MOE_FAMILIES: dict[str, dict[str, Any]] = {
     # params_dtype and out_dtype float32, and n_shared_experts Glm4MoeMLPs of width
     # moe_intermediate_size (a gated SiLU MLP, folded into one MLP of n_shared x that width).
     "Glm4MoeForCausalLM": {"router": "fp32", "shared": "gated"},
+    # LagunaMoE (vllm/model_executor/models/laguna.py@v0.33.0:100-229): a GateLinear built with no
+    # quant config and no dtype override, so at the model dtype, and a gated-SiLU shared expert
+    # (LagunaMLP) where shared_expert_intermediate_size is positive.
+    "LagunaForCausalLM": {"router": "base", "shared": "gated"},
     # MiMoV2MoE (mimo_v2.py@0fda86a35419): a ReplicatedLinear gate at moe_router_dtype (handler_mimo_v2
     # states it), and no shared expert (n_shared_experts is null).
     "MiMoV2ForCausalLM": {"router": "base", "shared": "gated"},
@@ -8194,6 +8203,231 @@ def handler_gemma4(cfg, raw, model):
     return kinds, compress(sequence), {"embedding": embedding, "head": head}
 
 
+LAGUNA_ARCH = "LagunaForCausalLM"
+
+
+def laguna_quant(raw: dict[str, Any], cfg: dict[str, Any], model: str) -> dict[str, Any] | None:
+    """The checkpoint's quantization block where it is the one this handler places, or None for an
+    unquantized checkpoint.
+
+    Only compressed-tensors `nvfp4-pack-quantized` groups (4-bit float weights, 16-element groups)
+    are placed: each module's width is then decided by vLLM's own rule, the ignore list first and
+    the group's targets second (CompressedTensorsConfig.get_scheme_dict,
+    quantization/compressed_tensors/compressed_tensors.py:998-1031@v0.33.0). Any other block is
+    refused rather than priced at one width."""
+    quant = raw_quant(cfg, model) or raw_quant(raw, model)
+    if not quant:
+        return None
+    if str(quant.get("quant_method", "")).lower() != "compressed-tensors":
+        raise DeriveError(f"{model}: quant_method {quant.get('quant_method')!r}; the Laguna "
+                          f"handler places only compressed-tensors groups")
+    groups = list((quant.get("config_groups") or {}).values())
+    if not groups:
+        raise DeriveError(f"{model}: a compressed-tensors block with no config_groups")
+    for g in groups:
+        w = (g or {}).get("weights") or {}
+        if ((g or {}).get("format") != "nvfp4-pack-quantized" or w.get("num_bits") != 4
+                or w.get("type") != "float" or w.get("group_size") != 16):
+            raise DeriveError(f"{model}: a compressed-tensors group other than NVFP4 "
+                              f"(nvfp4-pack-quantized, 4-bit float, groups of 16): {g!r}")
+    return quant
+
+
+def laguna_is_nvfp4(quant: dict[str, Any], names: tuple[str, ...], model: str) -> bool:
+    """Whether vLLM builds a Laguna module with the NVFP4 scheme. `names` are the checkpoint names of
+    the module's shards (one for a plain linear, q/k/v for the fused qkv_proj): the module is
+    unquantized when the ignore list names it, quantized when a group's target matches it, and a
+    fused module whose shards disagree is refused, as vLLM refuses it (should_ignore_layer,
+    compressed_tensors/utils.py:53-71@v0.33.0)."""
+    entries = [str(e) for e in quant.get("ignore") or ()]
+    targets = [str(t) for g in quant["config_groups"].values() for t in (g or {}).get("targets") or ()]
+    found = set()
+    for n in names:
+        if any(ct_matches(n, e) for e in entries):
+            found.add(False)
+        else:
+            found.add(any(t == "Linear" or ct_matches(n, t) for t in targets))
+    if len(found) != 1:
+        raise DeriveError(f"{model}: the quantization block treats the shards {list(names)} of one "
+                          f"fused module differently, which vLLM refuses")
+    return found.pop()
+
+
+def laguna_layer_plan(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> list[dict[str, Any]]:
+    """Each decoder layer's shape and stored widths, read per layer and never from a period.
+
+    LagunaDecoderLayer (vllm/model_executor/models/laguna.py@v0.33.0:546-640) takes the layer's
+    attention kind from layer_types, its query-head count from num_attention_heads_per_layer
+    (key/value heads are the config's one value), and its MLP kind from mlp_layer_types, which
+    must agree with the transformers rule (a layer is sparse unless listed in mlp_only_layers or
+    skipped by decoder_sparse_step, modeling_laguna.py in the checkpoint's repository)."""
+    layers = int(require(cfg, "num_layers", model))
+    base = base_dtype(cfg, raw, model)
+    quant = laguna_quant(raw, cfg, model)
+
+    def vector(key: str, allowed: set[str] | None = None) -> list[Any]:
+        vec = cfg.get(key)
+        if not isinstance(vec, list) or len(vec) != layers:
+            raise DeriveError(f"{model}: {key} must list one entry per layer ({layers}), got "
+                              f"{None if not isinstance(vec, list) else len(vec)}")
+        if allowed is not None and set(vec) - allowed:
+            raise DeriveError(f"{model}: {key} names {sorted(set(vec) - allowed)}, which this "
+                              f"handler does not price")
+        return vec
+
+    attn_types = vector("layer_types", {"full_attention", "sliding_attention"})
+    mlp_types = vector("mlp_layer_types", {"dense", "sparse"})
+    heads = (vector("num_attention_heads_per_layer") if cfg.get("num_attention_heads_per_layer")
+             is not None else [int(require(cfg, "num_q_heads", model))] * layers)
+    window = pick(cfg, "sliding_window")
+    if "sliding_attention" in attn_types and not window:
+        raise DeriveError(f"{model}: sliding_attention layers with no sliding_window")
+    if cfg.get("swa_attention_sink_enabled"):
+        raise DeriveError(f"{model}: swa_attention_sink_enabled adds a learned sink to every window "
+                          f"layer's attention, which the attention node cannot state")
+    # The transformers rule for which layers are sparse, checked against the stated vector.
+    experts = int(pick(cfg, "num_experts") or 0)
+    step = int(cfg.get("decoder_sparse_step") or 1)
+    only = set(cfg.get("mlp_only_layers") or ())
+    rule = ["sparse" if i not in only and experts > 0 and (i + 1) % step == 0 else "dense"
+            for i in range(layers)]
+    if rule != mlp_types:
+        raise DeriveError(f"{model}: mlp_layer_types disagrees with mlp_only_layers {sorted(only)} and "
+                          f"decoder_sparse_step {step}; vLLM reads the first and transformers the "
+                          f"second, so the checkpoint is not one model")
+    # The gate: vLLM and transformers disagree on gating=True (per-head against per-element), so
+    # only the two unambiguous spellings are accepted.
+    gating = cfg.get("gating")
+    if gating not in ("per-head", "per-element", False):
+        raise DeriveError(f"{model}: gating {gating!r}; vLLM reads True as per-head and transformers "
+                          f"as per-element, so only 'per-head', 'per-element' and false are priced")
+    types = cfg.get("gating_types")
+    if types is not None:
+        spelled = {"per-head": "per_head", "per-element": "per_element"}.get(gating)
+        if (not isinstance(types, list) or len(types) != layers
+                or set(types) != ({spelled} if spelled else set())):
+            raise DeriveError(f"{model}: gating_types does not repeat gating {gating!r} on every "
+                              f"layer; neither implementation reads it, so a differing entry would "
+                              f"go unpriced")
+    hd = head_dim(cfg, model)
+
+    def nvfp4(layer: int, *shards: str) -> bool:
+        if quant is None:
+            return False
+        return laguna_is_nvfp4(quant, tuple(f"model.layers.{layer}.{s}" for s in shards), model)
+
+    plan = []
+    for i in range(layers):
+        nq = int(heads[i])
+        plan.append({
+            "attn": attn_types[i], "heads": nq, "mlp": mlp_types[i],
+            "gate_rows": 0 if not gating else nq if gating == "per-head" else nq * hd,
+            "qkv": nvfp4(i, "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"),
+            "o": nvfp4(i, "self_attn.o_proj"),
+            "g": nvfp4(i, "self_attn.g_proj") if gating else False,
+            "dense": nvfp4(i, "mlp.gate_proj", "mlp.up_proj", "mlp.down_proj")
+                     if mlp_types[i] == "dense" else False,
+            # vLLM asks expert 0's three projections and applies the answer to every expert
+            # (CompressedTensorsMoEMethod.get_moe_method, compressed_tensors_moe.py:28-58).
+            "experts": nvfp4(i, *(f"mlp.experts.0.{p}" for p in ("gate_proj", "up_proj", "down_proj")))
+                       if mlp_types[i] == "sparse" else False,
+            "shared": nvfp4(i, *(f"mlp.shared_expert.{p}" for p in ("gate_proj", "up_proj", "down_proj")))
+                      if mlp_types[i] == "sparse" else False,
+            "base": base,
+        })
+    return plan
+
+
+def handler_laguna(cfg, raw, model):
+    """Laguna (LagunaForCausalLM, vllm/model_executor/models/laguna.py@v0.33.0; the checkpoint's own
+    modeling_laguna.py and configuration_laguna.py agree where noted).
+
+    Every layer is attention then an MLP. Attention is grouped-query at head_dim over a per-layer
+    query-head count (num_attention_heads_per_layer: Laguna-S 48 on the full layers and 72 on the
+    window ones, XS 48 and 64) and the config's key/value heads, with a per-head RMS q/k norm, and
+    its output multiplied by softplus(g_proj(x)) before o_proj, g_proj a separate unfused linear of
+    one row per head (gating "per-head") or per channel ("per-element"). A layer whose layer_types
+    entry is sliding_attention reads sliding_window tokens, the others the whole context. The MLP is
+    dense (intermediate_size) where mlp_layer_types says dense, else sigmoid-routed top-k experts of
+    moe_intermediate_size beside one shared expert of shared_expert_intermediate_size.
+
+    Widths follow the quantization block module by module (laguna_layer_plan): the NVFP4 group
+    targets the routed experts, and on Laguna-XS the shared expert too; the ignore list leaves the
+    attention projections, g_proj, the router, the head, the dense layer and (Laguna-S) the shared
+    expert and the last eight layers' routed experts at the base width. So the layer kinds are the
+    combinations the vectors produce, named for what differs.
+
+    NOT PRICED: the q/k norm, softplus gate multiply, RoPE (partial_rotary_factor 0.5 on the full
+    layers, YaRN) and the router's optional logit soft-cap (moe_router_logit_softcapping, 0 in both
+    checkpoints), all small elementwise work; and the KV-cache scheme the block states (fp8 on
+    Laguna-XS), which is the engine's cache dtype and so lowering.
+    """
+    hidden = int(require(cfg, "hidden_size", model))
+    window = int(pick(cfg, "sliding_window") or 0)
+    plan = laguna_layer_plan(cfg, raw, model)
+    base = base_dtype(cfg, raw, model)
+    arch = architecture_of(raw, model)
+
+    def wd(node: dict[str, Any], quantized: bool) -> dict[str, Any]:
+        return dict(node, weight_dtype="nvfp4" if quantized else base)
+
+    def nodes_of(spec: dict[str, Any]) -> list[dict[str, Any]]:
+        layer_cfg = dict(cfg, num_attention_heads=spec["heads"])
+        win = window if spec["attn"] == "sliding_attention" else None
+        attn = attention_block(layer_cfg, model, hidden, raw=raw, window=win)
+        out = []
+        for n in attn:
+            if n.get("role") == "qkv_proj":
+                out.append(wd(n, spec["qkv"]))
+                if spec["gate_rows"]:
+                    out.append(wd(dict(gemm("g_proj", spec["gate_rows"], hidden), tp="column"),
+                                  spec["g"]))
+            elif n.get("role") == "o_proj":
+                out.append(wd(n, spec["o"]))
+            else:
+                out.append(n)
+        out.append(norm("post_attn_norm"))
+        if spec["mlp"] == "dense":
+            gu, dn = dense_mlp(cfg, model, hidden)
+            out += [wd(gu, spec["dense"]), wd(dn, spec["dense"])]
+        else:
+            out += moe_block(cfg, model, hidden, raw, family=arch,
+                             routed_width="nvfp4" if spec["experts"] else base,
+                             shared_width="nvfp4" if spec["shared"] else base)
+            out.append(collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL))
+        out.append(collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE))
+        return out
+
+    # Layers with equal specs share a kind. Everything but the expert width and the head count is
+    # named by attention kind and MLP kind; those two are added to the id only where a model
+    # holds more than one value for the same attention/MLP pair.
+    keys = [tuple(sorted(spec.items())) for spec in plan]
+    distinct = list(dict.fromkeys(keys))
+    def stem(spec):
+        return f"{'swa' if spec['attn'] == 'sliding_attention' else 'full'}_" \
+               f"{'moe' if spec['mlp'] == 'sparse' else 'dense'}"
+    by_stem: dict[str, list[dict[str, Any]]] = {}
+    for k in distinct:
+        by_stem.setdefault(stem(dict(k)), []).append(dict(k))
+    ids: dict[tuple, str] = {}
+    for st, specs in by_stem.items():
+        for spec in specs:
+            tag = st
+            if len({s["heads"] for s in specs}) > 1:
+                tag += f"_{spec['heads']}h"
+            if len({s["experts"] for s in specs}) > 1:
+                tag += "_nvfp4" if spec["experts"] else "_bf16"
+            if tag in ids.values():
+                raise DeriveError(f"{model}: layers of one kind differ in a stored width this handler "
+                                  f"does not name in the kind id ({tag})")
+            ids[tuple(sorted(spec.items()))] = tag
+    kinds = []
+    for k in distinct:
+        nodes = nodes_of(dict(k))
+        kinds.append({"id": ids[k], "nodes": nodes, "edges": chain(nodes)})
+    return kinds, compress([ids[k] for k in keys])
+
+
 # Architectures a checkpoint is known to use that have no handler yet, each with the open issue
 # that adds one; the refusal for such an architecture cites the issue (X28) instead of leaving a
 # user to guess whether the gap is known. Empty now: the architectures that were listed here (the dense
@@ -8925,6 +9159,9 @@ HANDLERS = {
     # and Glm4MoE (one shared expert, fp32 router) after; the MTP layer is a Glm4MoeDecoderLayer
     # at index num_hidden_layers behind enorm, hnorm and eh_proj (glm4_moe_mtp.py).
     "Glm4MoeForCausalLM": handler_moe,
+    # Laguna: per-layer head counts, window layers, an output gate and per-module NVFP4 widths;
+    # see handler_laguna.
+    "LagunaForCausalLM": handler_laguna,
     "MiMoV2ForCausalLM": handler_mimo_v2,
 }
 

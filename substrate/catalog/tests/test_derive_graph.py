@@ -11103,3 +11103,151 @@ def test_glm_4_6_committed_graph_is_the_checkpoints():
     assert (_node(k, "qkv_proj")["n"], _node(k, "o_proj")["k"]) == (14336, 12288)
     assert (_node(k, "router")["n"], _node(k, "experts")["experts"]) == (160, 160)
     assert _node(_kind(g, "mtp_moe"), "mtp_eh_proj")["k"] == 10240
+
+
+# --- LagunaForCausalLM (poolside/Laguna-S-2.1-NVFP4, Laguna-XS-2.1-NVFP4) ------------------------
+
+def _laguna_cfg(**over) -> dict:
+    """A small Laguna config with the checkpoints' structure: 8 layers, a window layer after every
+    full one with its own query-head count, layer 0 dense, a per-head output gate, and an NVFP4
+    compressed-tensors block that targets the routed experts and ignores the last two layers'."""
+    n = 8
+    cfg = {
+        "architectures": ["LagunaForCausalLM"], "model_type": "laguna", "torch_dtype": "bfloat16",
+        "hidden_size": 256, "intermediate_size": 768, "moe_intermediate_size": 128,
+        "shared_expert_intermediate_size": 128, "num_hidden_layers": n, "head_dim": 32,
+        "num_attention_heads": 8, "num_key_value_heads": 2, "vocab_size": 1000,
+        "num_experts": 16, "num_experts_per_tok": 4, "decoder_sparse_step": 1, "mlp_only_layers": [0],
+        "sliding_window": 64, "tie_word_embeddings": False, "gating": "per-head",
+        "layer_types": ["full_attention" if i % 4 == 0 else "sliding_attention" for i in range(n)],
+        "num_attention_heads_per_layer": [8 if i % 4 == 0 else 12 for i in range(n)],
+        "mlp_layer_types": ["dense"] + ["sparse"] * (n - 1),
+        "gating_types": ["per_head"] * n,
+        "quantization_config": {
+            "quant_method": "compressed-tensors", "format": "nvfp4-pack-quantized",
+            "config_groups": {"group_0": {
+                "format": "nvfp4-pack-quantized",
+                "targets": [r"re:.*experts\.[0-9]+\.(gate_proj|up_proj|down_proj)$"],
+                "weights": {"num_bits": 4, "type": "float", "group_size": 16}}},
+            "ignore": ["lm_head", r"re:.*\.self_attn\.(q|k|v|o|g)_proj$", r"re:.*\.mlp\.gate$",
+                       "model.layers.0.mlp.gate_proj", "model.layers.0.mlp.up_proj",
+                       "model.layers.0.mlp.down_proj",
+                       r"re:.*\.mlp\.shared_expert\.(gate|up|down)_proj$",
+                       r"re:^model\.layers\.[67]\.mlp\.experts(\..*)?$"],
+        },
+    }
+    cfg.update(over)
+    return cfg
+
+
+def test_laguna_layers_follow_the_per_layer_vectors(tmp_path):
+    g = _derive_raw(_laguna_cfg(), tmp_path, "laguna-test")
+    seq = layer_sequence(g["stack"])
+    assert seq == ["full_dense", "swa_moe_nvfp4", "swa_moe_nvfp4", "swa_moe_nvfp4", "full_moe",
+                   "swa_moe_nvfp4", "swa_moe_bf16", "swa_moe_bf16"]
+    full, swa = _kind(g, "full_moe"), _kind(g, "swa_moe_nvfp4")
+    fa = [n for n in full["nodes"] if n["op"] == "Attention"][0]
+    sa = [n for n in swa["nodes"] if n["op"] == "Attention"][0]
+    assert (fa["kind"], fa["n_q"], fa["n_kv"], fa["d_h"], "window" in fa) == ("gqa", 8, 2, 32, False)
+    assert (sa["kind"], sa["n_q"], sa["n_kv"], sa["d_h"], sa["window"]) == ("swa", 12, 2, 32, 64)
+    # q, k and v rows follow the layer's own head count; o_proj reads it.
+    assert (_node(full, "qkv_proj")["n"], _node(full, "o_proj")["k"]) == ((8 + 4) * 32, 8 * 32)
+    assert (_node(swa, "qkv_proj")["n"], _node(swa, "o_proj")["k"]) == ((12 + 4) * 32, 12 * 32)
+
+
+def test_laguna_output_gate_is_one_row_per_head_or_per_channel(tmp_path):
+    g = _derive_raw(_laguna_cfg(), tmp_path, "laguna-test")
+    assert (_node(_kind(g, "full_moe"), "g_proj")["n"], _node(_kind(g, "swa_moe_nvfp4"), "g_proj")["n"],
+            _node(_kind(g, "swa_moe_nvfp4"), "g_proj")["k"]) == (8, 12, 256)
+    raw = _laguna_cfg(gating="per-element", gating_types=["per_element"] * 8)
+    g = _derive_raw(raw, tmp_path, "laguna-test")
+    assert _node(_kind(g, "swa_moe_nvfp4"), "g_proj")["n"] == 12 * 32
+    g = _derive_raw(_laguna_cfg(gating=False, gating_types=None), tmp_path, "laguna-test")
+    assert "g_proj" not in _roles(_kind(g, "swa_moe_nvfp4"))
+
+
+def test_laguna_widths_follow_the_ignore_list_and_the_group_targets(tmp_path):
+    """Routed experts are NVFP4 where no ignore entry names them and a target matches; the last two
+    layers' experts, attention, router, dense layer and (here) the shared expert stay bf16."""
+    g = _derive_raw(_laguna_cfg(), tmp_path, "laguna-test")
+    assert g["global"]["weight_dtype"] == "bf16"
+    assert _node(_kind(g, "swa_moe_nvfp4"), "experts")["weight_dtype"] == "nvfp4"
+    assert _node(_kind(g, "swa_moe_bf16"), "experts")["weight_dtype"] == "bf16"
+    for kid in ("full_dense", "swa_moe_nvfp4"):
+        k = _kind(g, kid)
+        assert {_node(k, r)["weight_dtype"] for r in ("qkv_proj", "o_proj", "g_proj")} == {"bf16"}
+    assert _node(_kind(g, "full_dense"), "mlp_gate_up")["weight_dtype"] == "bf16"
+    assert _node(_kind(g, "swa_moe_nvfp4"), "shared_gate_up")["weight_dtype"] == "bf16"
+    assert _node(_kind(g, "swa_moe_nvfp4"), "router")["weight_dtype"] == "bf16"
+    # Dropping the shared-expert ignore and adding its target makes the shared expert NVFP4.
+    raw = _laguna_cfg()
+    q = raw["quantization_config"]
+    q["ignore"] = [e for e in q["ignore"] if "shared_expert" not in e]
+    q["config_groups"]["group_0"]["targets"].append(r"re:.*shared_expert\.(gate_proj|up_proj|down_proj)$")
+    g = _derive_raw(raw, tmp_path, "laguna-test")
+    k = _kind(g, "swa_moe_nvfp4")
+    assert (_node(k, "shared_gate_up")["weight_dtype"], _node(k, "shared_down")["weight_dtype"]) == \
+        ("nvfp4", "nvfp4")
+
+
+def test_laguna_unquantized_checkpoint_is_bf16_throughout(tmp_path):
+    raw = _laguna_cfg()
+    del raw["quantization_config"]
+    g = _derive_raw(raw, tmp_path, "laguna-test")
+    assert layer_sequence(g["stack"]) == ["full_dense"] + ["swa_moe", "swa_moe", "swa_moe", "full_moe",
+                                                          "swa_moe", "swa_moe", "swa_moe"]
+    assert _node(_kind(g, "swa_moe"), "experts")["weight_dtype"] == "bf16"
+
+
+@pytest.mark.parametrize("edit,why", [
+    (lambda c: c.update(mlp_layer_types=["sparse"] * 8), "mlp_layer_types"),
+    (lambda c: c.update(gating=True), "gating"),
+    (lambda c: c.update(gating_types=["per_head"] * 7 + ["per_element"]), "gating_types"),
+    (lambda c: c.update(swa_attention_sink_enabled=True), "sink"),
+    (lambda c: c.update(layer_types=c["layer_types"][:-1]), "layer_types"),
+    (lambda c: c["quantization_config"]["config_groups"]["group_0"]["weights"].update(group_size=32),
+     "NVFP4"),
+    (lambda c: c["quantization_config"].update(quant_method="modelopt"), "compressed-tensors"),
+], ids=["mlp-vector", "gating-true", "gating-types", "sink", "short-vector", "group-32", "other-method"])
+def test_laguna_refuses_what_it_would_misprice(tmp_path, edit, why):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph
+    raw = _laguna_cfg()
+    edit(raw)
+    with pytest.raises(derive_graph.DeriveError, match=why):
+        _derive_raw(raw, tmp_path, "laguna-test")
+
+
+def test_laguna_refuses_a_fused_qkv_whose_shards_are_treated_differently(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph
+    raw = _laguna_cfg()
+    raw["quantization_config"]["ignore"].remove(r"re:.*\.self_attn\.(q|k|v|o|g)_proj$")
+    raw["quantization_config"]["ignore"].append(r"re:.*\.self_attn\.q_proj$")
+    raw["quantization_config"]["config_groups"]["group_0"]["targets"].append(
+        r"re:.*self_attn\.(k|v|o|g)_proj$")
+    with pytest.raises(derive_graph.DeriveError, match="fused module"):
+        _derive_raw(raw, tmp_path, "laguna-test")
+
+
+def test_laguna_committed_graphs_are_the_checkpoints():
+    """Laguna-S (48 layers, 12 full at 48 query heads and 36 window at 72, hidden 3072, 256 experts
+    of 1024 top 10, NVFP4 routed experts in layers 1-39 and bf16 in 40-47) and Laguna-XS (40 layers,
+    10 full at 48 and 30 window at 64, hidden 2048, 256 experts of 512 top 8, NVFP4 routed and shared
+    experts). Every width agrees with the pinned checkpoints' safetensors headers, e.g. S layer 1
+    q_proj [9216, 3072], g_proj [72, 3072], experts.0.gate_proj.weight_packed U8 [1024, 1536],
+    shared_expert BF16; XS layer 1 shared_expert.gate_proj.weight_packed U8 [512, 1024]."""
+    s = graph_of(MODELS / "laguna-s-2.1-nvfp4")
+    seq = layer_sequence(s["stack"])
+    assert len(seq) == 48 and seq[0] == "full_dense"
+    assert [i for i, k in enumerate(seq) if k.startswith("full")] == [0] + list(range(4, 48, 4))
+    assert {k for k in seq[1:40] if k.endswith("bf16")} == set() and all(k.endswith("bf16") for k in seq[40:])
+    assert _node(_kind(s, "swa_moe_nvfp4"), "qkv_proj")["n"] == (72 + 16) * 128
+    assert _node(_kind(s, "swa_moe_nvfp4"), "shared_gate_up")["weight_dtype"] == "bf16"
+    x = graph_of(MODELS / "laguna-xs-2.1-nvfp4")
+    seq = layer_sequence(x["stack"])
+    assert len(seq) == 40 and seq.count("full_moe") == 9 and seq.count("swa_moe") == 30
+    k = _kind(x, "swa_moe")
+    assert _node(k, "qkv_proj")["n"] == (64 + 16) * 128
+    assert (_node(k, "experts")["n"], _node(k, "experts")["top_k"], _node(k, "shared_down")["weight_dtype"]) == \
+        (512, 8, "nvfp4")

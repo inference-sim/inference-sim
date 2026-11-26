@@ -1,0 +1,11 @@
+name: laguna-xs-2.1-nvfp4
+source:
+  provider: huggingface
+  repo: poolside/Laguna-XS-2.1-NVFP4
+  revision: d32afde8b09af1539b49ff96ff5551c674485f8e
+  retrieved: 2026-11-26
+licence:
+  id: LicenseRef-openmdw-1.1
+  evidence: https://huggingface.co/poolside/Laguna-XS-2.1-NVFP4/raw/d32afde8b09af1539b49ff96ff5551c674485f8e/LICENSE.md
+config:
+  sha256: 8bba8588c6197aa04be89a405a0af640e1914c6323934f7e0860f7cedc528f4e
