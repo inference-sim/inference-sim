@@ -1944,6 +1944,9 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router
 	if blackwellBlockFP8Experts(f, grouped, k.family, k.low.MoE.Experts) {
 		spec = fitSpec{suffix: "fp8_grouped_trtllm", fallback: spec.suffix, peak: k.chip.FP8Peak * 1e12}
 	}
+	if blackwellBF16Experts(f, grouped, k.family, k.low.MoE.Experts) {
+		spec = fitSpec{suffix: "bf16_grouped", fallback: spec.suffix, peak: spec.peak}
+	}
 	if spec.fallback != "" && !c.Has("gemm_eps_max_"+spec.suffix) {
 		k.assume("gemm_eps_max_"+spec.suffix, spec.fallback,
 			"no efficiency ramp for the "+spec.suffix+" kernel on "+k.chip.Name+", so it is "+
@@ -1967,7 +1970,8 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router
 	}
 	fit.weightOnly = strings.HasPrefix(spec.suffix, "w8a16_") ||
 		strings.HasPrefix(spec.suffix, "w4a16_")
-	if strings.HasPrefix(spec.suffix, "fp8_grouped_") {
+	if strings.HasPrefix(spec.suffix, "fp8_grouped_") || spec.suffix == "nvfp4_grouped" ||
+		spec.suffix == "bf16_grouped" {
 		fit.rankOwn = true
 		if c.Has("gemm_floor_" + spec.suffix) {
 			us, err := c.Value("gemm_floor_" + spec.suffix)
@@ -1996,6 +2000,15 @@ func (k *Kernel) addFit(c *resolve.Coefficients, f price.Format, grouped, router
 func blackwellBlockFP8Experts(f price.Format, grouped bool, family int, stated plan.KernelImpl) bool {
 	return grouped && family == 10 && f.DType == model.DTypeFP8 && !f.MX() &&
 		f.ScaleElements == fp8BlockScaleElements && stated == (plan.KernelImpl{})
+}
+
+// blackwellBF16Experts reports whether unquantized routed experts run FlashInfer's TRT-LLM BF16 grouped
+// kernel, which vLLM's unquantized MoE oracle selects on SM100 when nothing says otherwise: a grouped BF16
+// GEMM on a data-center Blackwell part (compute capability 10), in a plan that states no experts kernel. The
+// kernel's ramp and floor are gemm_*_bf16_grouped (scripts/fit_blackwell_moe_grouped_ramp.py); a registry
+// without them falls back to the dense BF16 ramp, which is recorded.
+func blackwellBF16Experts(f price.Format, grouped bool, family int, stated plan.KernelImpl) bool {
+	return grouped && family == 10 && f.DType == model.DTypeBF16 && stated == (plan.KernelImpl{})
 }
 
 // groupedExperts is the registry's word for the grouped-expert kernel the plan states the engine
