@@ -106,6 +106,10 @@ func (d *Data) Models() []string { return sortedKeys(d.catalog.Models) }
 // Chips lists the catalog's chips, sorted.
 func (d *Data) Chips() []string { return sortedKeys(d.catalog.Chips) }
 
+// Fabrics lists the catalog's inter-node network fabrics, sorted. It is the list `blis catalog
+// list` reports and the set a scenario's cluster.fabric must name, the twin of Chips().
+func (d *Data) Fabrics() []string { return sortedKeys(d.catalog.Fabrics) }
+
 // CoefficientSet returns a coefficient set by name and records it as loaded.
 func (d *Data) CoefficientSet(name string) (*coefficient.Set, error) {
 	s := d.registry.Sets[name]
