@@ -32,6 +32,7 @@ import (
 	"net"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,6 +75,11 @@ type Options struct {
 	// Seed, when set, seeds the router's random streams and its prompt canonicalization. Unset,
 	// the seed is derived from the run seed. A replay passes the seed its trace recorded.
 	Seed *int64
+	// SkipRouterForOneEndpoint lets the gateway send a plain request straight to the pool's only endpoint without
+	// running it through the router, when the router is the default one (no flags, no manifests, no adapters) and
+	// the request asks the router for nothing (see bypass). The caller sets it only when nothing downstream
+	// of the router's decision is recorded (no decision trace, no counterfactuals).
+	SkipRouterForOneEndpoint bool
 	// Logger receives the router's logs. The zero value discards them. It must never write to
 	// stdout (INV-6).
 	Logger logr.Logger
@@ -94,11 +100,15 @@ const (
 
 // Gateway is the embedded llm-d router. It implements cluster.Gateway.
 type Gateway struct {
-	opts   Options
-	host   cluster.GatewayHost
-	rt     *desRuntime
-	ctx    context.Context
-	cancel context.CancelFunc
+	// defaultRouter is whether the router runs on its defaults: no flags, no manifests, no adapters (New).
+	defaultRouter bool
+	// bypassed counts the requests sent straight to the only endpoint (tests read it).
+	bypassed int
+	opts     Options
+	host     cluster.GatewayHost
+	rt       *desRuntime
+	ctx      context.Context
+	cancel   context.CancelFunc
 
 	router embed.Router
 	req    embed.Requirements
@@ -197,10 +207,11 @@ func (g *Gateway) Requirements() embed.Requirements { return g.req }
 // New builds an embedded router. The router itself is assembled in Start, when the instances
 // exist.
 func New(opts Options) *Gateway {
+	defaultRouter := (len(opts.EPPFlags) == 0 || slices.Equal(opts.EPPFlags, DefaultEPPFlags())) && len(opts.Manifests) == 0 && len(opts.Adapters) == 0
 	if len(opts.EPPFlags) == 0 {
 		opts.EPPFlags = DefaultEPPFlags()
 	}
-	return &Gateway{opts: opts, endpoints: map[cluster.InstanceID]*endpoint{}, byIP: map[string]cluster.InstanceID{}, flights: map[string]*flight{}}
+	return &Gateway{defaultRouter: defaultRouter, opts: opts, endpoints: map[cluster.InstanceID]*endpoint{}, byIP: map[string]cluster.InstanceID{}, flights: map[string]*flight{}}
 }
 
 var _ cluster.Gateway = (*Gateway)(nil)
@@ -589,11 +600,20 @@ func (g *Gateway) handleRequest(f *flight) {
 		g.endFlight(f)
 		return
 	}
+	if g.bypass(f) {
+		// The router's decision is certain: the pool has one endpoint and the request asks nothing of the router. Decide as the
+		// router's callback does: in a fresh event, at this instant.
+		f.decided = true
+		addr := g.soleEndpoint().ep.IP
+		g.host.Schedule(g.host.Now(), PriorityRequest, false, func() { g.finishRequest(f, nil, embed.Decision{Endpoint: addr}, nil) })
+		g.rt.co.settle()
+		return
+	}
 	// A stdlib cancel context over the gateway's own (itself over Background): the router derives
 	// the request's context from it, and cancellation propagates synchronously only through stdlib
 	// cancel contexts, so a client deadline reaches the router at its simulated instant (INV-6).
 	f.ctx, f.cancel = context.WithCancel(g.ctx)
-	f.prompt = g.canon.canonicalUnder(identityRoot(f.req.Adapter, nil), f.req.InputTokens)
+	f.prompt = g.canon.canonicalSession(identityRoot(f.req.Adapter, nil), f.req.SessionID, f.req.InputTokens)
 	if g.observe != nil {
 		g.observe("request", f.req.ID)
 	}
@@ -605,6 +625,50 @@ func (g *Gateway) handleRequest(f *flight) {
 		g.host.Schedule(g.host.Now(), PriorityRequest, false, func() { g.finishRequest(f, fl, d, rej) })
 	})
 	g.rt.co.settle()
+}
+
+// soleEndpoint is the pool's only endpoint, or nil.
+func (g *Gateway) soleEndpoint() *endpoint {
+	if len(g.endpoints) != 1 {
+		return nil
+	}
+	for _, ep := range g.endpoints {
+		return ep
+	}
+	return nil
+}
+
+// bypass reports whether f can go straight to the pool's only endpoint, which is what the router would decide. It is true only when
+// every input of the router's decision is the default and constant: the default router configuration (no flags, manifests or
+// adapters), flow control and KV events off, no test observer, one endpoint that is ready, and a request that carries no
+// objective, tenant, adapter, latency target or multimodal content (a client deadline is the gateway's own event, and is moot once the decision is made). Anything else takes the router.
+func (g *Gateway) bypass(f *flight) bool {
+	if g.router == nil {
+		return false
+	}
+	ep := g.soleEndpoint()
+	in := bypassInputs{
+		Enabled: g.opts.SkipRouterForOneEndpoint, DefaultRouter: g.defaultRouter, Observed: g.observe != nil,
+		OneEndpoint: ep != nil, EndpointReady: ep != nil && ep.ready && !ep.cleared && !ep.kvCleared,
+		Objective: f.req.SLOClass != "", Tenant: f.req.TenantID != "", Adapter: f.req.Adapter != "", LatencyTarget: f.req.SLOTargetUs != 0,
+		Multimodal: f.req.IsMultimodal(), FlowControl: g.router.FlowControl().Enabled, KVEvents: g.router.WantsKVEvents(),
+	}
+	if in.canBypass() {
+		g.bypassed++
+		return true
+	}
+	return false
+}
+
+// bypassInputs are the facts bypass reads. The router's decision is certain only if every one of them is at its default value.
+type bypassInputs struct {
+	Enabled, DefaultRouter, OneEndpoint, EndpointReady                                     bool
+	Observed, Objective, Tenant, Adapter, LatencyTarget, Multimodal, FlowControl, KVEvents bool
+}
+
+func (in bypassInputs) canBypass() bool {
+	return in.Enabled && in.DefaultRouter && in.OneEndpoint && in.EndpointReady &&
+		!in.Observed && !in.Objective && !in.Tenant && !in.Adapter && !in.LatencyTarget && !in.Multimodal && !in.FlowControl && !in.KVEvents
 }
 
 // routeRequest is the request a client sends for f.
@@ -689,8 +753,10 @@ func (g *Gateway) finishRequest(f *flight, fl embed.Flight, d embed.Decision, re
 		g.observe("dispatch", fmt.Sprintf("%s %v", f.req.ID, f.ctx.Err()))
 		g.observe("score", fmt.Sprintf("%s %s %g", f.req.ID, decode.ID(), p.Scores[string(decode.ID())]))
 	}
-	if f.evictCh = fl.EvictionSignal(); f.evictCh != nil {
-		g.evictable = append(g.evictable, f)
+	if fl != nil {
+		if f.evictCh = fl.EvictionSignal(); f.evictCh != nil {
+			g.evictable = append(g.evictable, f)
+		}
 	}
 	g.host.Dispatch(f.req, p)
 }
@@ -814,7 +880,9 @@ func (g *Gateway) OnFirstToken(req *sim.Request, at int64) {
 			return
 		}
 		g.responseHeaders(f)
-		f.fl.ResponseBody(firstChunk(g.opts.Model, f, false), false)
+		if f.fl != nil {
+			f.fl.ResponseBody(firstChunk(g.opts.Model, f, false), false)
+		}
 		g.rt.co.settle()
 	})
 }
@@ -837,10 +905,12 @@ func (g *Gateway) responseHeaders(f *flight) {
 	if f.stream {
 		ct = "text/event-stream"
 	}
-	headers := f.fl.ResponseHeaders(map[string]string{":status": "200", "content-type": ct})
-	g.keepEchoed(f.req.SessionID, headers)
-	if g.responseHeaderObserved != nil {
-		g.responseHeaderObserved(f.req.ID, headers)
+	if f.fl != nil { // a request the router never saw has no router headers
+		headers := f.fl.ResponseHeaders(map[string]string{":status": "200", "content-type": ct})
+		g.keepEchoed(f.req.SessionID, headers)
+		if g.responseHeaderObserved != nil {
+			g.responseHeaderObserved(f.req.ID, headers)
+		}
 	}
 	g.rt.co.settle()
 }
@@ -860,13 +930,17 @@ func (g *Gateway) endResponse(f *flight, outcome cluster.DoneOutcome) {
 		if f.stream {
 			if !f.firstOut {
 				f.firstOut = true
-				f.fl.ResponseBody(firstChunk(g.opts.Model, f, false), false)
+				if f.fl != nil {
+					f.fl.ResponseBody(firstChunk(g.opts.Model, f, false), false)
+				}
 			}
-			f.fl.ResponseBody(firstChunk(g.opts.Model, f, true, usage), true)
-		} else {
+			if f.fl != nil {
+				f.fl.ResponseBody(firstChunk(g.opts.Model, f, true, usage), true)
+			}
+		} else if f.fl != nil {
 			f.fl.ResponseBody(completionBody(g.opts.Model, f, usage), true)
 		}
-	} else {
+	} else if f.fl != nil {
 		f.fl.Terminate(termination(outcome))
 	}
 	g.flightsEnded++
@@ -978,6 +1052,9 @@ func (g *Gateway) requestBody(f *flight) []byte {
 	if f.req.Adapter != "" {
 		model = f.req.Adapter
 	}
+	if !f.req.IsMultimodal() {
+		return textRequestBody(model, f.prompt, f.stream, f.req.MaxOutputLen)
+	}
 	body := map[string]any{"model": model, "prompt": f.prompt, "stream": f.stream}
 	if f.req.IsMultimodal() {
 		// One content part per modality the request carries, after its text, as a client sends
@@ -1003,6 +1080,41 @@ func (g *Gateway) requestBody(f *flight) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// textRequestBody writes, byte for byte, what json.Marshal writes for the map
+// {"max_tokens"(when positive), "model", "prompt", "stream"}: keys in sorted order, the prompt as an
+// array of unsigned integers. It skips the reflection and the per-token allocation of Marshal.
+func textRequestBody(model string, prompt []uint32, stream bool, maxTokens int) []byte {
+	m, err := json.Marshal(model)
+	if err != nil {
+		panic(err)
+	}
+	b := make([]byte, 0, 64+len(m)+len(prompt)*7)
+	b = append(b, '{')
+	if maxTokens > 0 {
+		b = append(b, `"max_tokens":`...)
+		b = strconv.AppendInt(b, int64(maxTokens), 10)
+		b = append(b, ',')
+	}
+	b = append(b, `"model":`...)
+	b = append(b, m...)
+	b = append(b, `,"prompt":`...)
+	if prompt == nil {
+		b = append(b, "null"...)
+	} else {
+		b = append(b, '[')
+		for i, t := range prompt {
+			if i > 0 {
+				b = append(b, ',')
+			}
+			b = appendDec(b, t)
+		}
+		b = append(b, ']')
+	}
+	b = append(b, `,"stream":`...)
+	b = strconv.AppendBool(b, stream)
+	return append(b, '}')
 }
 
 type usage struct {

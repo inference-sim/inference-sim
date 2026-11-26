@@ -1322,7 +1322,7 @@ jobs:
       matrix:
         include:
           - name: core
-            pkgs: "./engines/vllm/internal/substratedata ./engines/vllm/core/vllm ./engines/vllm/core/sched ./engines/vllm/core/engine ./engines/vllm/core/kvtransfer ./engines/vllm/core/connector/..."
+            pkgs: "./engines/vllm/internal/substratedata ./engines/vllm/core/vllm ./engines/vllm/core/sched ./engines/vllm/core/engine ./engines/vllm/core/kvtransfer ./engines/vllm/core/connector/... ./engines/vllm/core/kv"
           # The package's tests, split by name (scripts/ci-shard.sh): the tests with a recorded
           # -race duration (.github/ci-durations/vllmengine-race.tsv) are dealt longest first onto
           # the least-loaded shard, any other test is hashed, and vllm-race-vllmengine proves the
@@ -1347,7 +1347,7 @@ jobs:
       RACE_PKGS: >-
         ./engines/vllm/internal/substratedata ./engines/vllm/core/vllm ./engines/vllm/core/sched
         ./engines/vllm/core/engine ./engines/vllm/vllmengine ./engines/vllm/core/kvtransfer
-        ./engines/vllm/core/connector/... ./engines/vllm/core/kernelmodel
+        ./engines/vllm/core/connector/... ./engines/vllm/core/kernelmodel ./engines/vllm/core/kv
       # Import paths of packages with concurrency primitives that run without -race, space
       # separated, each with its reason stated here. None today.
       EXCLUDED: ""

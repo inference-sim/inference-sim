@@ -18,15 +18,19 @@ import (
 // hashBlock computes a SHA256 hash of a token block chained with the previous block's hash.
 // Format: prevHash bytes, then for each token: "tokenN" + "|" (pipe AFTER each token).
 func hashBlock(prevHash string, tokens []sim.TokenID) string {
-	h := sha256.New()
-	h.Write([]byte(prevHash))
-	var buf [20]byte // stack buffer: max int64 (19 digits) + pipe
+	// One buffer and one Sum256 over the same bytes the streaming digest was fed.
+	buf := make([]byte, 0, len(prevHash)+len(tokens)*8)
+	buf = append(buf, prevHash...)
 	for _, t := range tokens {
-		b := strconv.AppendInt(buf[:0], int64(t), 10)
-		b = append(b, '|')
-		h.Write(b)
+		if t >= 0 {
+			buf = appendDec(buf, uint32(t))
+		} else {
+			buf = strconv.AppendInt(buf, int64(t), 10)
+		}
+		buf = append(buf, '|')
 	}
-	return hex.EncodeToString(h.Sum(nil))
+	sum := sha256.Sum256(buf)
+	return hex.EncodeToString(sum[:])
 }
 
 // identityRoot is the start of the prefix chain of blocks an engine keys with an adapter and extra
