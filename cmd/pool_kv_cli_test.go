@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/inference-sim/inference-sim/sim/workload"
 )
 
 // A P/D deployment whose prefill pool runs NIXL beside a CPU tier (MultiConnector) and whose decode
@@ -93,12 +95,7 @@ func TestRunCmd_PrefillPoolOffloadsAndDecodePoolDoesNot(t *testing.T) {
 // The deployment-level offload block stays the default: with it and no pool block, both pools run the
 // tier, as before the change.
 func TestRunCmd_DeploymentLevelOffloadStaysTheDefaultOfEveryPool(t *testing.T) {
-	dir := variantDir(t, func(s string) string {
-		s = strings.Replace(s, "    offload:\n      connector: OffloadingConnector\n      spec: TieringOffloadingSpec\n      eviction_policy: lru\n      tiers:\n        - {tier: cpu_dram, bytes: 1099511627776}\n", "", 1)
-		s = strings.Replace(s, "    pd_transfer: {connector: NixlConnector}\n", "", 1)
-		return strings.Replace(s, "pd_transfer:\n  connector: MultiConnector\n",
-			"pd_transfer:\n  connector: MultiConnector\n\noffload:\n  connector: OffloadingConnector\n  spec: TieringOffloadingSpec\n  eviction_policy: lru\n  tiers:\n    - {tier: cpu_dram, bytes: 1099511627776}\n", 1)
-	})
+	dir := variantDir(t, poolKVDeploymentOffload)
 	stdout, stderr, err := runPoolKV(t, dir, poolKVScenario)
 	if err != nil {
 		t.Fatalf("%v\n%s", err, lastLines(stderr, 4))
@@ -109,6 +106,13 @@ func TestRunCmd_DeploymentLevelOffloadStaysTheDefaultOfEveryPool(t *testing.T) {
 			t.Errorf("tier links %v: want %s under the deployment-level default", links, k)
 		}
 	}
+}
+
+func poolKVDeploymentOffload(s string) string {
+	s = strings.Replace(s, "    offload:\n      connector: OffloadingConnector\n      spec: TieringOffloadingSpec\n      eviction_policy: lru\n      tiers:\n        - {tier: cpu_dram, bytes: 1099511627776}\n", "", 1)
+	s = strings.Replace(s, "    pd_transfer: {connector: NixlConnector}\n", "", 1)
+	return strings.Replace(s, "pd_transfer:\n  connector: MultiConnector\n",
+		"pd_transfer:\n  connector: MultiConnector\n\noffload:\n  connector: OffloadingConnector\n  spec: TieringOffloadingSpec\n  eviction_policy: lru\n  tiers:\n    - {tier: cpu_dram, bytes: 1099511627776}\n", 1)
 }
 
 // A pool that inherits a MultiConnector but has no tier is refused with the pool and the way out, and a
@@ -144,6 +148,73 @@ func TestRunCmd_PoolsWithDifferentOffloadWriteNoTrace(t *testing.T) {
 		"--rate", "4", "--num-requests", "8", "--seed", "1", "--trace-output", prefix)
 	if err == nil || !strings.Contains(stderr, "cannot record") {
 		t.Errorf("a trace of pools that offload differently: err %v\n%s", err, lastLines(stderr, 3))
+	}
+}
+
+func TestReplayCmd_PoolsWithDifferentOffloadWriteNoTrace(t *testing.T) {
+	dir := t.TempDir()
+	header, data := filepath.Join(dir, "input.yaml"), filepath.Join(dir, "input.csv")
+	h := workload.TraceHeader{
+		Version: workload.TraceVersion, TimeUnit: "microseconds", Mode: "converted",
+	}
+	records := make([]workload.TraceRecord, 8)
+	for i := range records {
+		records[i] = workload.TraceRecord{
+			RequestID: i, ArrivalTimeUs: int64(i) * 250_000,
+			InputTokens: 256, OutputTokens: 16, Status: "ok",
+		}
+	}
+	if err := workload.ExportTraceV2(&h, records, header, data); err != nil {
+		t.Fatal(err)
+	}
+	scenarios := filepath.Join("..", "testdata", "scenarios", "poolkv")
+	replay := func(scenarios, header, data string, extra ...string) (string, string, error) {
+		t.Helper()
+		args := []string{"replay", "--trace-header", header, "--trace-data", data, "--scenarios", scenarios,
+			"--scenario", poolKVScenario, "--num-instances", "2", "--prefill-instances", "1",
+			"--decode-instances", "1", "--seed", "1"}
+		return runKernelCLI(t, append(args, extra...)...)
+	}
+	stdout, stderr, err := replay(scenarios, header, data)
+	if err != nil {
+		t.Fatalf("the converted workload should run with the scenario's per-pool offload: %v\n%s", err, lastLines(stderr, 4))
+	}
+	links := tierLinks(t, stdout)
+	if _, ok := links["link_peak_concurrent_transfers_tier-cpu_dram-to-node-0"]; !ok {
+		t.Fatalf("the replay did not use the prefill CPU tier: %v", links)
+	}
+
+	prefix := filepath.Join(dir, "output")
+	stdout, stderr, err = replay(scenarios, header, data, "--trace-output", prefix)
+	if err == nil || !strings.Contains(stderr, "--trace-output: the prefill and decode pools run different KV offload") {
+		t.Errorf("re-export cannot represent the deployment: err %v\n%s", err, lastLines(stderr, 3))
+	}
+	if strings.TrimSpace(stdout) != "" {
+		t.Error("an unrecordable re-export should fail before producing a Result")
+	}
+	for _, suffix := range []string{".yaml", ".csv"} {
+		if _, err := os.Stat(prefix + suffix); !os.IsNotExist(err) {
+			t.Errorf("refused re-export left %s: %v", suffix, err)
+		}
+	}
+
+	// The same converted input can be exported and replayed when both pools agree.
+	symmetric := variantDir(t, poolKVDeploymentOffload)
+	prefix = filepath.Join(dir, "symmetric")
+	_, stderr, err = replay(symmetric, header, data, "--trace-output", prefix)
+	if err != nil {
+		t.Fatalf("the common offload can be exported: %v\n%s", err, lastLines(stderr, 4))
+	}
+	stdout, stderr, err = replay(symmetric, prefix+".yaml", prefix+".csv")
+	if err != nil {
+		t.Fatalf("the common offload can be replayed: %v\n%s", err, lastLines(stderr, 4))
+	}
+	links = tierLinks(t, stdout)
+	for _, link := range []string{"link_peak_concurrent_transfers_tier-cpu_dram-to-node-0",
+		"link_peak_concurrent_transfers_tier-cpu_dram-to-node-1"} {
+		if _, ok := links[link]; !ok {
+			t.Errorf("replay of the symmetric trace lost %q: %v", link, links)
+		}
 	}
 }
 

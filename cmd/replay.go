@@ -390,19 +390,6 @@ Example:
 		// Resolve the latency model (single code path shared with runCmd).
 		lr := resolveLatencyConfig(cmd)
 
-		// #1583: derive PerBlockBytes for an offload config the scenario supplies (a
-		// converted trace or an agentic replay). A trace
-		// header blis run or blis replay wrote already
-		// carries the run-computed value (>0), so this is skipped for run/replay parity;
-		// a flag-supplied config has PerBlockBytes==0 until the model resolves. Mirrors
-		// the derivation in cmd/root.go (runCmd) so run and replay agree.
-		sizeOffloadBlocks(&kvOffloadCfg, true)
-
-		// The kernel prices every offload transfer: the secondary tiers through TierTime and
-		// the legacy CPU tier as one whole per-block reload charge, through the SAME helper
-		// runCmd uses (INV-13).
-		applyKernelOffloadPricing(&kvOffloadCfg)
-
 		// Numeric flag validation (same as runCmd)
 		if numInstances < 1 {
 			logrus.Fatalf("num-instances must be >= 1")
@@ -471,6 +458,18 @@ Example:
 		kernelPD := openKernelPools()
 		if kernelPD != nil {
 			prefillOverrides, decodeOverrides = kernelPD.overrides()
+			if replayTraceOutput != "" {
+				if err := refuseUnrecordableOffload(kvOffloadCfg, decodeOffloadCfg); err != nil {
+					logrus.Fatalf("--trace-output: %v", err)
+				}
+			}
+		}
+
+		// Size scenario-derived configs after the export guard compares the two
+		// resolved configs. A generated or replayed input already records the size.
+		sizeOffloadBlocks(&kvOffloadCfg, true)
+		applyKernelOffloadPricing(&kvOffloadCfg)
+		if kernelPD != nil {
 			// Each pool sizes and prices the offload by its own kernel, as in runCmd (INV-13).
 			kernelPD.applyOffload(kvOffloadCfg, decodeOffloadCfg, &prefillOverrides, &decodeOverrides)
 		}
