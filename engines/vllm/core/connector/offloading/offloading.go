@@ -321,11 +321,14 @@ func New(cfg Config) (*Scheduler, error) {
 	}
 	fullChunk := map[int]bool{}
 	for _, g := range cfg.Groups {
-		if g.BlockSize != cfg.Groups[0].BlockSize {
-			// Groups of several block sizes reach the partial-tail and mamba-alignment paths
-			// (scheduler.py:155-173, 295-315) the oracle has not run.
-			return nil, fmt.Errorf("offloading: KV cache groups of several block sizes are not modelled (%s)", GroupIssue)
-		}
+		// Groups of several block sizes are accepted. The paths the earlier refusal named, the
+		// partial-tail hand-off and the Mamba alignment, are reached only through a Mamba group in
+		// align mode (supports_partial_tail needs has_partial_recurrent_group, scheduler.py:288-307
+		// and resolve_mamba_align_size, :148-165, @4ba787ec), and this port has neither. A connector
+		// whose groups are attention and sliding-window groups of their own block sizes (DeepSeek V4,
+		// MiniMax-M3.1-Flash) runs the same code each group already runs alone: tokens_per_chunk,
+		// hashes_per_chunk and the window are per group, and alignment_tokens is the full-attention
+		// groups' single chunk size, taken below. Not diff-tested against vLLM's oracle.
 		if g.BlockSize%cfg.TokensPerHash != 0 {
 			// Whether vLLM accepts a group whose block is smaller than the hash block, and how it sizes
 			// its offload block then, is https://github.com/inference-sim/inference-sim/issues/2433.
