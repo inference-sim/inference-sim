@@ -58,7 +58,7 @@ func (c *promptCanon) canonicalSession(root, session string, prompt []sim.TokenI
 			key = hashBlock(key, prompt[start:end])
 			ch = c.lookup(key)
 		}
-		if !(b < reuse && ch == m.chains[b]) {
+		if b >= reuse || ch != m.chains[b] {
 			for i := start; i < end; i++ {
 				out[i] = c.token(ch.id, i-start)
 			}

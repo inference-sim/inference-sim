@@ -1136,7 +1136,7 @@ jobs:
       matrix:
         include:
           - name: core
-            pkgs: "./engines/vllm/internal/substratedata ./engines/vllm/core/vllm ./engines/vllm/core/sched ./engines/vllm/core/engine ./engines/vllm/core/kvtransfer ./engines/vllm/core/connector/..."
+            pkgs: "./engines/vllm/internal/substratedata ./engines/vllm/core/vllm ./engines/vllm/core/sched ./engines/vllm/core/engine ./engines/vllm/core/kvtransfer ./engines/vllm/core/connector/... ./engines/vllm/core/kv"
           # The package's tests, split by position in `go test -list` (test k to shard k mod 3, the
           # list computed in the job, so a test added later runs in exactly one shard).
           - {name: vllmengine-0, pkgs: "./engines/vllm/vllmengine", shard: "0/3"}
@@ -1153,7 +1153,7 @@ jobs:
       RACE_PKGS: >-
         ./engines/vllm/internal/substratedata ./engines/vllm/core/vllm ./engines/vllm/core/sched
         ./engines/vllm/core/engine ./engines/vllm/vllmengine ./engines/vllm/core/kvtransfer
-        ./engines/vllm/core/connector/... ./engines/vllm/core/kernelmodel
+        ./engines/vllm/core/connector/... ./engines/vllm/core/kernelmodel ./engines/vllm/core/kv
       # Import paths of packages with concurrency primitives that run without -race, space
       # separated, each with its reason stated here. None today.
       EXCLUDED: ""
