@@ -162,25 +162,40 @@ func TestAcceptanceCommandTakesAListedDrafter(t *testing.T) {
 
 // catalog resolve lists a model's drafters with each one's method and draft length, in the
 // entry's order: the in-graph speculator, then each separate drafter's own graph's.
+func strPtr(s string) *string { return &s }
+
 func TestCatalogResolveListsDrafters(t *testing.T) {
 	data := testData()
 	for _, tt := range []struct {
 		model string
 		want  []drafterInfo
 	}{
-		{"deepseek-v4.1-flash", []drafterInfo{{"speculator", "dspark", 5}}},
-		{"minimax-m3", []drafterInfo{{"speculator", "mtp", 7}, {"minimax-m3-eagle3", "eagle3", 1}, {"minimax-m3-eagle3-gqa", "eagle3", 1}}},
-		{"kimi-k3", []drafterInfo{{"kimi-k3-dspark", "dspark", 7}}},
+		{"deepseek-v4.1-flash", []drafterInfo{{Name: "speculator", Method: strPtr("dspark"), NumSpecTokens: intPtr(5)}}},
+		{"minimax-m3", []drafterInfo{
+			{Name: "speculator", Method: strPtr("mtp"), NumSpecTokens: intPtr(7)},
+			{Name: "minimax-m3-eagle3", Method: strPtr("eagle3"), NumSpecTokens: intPtr(1)},
+			{Name: "minimax-m3-eagle3-gqa", Method: strPtr("eagle3"), NumSpecTokens: intPtr(1)},
+		}},
+		{"kimi-k3", []drafterInfo{{Name: "kimi-k3-dspark", Method: strPtr("dspark"), NumSpecTokens: intPtr(7)}}},
 	} {
-		if got := draftersOf(data, tt.model); !reflect.DeepEqual(got, tt.want) {
+		got, err := draftersOf(data, tt.model)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.model, err)
+		}
+		if !reflect.DeepEqual(got, tt.want) {
 			t.Errorf("%s drafters %+v, want %+v", tt.model, got, tt.want)
 		}
 	}
-	// every listed name is one the acceptance command can be given.
+	// every listed name is one the acceptance command can be given, and every one whose graph the
+	// catalog ships states a method and a positive draft length.
 	for _, name := range data.Models() {
-		for _, d := range draftersOf(data, name) {
-			if d.Method == "" || d.NumSpecTokens < 1 {
-				t.Errorf("%s lists drafter %q with method %q and K %d", name, d.Name, d.Method, d.NumSpecTokens)
+		drafters, err := draftersOf(data, name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		for _, d := range drafters {
+			if d.Method == nil || *d.Method == "" || d.NumSpecTokens == nil || *d.NumSpecTokens < 1 {
+				t.Errorf("%s lists drafter %q with method %v and K %v", name, d.Name, d.Method, d.NumSpecTokens)
 			}
 		}
 	}
