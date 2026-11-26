@@ -37,9 +37,10 @@ type poolMemory struct {
 	// (the count its start-up log states). For a model with one KV cache group,
 	// NumGPUBlocks x BlockSizeTokens is kv_capacity_tokens_per_replica.
 	NumGPUBlocks int64 `json:"num_gpu_blocks,omitempty"`
-	// KVBlocks is the blocks of the pool a request can use: the instance's own count, one less
-	// than NumGPUBlocks because the engine keeps block 0 as vLLM's null block. For a pool of
-	// several instances it is the smallest. Absent when no instance of the pool ran.
+	// KVBlocks is the blocks of the pool a request can use on one data-parallel rank: the
+	// instance's per-rank count, one less than NumGPUBlocks because the engine keeps block 0 as
+	// vLLM's null block. For a pool of several instances it is the smallest. Absent when no
+	// instance of the pool ran.
 	KVBlocks int64 `json:"kv_blocks,omitempty"`
 }
 
@@ -47,7 +48,8 @@ type poolMemory struct {
 type memoryBytes struct {
 	// DeviceTotal is the memory the CUDA driver reports for the GPU.
 	DeviceTotal int64 `json:"device_total_bytes"`
-	// Budget is DeviceTotal times gpu_memory_utilization, rounded up to a byte.
+	// Budget is DeviceTotal times gpu_memory_utilization, rounded up to a byte, or Fixed plus
+	// kv_cache_memory_bytes when kv_cache_memory_bytes is stated.
 	Budget int64 `json:"budget_bytes"`
 	// Weights is the model parameters resident on the GPU.
 	Weights int64 `json:"weights_bytes"`
@@ -66,7 +68,8 @@ type memoryBytes struct {
 	// budget's profiling.
 	EngineBuffers int64 `json:"engine_buffers_bytes"`
 	// LoRAReserved is the static LoRA adapter reservation the GPU gives up before the KV pool
-	// is sized; zero without adapters.
+	// is sized; zero without adapters or when kv_cache_memory_bytes is stated (the profiling
+	// that nets it out is skipped).
 	LoRAReserved int64 `json:"lora_reserved_bytes"`
 	// KVPool is what is left for the KV cache: Budget minus every part above.
 	KVPool int64 `json:"kv_pool_bytes"`
@@ -79,9 +82,9 @@ func (b memoryBytes) scaled(n int64) memoryBytes {
 		b.EngineBuffers * n, b.LoRAReserved * n, b.KVPool * n}
 }
 
-// poolKVBlocks is the KV blocks each opened pool's instances were built with, by pool role:
-// the smallest count among the instances serving only that role (every instance of a colocated
-// run). A role with no such instance is absent.
+// poolKVBlocks is the per-rank KV blocks each opened pool's instances were built with, by pool
+// role: the smallest per-rank count among the instances serving only that role (every instance
+// of a colocated run). A role with no such instance is absent.
 func poolKVBlocks(cs *cluster.ClusterSimulator) map[string]int64 {
 	out := map[string]int64{}
 	membership := cs.PoolMembership()
@@ -97,7 +100,7 @@ func poolKVBlocks(cs *cluster.ClusterSimulator) map[string]int64 {
 				continue
 			}
 		}
-		if n := inst.TotalKVBlocks(); n > 0 && (out[role] == 0 || n < out[role]) {
+		if n := inst.PerRankKVBlocks(); n > 0 && (out[role] == 0 || n < out[role]) {
 			out[role] = n
 		}
 	}
@@ -105,10 +108,14 @@ func poolKVBlocks(cs *cluster.ClusterSimulator) map[string]int64 {
 }
 
 // memorySection is each opened pool's memory breakdown, keyed by pool role, for the Result's
-// reports.kernel. Empty when no kernel was opened. A pool whose memory cannot be split is left
-// out: the run has already sized its KV pool from the same figures, so this does not happen
-// for a run that started.
+// reports.kernel. Empty when no kernel was opened or when the run uses SGLang (whose
+// kernelOpened is the host's vLLM twin, not SGLang's pool). A pool whose memory cannot be split
+// is left out: the run has already sized its KV pool from the same figures, so this does not
+// happen for a run that started.
 func memorySection(models []*engineModel, cs *cluster.ClusterSimulator) map[string]poolMemory {
+	if scenarioEngine.Kind == engineKindSGLang {
+		return nil
+	}
 	out := map[string]poolMemory{}
 	blocks := poolKVBlocks(cs)
 	for _, m := range models {

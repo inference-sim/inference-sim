@@ -1101,7 +1101,13 @@ func poolMemoryOf(m *engineModel, loraReserved, kvBlocks int64) (poolMemory, err
 		return poolMemory{}, err
 	}
 	fixed := m.Kernel().FixedBytes()
-	loraPerGPU := loraReserved / int64(m.Kernel().Resolved().TensorParallel())
+	e, engErr := m.Engine()
+	var loraPerGPU int64
+	// When kv_cache_memory_bytes is stated, the engine skips profiling and does not take the
+	// static LoRA reservation from the KV budget (kernelmodel.Model.KVMemory).
+	if engErr != nil || e.KVCacheMemoryBytes == nil {
+		loraPerGPU = loraReserved / int64(m.Kernel().Resolved().TensorParallel())
+	}
 	out := poolMemory{
 		PerGPU: memoryBytes{
 			DeviceTotal:      mem.DeviceBytes,
@@ -1122,7 +1128,7 @@ func poolMemoryOf(m *engineModel, loraReserved, kvBlocks int64) (poolMemory, err
 		GPUsPerReplica:    m.WorldSize(),
 		KVBlocks:          kvBlocks,
 	}
-	if e, err := m.Engine(); err == nil {
+	if engErr == nil {
 		out.BlockSizeTokens = int64(e.BlockSize)
 	}
 	if b, err := m.KVBudgetReserving(loraReserved); err == nil {

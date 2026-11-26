@@ -4,18 +4,22 @@ package cmd
 //
 //	BC-M1 the parts of a GPU's memory (each term of the kernel's fixed occupancy, the LoRA
 //	      reservation and the KV pool) add up to the budget, which is the device total times
-//	      gpu_memory_utilization rounded up; the CUDA-graph term counts only when the engine
-//	      took it from the budget.
+//	      gpu_memory_utilization rounded up (or fixed + kv_cache_memory_bytes when stated);
+//	      the CUDA-graph term counts only when the engine took it from the budget.
 //	BC-M2 a replica's figures are its GPUs' figures summed (absent under pipeline parallelism).
-//	BC-M3 the KV pool's bytes divide into num_gpu_blocks blocks, of which the instances can use
-//	      all but the null block (kv_blocks); for a model with one KV cache group
-//	      num_gpu_blocks * block_size_tokens is kv_capacity_tokens_per_replica.
-//	BC-M4 each opened pool of a disaggregated run has its own breakdown.
+//	BC-M3 the KV pool's bytes divide into num_gpu_blocks blocks, of which one data-parallel rank's
+//	      instances can use all but the null block (kv_blocks); for a model with one KV cache
+//	      group num_gpu_blocks * block_size_tokens is kv_capacity_tokens_per_replica.
+//	BC-M4 each opened pool of a disaggregated run has its own breakdown; SGLang runs omit it
+//	      because kernelOpened is the host's vLLM twin.
 
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -134,6 +138,7 @@ func TestResult_MemoryKVPoolHoldsTheInstancesBlocks(t *testing.T) {
 	}{
 		"one KV cache group":  {denseScenario, true},
 		"two KV cache groups": {kernelTestScenario, false},
+		"MoE data parallel":   {dpScenario, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			// GIVEN a run of the model
@@ -172,6 +177,95 @@ func TestResult_MemoryKVPoolHoldsTheInstancesBlocks(t *testing.T) {
 			}
 			if pm.KVBlocks != pm.NumGPUBlocks-1 {
 				t.Errorf("kv_blocks %d, want num_gpu_blocks %d less the null block", pm.KVBlocks, pm.NumGPUBlocks)
+			}
+		})
+	}
+}
+
+// On an SGLang run, kernelOpened is the host's vLLM twin, so reports.kernel carries SGLang's
+// provenance without a vLLM memory breakdown beside it.
+func TestResult_MemoryOmittedOnSGLang(t *testing.T) {
+	dir, err := filepath.Abs(filepath.Join("..", "testdata", "kernel", "sglang"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, stderr, err := runKernelCLI(t, "run", "--scenarios", dir, "--scenario", "deepseek-r1-h200-fp8-sglang-tp8.yaml",
+		"--rate", "4", "--num-requests", "4", "--seed", "1")
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+	}
+	r := parseResult(t, stdout)
+	if r.Reports.Kernel["colocated"] == nil {
+		t.Fatal("expected SGLang kernel provenance under reports.kernel.colocated")
+	}
+	if mem := memoryOf(t, stdout); len(mem) != 0 {
+		t.Errorf("SGLang run should omit reports.kernel.<role>.memory, got %+v", mem)
+	}
+}
+
+// When kv_cache_memory_bytes is stated, the engine skips profiling and does not take the LoRA
+// reservation from the KV pool: lora_reserved_bytes is 0 and kv_pool_bytes is the stated size.
+func TestResult_MemoryLoRAWithAndWithoutStatedKVCache(t *testing.T) {
+	loraFile := filepath.Join(t.TempDir(), "lora.yaml")
+	loraYAML := "lora:\n  adapter_capacity: 4\n  adapters:\n    - id: a0\n      rank: 16\n    - id: a1\n      rank: 16\n"
+	if err := os.WriteFile(loraFile, []byte(loraYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const statedBytes int64 = 21474836480 // 20 GiB per GPU
+	scenarios, _, _ := kernelRepos(t)
+	statedDir := t.TempDir()
+	raw := readFile(t, filepath.Join(scenarios, denseScenario))
+	const anchor = "      max_model_len: 32768\n"
+	if !strings.Contains(raw, anchor) {
+		t.Fatalf("fixture %s has no %q", denseScenario, anchor)
+	}
+	edited := strings.Replace(raw, anchor, fmt.Sprintf("%s      kv_cache_memory_bytes: %d\n", anchor, statedBytes), 1)
+	if err := os.WriteFile(filepath.Join(statedDir, denseScenario), []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, c := range map[string]struct {
+		scenariosDir string
+		wantLoRA     bool
+		wantKVPool   int64
+	}{
+		"profiled budget reserves LoRA":           {"", true, 0},
+		"stated kv_cache_memory_bytes skips LoRA": {statedDir, false, statedBytes},
+	} {
+		t.Run(name, func(t *testing.T) {
+			args := []string{"run", "--scenario", denseScenario, "--lora-config", loraFile,
+				"--seed", "7", "--num-requests", "4", "--rate", "4", "--horizon", "600000000"}
+			if c.scenariosDir != "" {
+				args = append(args, "--scenarios", c.scenariosDir)
+			}
+			stdout, stderr, err := runKernelCLI(t, args...)
+			if err != nil {
+				t.Fatalf("run: %v\n%s", err, lastLines(stderr, 5))
+			}
+			pm, ok := memoryOf(t, stdout)["colocated"]
+			if !ok {
+				t.Fatal("no breakdown for the colocated pool")
+			}
+			if c.wantLoRA && pm.PerGPU.LoRAReserved <= 0 {
+				t.Errorf("lora_reserved_bytes = %d, want > 0 when profiling with adapters", pm.PerGPU.LoRAReserved)
+			}
+			if !c.wantLoRA && pm.PerGPU.LoRAReserved != 0 {
+				t.Errorf("lora_reserved_bytes = %d, want 0 when kv_cache_memory_bytes is stated", pm.PerGPU.LoRAReserved)
+			}
+			if c.wantKVPool > 0 && pm.PerGPU.KVPool != c.wantKVPool {
+				t.Errorf("kv_pool_bytes = %d, want stated %d", pm.PerGPU.KVPool, c.wantKVPool)
+			}
+			if got := pm.PerGPU.partsSum(pm.CUDAGraphInBudget); got != pm.PerGPU.Budget {
+				t.Errorf("parts add up to %d, budget is %d", got, pm.PerGPU.Budget)
+			}
+			if blocks := pm.PerGPU.KVPool / pm.KVBytesPerBlock; blocks != pm.NumGPUBlocks {
+				t.Errorf("pool %d bytes / %d bytes per block = %d, num_gpu_blocks is %d",
+					pm.PerGPU.KVPool, pm.KVBytesPerBlock, blocks, pm.NumGPUBlocks)
+			}
+			// On a stated kv_cache_memory_bytes run the engine does not take the CLI's LoRA
+			// reservation either, so its kv_blocks matches num_gpu_blocks - 1.
+			if !c.wantLoRA && pm.KVBlocks != pm.NumGPUBlocks-1 {
+				t.Errorf("kv_blocks %d, want num_gpu_blocks %d - 1", pm.KVBlocks, pm.NumGPUBlocks)
 			}
 		})
 	}
