@@ -554,7 +554,7 @@ func (k *Kernel) priceLayers(layers []price.PlannedLayer, fits [][]gemmFit, kv [
 			pad := k.expertPadding(l)
 			// The busiest expert-parallel rank gates the layer's combine, so its routed
 			// tokens and distinct experts, not the mean rank's, are what the layer pays.
-			rankTok, rankExp := k.routingAt(s, routedTokens)
+			rankTok, rankExp := k.routingAt(s, routedTokens, l.TopK)
 			routedFLOPs += routedPerRank * l.ExpertFLOPsPerTokenPerExpert * k.moeImbalance /
 				dpSlice * pad * rankTok
 			// Expert weights read: the DISTINCT local experts this step touches, times

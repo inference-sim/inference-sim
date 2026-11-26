@@ -1,0 +1,15 @@
+name: nemotron-3-super-120b-a12b-bf16
+# The BF16 checkpoint states no quantization, so every width is bf16. The card's licence is the
+# NVIDIA Nemotron Open Model License, which is not on the allow-list, so only the config's hash
+# and the derived graph are committed (X12).
+source:
+  provider: huggingface
+  repo: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16
+  revision: 2dc98e2afe4face0e4ce40972a915c45368bd34a
+  retrieved: 2026-11-26
+licence:
+  id: LicenseRef-nvidia-nemotron-open-model-license
+  evidence: https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16/raw/2dc98e2afe4face0e4ce40972a915c45368bd34a/README.md
+config:
+  sha256: 699f34f0fc645d29ebffa5767fb59e6ae6ec98e3a4605485eb9913256d0df7e6
+drafters: [speculator]

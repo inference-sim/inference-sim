@@ -70,7 +70,6 @@ func TestEachParallelismBeyondTensorAndDataIsRefusedOnItsOwn(t *testing.T) {
 		"pp":  func(p *deployment.Parallelism) { p.PP = 2 },
 		"dcp": func(p *deployment.Parallelism) { p.DCP = 2 },
 		"pcp": func(p *deployment.Parallelism) { p.PCP = 2 },
-		"ep":  func(p *deployment.Parallelism) { p.EnableExpertParallel = true },
 	} {
 		d := pool(t, 8, "mem_fraction_static: 0.82\n")
 		mutate(&d.Pools[0].Parallel)

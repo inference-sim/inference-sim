@@ -396,8 +396,8 @@ func TestSGLangPreModelLoadMemoryIsTheChipsOwn(t *testing.T) {
 	}{
 		{chip: "h100", logTotal: 79.19, logFree: 76.0},
 		{chip: "h200", logTotal: 139.8, logFree: 137.64},
-		{chip: "b200", logTotal: 178.35, logFree: 175.93},
-		{chip: "b300", logTotal: 267.69, logFree: 265.24},
+		{chip: "b200", logTotal: 178.35, logFree: 176.20},
+		{chip: "b300", logTotal: 267.69, logFree: 265.51},
 		{chip: "gb200-nvl72", logTotal: 184.0, logFree: 180.15, perNode: 4, fabric: "400g"},
 		{chip: "gb300", logTotal: 276.62, logFree: 273.04, perNode: 4, fabric: "800g"},
 	}

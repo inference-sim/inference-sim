@@ -195,6 +195,9 @@ type Kernel struct {
 	// routing is the run's cross-rank routing imbalance; nil prices the expert-parallel
 	// group as evenly loaded (adoptRouting).
 	routing *routing.Resolution
+	// ballsInBins prices an expert-parallel group with no routing resolution at the balls-in-bins
+	// expectation (bib.go); off unless BLIS_ROUTING_IMBALANCE=balls-in-bins.
+	ballsInBins bool
 
 	// Per-operation collective floors and peak rates, resolved once. Keyed by op
 	// because an all-reduce floor and an all-to-all floor differ by more than 2x on

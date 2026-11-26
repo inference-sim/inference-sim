@@ -87,6 +87,7 @@ func TestTheTRTLLMRunnerStatesRoutingPerArchitectureAndRefusesTheUnknown(t *test
 		{"DeepseekV3ForCausalLM", plan.RoutingFused, false},
 		{"GlmMoeDsaForCausalLM", plan.RoutingFused, false},
 		{"DeepseekV4ForCausalLM", plan.RoutingSeparate, false},
+		{"Qwen3_5MoeForConditionalGeneration", plan.RoutingFused, false},
 		{"Qwen3MoeForCausalLM", "", true},
 		{"Qwen3NextForCausalLM", "", true},
 	} {

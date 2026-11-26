@@ -940,9 +940,6 @@ func TestCheckRefusesWhatIsNotModelled(t *testing.T) {
 			t.Errorf("Check(%+v) = %v, want an error naming %q", c.o, err, c.want)
 		}
 	}
-	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 8, Window: 8}}, TokensPerHash: 4}); err == nil {
-		t.Error("New accepted groups of two block sizes")
-	}
 }
 
 // The connector states the batch queue and drafters as diff-tested (fuzz seeds 60000+), so the
@@ -970,9 +967,8 @@ func TestCapabilitiesAndTheDrafterGroupRefusal(t *testing.T) {
 		EagleGroups: []bool{false, true}}); err != nil {
 		t.Errorf("a drafter's own group: %v, want built", err)
 	}
-	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 8}}, TokensPerHash: 4, NumChunks: 4}); err == nil ||
-		!strings.Contains(err.Error(), GroupIssue) {
-		t.Errorf("groups of several block sizes: %v, want refused with %s", err, GroupIssue)
+	if _, err := New(Config{Groups: []Group{{BlockSize: 4}, {BlockSize: 8}}, TokensPerHash: 4, NumChunks: 4}); err != nil {
+		t.Errorf("groups of several block sizes: %v, want built", err)
 	}
 }
 

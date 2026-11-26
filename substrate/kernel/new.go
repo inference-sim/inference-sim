@@ -2623,6 +2623,13 @@ func (k *Kernel) adoptRouting(r *routing.Resolution, moe bool) {
 		return
 	}
 	const name = "routing_imbalance"
+	if (r == nil || r.Layer == routing.LayerDefault) && ballsInBinsOn() {
+		k.ballsInBins = true
+		k.assume(name, "balls-in-bins expectation", "no routing resolution was supplied, so the busiest expert-parallel rank is "+
+			"priced at the expected maximum of uniform independent routing of a step's tokens x top-k over the ranks "+
+			"(inference-sim#2309): assumed, not measured")
+		return
+	}
 	if r == nil || r.Layer == routing.LayerDefault {
 		reason := "no routing resolution was supplied"
 		if r != nil && r.Reason != "" {
@@ -2659,8 +2666,13 @@ func (k *Kernel) adoptRouting(r *routing.Resolution, moe bool) {
 // routingAt is the busiest-rank factors for a step routing tokens through the expert
 // group: decode and prefill tokens read their own curves, weighted by their share of
 // the step. Evenly loaded without a resolution.
-func (k *Kernel) routingAt(s *stepShape, tokens float64) (tok, exp float64) {
+func (k *Kernel) routingAt(s *stepShape, tokens float64, topK int) (tok, exp float64) {
 	if k.routing == nil {
+		if k.ballsInBins && k.layout.ExpertWidth > 1 && topK > 0 {
+			// No routing resolution: the expected busiest rank of uniform independent routing
+			// (ballsInBins), a stated assumption (inference-sim#2309).
+			return ballsInBins(int(tokens+0.5)*topK, k.layout.ExpertWidth), 1
+		}
 		return 1, 1
 	}
 	b := max(int(tokens+0.5), 1)

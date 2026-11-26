@@ -15,6 +15,12 @@ var eagleDraftInTarget = map[string]bool{
 	"HYV4ForCausalLM": true, "Qwen4ExpForConditionalGeneration": true,
 }
 
+// eagleDraftPathless are the architectures whose NextN/MTP draft layer also ships in the target
+// checkpoint but is not in the list above, so the draft path stays None and the draft is the target
+// checkpoint read in draft mode (spec_aux_hidden_state.py:146-176@297e54fd; Qwen3.5 recipes pass
+// no draft path).
+var eagleDraftPathless = map[string]bool{"Qwen3_5MoeForConditionalGeneration": true}
+
 // handleSpeculativeDecoding is handle_speculative_decoding (speculative_hook.py:121-284) for the
 // accepted algorithms, EAGLE and its alias NEXTN, with no separate draft checkpoint.
 func (r *resolver) handleSpeculativeDecoding() {

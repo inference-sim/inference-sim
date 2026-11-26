@@ -277,6 +277,9 @@ func selectedBy(it surfaceItem) (selector, bool) {
 var runDrafters = map[string]string{
 	"DeepseekV3ForCausalLMNextN": "DeepseekV3ForCausalLM",
 	"GlmMoeDsaForCausalLMNextN":  "GlmMoeDsaForCausalLM",
+	// Qwen3.5's NextN draft layer ships in the target checkpoint and the draft path stays unset
+	// (config/speculative.go eagleDraftPathless); a pool that runs it states disable_radix_cache.
+	"Qwen3_5ForCausalLMMTP": "Qwen3_5MoeForConditionalGeneration",
 }
 
 // deferral records a refused surface item that cannot be refused at start-up by a one-setting
