@@ -33,9 +33,10 @@ import (
 //   - enable_mamba_shared_prefix_checkpoint is false (kv_cache_manager.py:186-195), so the
 //     junction branch of _cache_partial_tail_block never runs; request.shared_prefix_boundary
 //     itself is still read where vLLM reads it.
-//   - No boundary-state offload, so _pending_boundary_state_offloads,
-//     _producer_partial_tail_reqs and finalize_partial_tail_offload (:1912-1925, :1935-1953,
-//     :2002-2012) are dropped: they feed a connector and change no block table.
+//   - Boundary-state offloads (_pending_boundary_state_offloads) are collected only once a
+//     connector asks for them (Manager.OfferBoundaryStates): they feed the connector and change
+//     no block table. _producer_partial_tail_reqs and finalize_partial_tail_offload belong to the
+//     partial-tail path, which is not ported (see the next paragraph).
 //   - DCP = PCP = 1 (:1458-1459).
 //
 // Not ported, refused by name: fine-grained partial hash hits (the coordinator's
@@ -97,6 +98,20 @@ type mambaAlign struct {
 	numRetired        map[string]int
 	allocated         map[string]bool // _allocated_block_reqs
 	checkpoints       map[string]mambaCheckpoint
+	// offer is whether a connector reads boundary-state hand-offs; pending are the ones not yet
+	// taken (_pending_boundary_state_offloads).
+	offer   bool
+	pending []BoundaryOffload
+}
+
+// BoundaryOffload is one entry of KVCacheManager.take_boundary_state_offloads
+// (kv_cache_manager.py, single_type_kv_cache_manager.py MambaManager.cache_blocks): the
+// request's block that holds the Mamba state after Boundary tokens, in KV cache group Group.
+type BoundaryOffload struct {
+	Req      string
+	Group    int
+	Block    int
+	Boundary int
 }
 
 // mambaReq is the part of a Request the manager reads when it caches blocks.
@@ -525,6 +540,15 @@ func (a *mambaAlign) popBlocksForFree(id string) []*Block {
 	delete(a.lastStateBlockIdx, id)
 	delete(a.numRetired, id)
 	delete(a.checkpoints, id)
+	// An offer holds committed bytes only until the end of the pass that made it, and this
+	// request's blocks go back to the pool now (pop_blocks_for_free).
+	kept := a.pending[:0]
+	for _, o := range a.pending {
+		if o.Req != id {
+			kept = append(kept, o)
+		}
+	}
+	a.pending = kept
 	// MambaManager's override ends in the base class's, which drops the leading null blocks
 	// (single_type_kv_cache_manager.py:1952-1969@4ba787ec; trimNullHead).
 	blocks := trimNullHead(a.g.reqBlocks[id])
@@ -578,6 +602,12 @@ func (a *mambaAlign) cacheBlocks(r mambaReq, numTokens int) {
 				continue
 			}
 			a.cachedThisStep[string(b.Hash)] = true
+			if a.offer {
+				// Offer every retained boundary with its exact block; the connector filters
+				// against its save window (cache_blocks).
+				a.pending = append(a.pending, BoundaryOffload{Req: r.ID, Group: int(a.g.id), Block: b.ID,
+					Boundary: b.HashTokens})
+			}
 		}
 	}
 }
