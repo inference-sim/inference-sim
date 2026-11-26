@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"math"
+	"sync"
 )
 
 // BlockHash is the hash of one full KV block chained over its prefix: vLLM's BlockHash
@@ -75,7 +76,8 @@ func HashBlockLookahead(root, parent BlockHash, tokens []int64, extra []ExtraKey
 	if len(parent) == 0 {
 		parent = root
 	}
-	var p pickler
+	p := getPickler(len(tokens))
+	defer putPickler(p)
 	p.frame(func() {
 		p.markTuple(func() { // (parent, tokens, (E, *lookahead))
 			p.bytes(parent)
@@ -103,7 +105,8 @@ func hashBlockUnder(root, parent BlockHash, tokens []int64, extra []ExtraKey) Bl
 	if len(parent) == 0 {
 		parent = root
 	}
-	var p pickler
+	p := getPickler(len(tokens))
+	defer putPickler(p)
 	p.frame(func() {
 		p.markTuple(func() { // (parent, tokens, extra)
 			p.bytes(parent)
@@ -148,6 +151,25 @@ func (k BlockKeys) ExtraFor(i int) []ExtraKey {
 		return k.Extra
 	}
 	return append(append([]ExtraKey(nil), k.Extra...), ExtraKey{"cache_salt", k.CacheSalt})
+}
+
+// picklers are reused across hashes: a block key is pickled into scratch buffers that keep their
+// capacity, so hashing a block allocates only its digest. The digest depends on the bytes alone.
+var picklers = sync.Pool{New: func() any { return new(pickler) }}
+
+func getPickler(tokens int) *pickler {
+	p := picklers.Get().(*pickler)
+	p.out, p.cur = p.out[:0], p.cur[:0]
+	if need := 5*tokens + 128; cap(p.cur) < need && need <= 4*frameSizeTarget {
+		p.cur = make([]byte, 0, need)
+	}
+	return p
+}
+
+func putPickler(p *pickler) {
+	if cap(p.out) <= 1<<20 && cap(p.cur) <= 1<<20 {
+		picklers.Put(p)
+	}
 }
 
 func sha256Pickle(b []byte) BlockHash {
