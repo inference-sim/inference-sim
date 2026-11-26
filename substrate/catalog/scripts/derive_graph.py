@@ -2009,6 +2009,12 @@ DEEPSEEK_MTP_ARCHS = frozenset({"DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM",
 MTP_FINAL_NORM_ARCHS = frozenset({"HYV3ForCausalLM", "Glm4MoeForCausalLM"})
 
 
+# Architectures whose config states no tie_word_embeddings and whose model class ties the head to
+# the embedding anyway, because the config class leaves transformers' PretrainedConfig default
+# (true) alone. Every other architecture's absent key reads as untied.
+TIED_BY_DEFAULT = frozenset({"OPTForCausalLM"})
+
+
 # Architectures whose head width this deriver reads from the fp8 exclusion list. Keyed
 # by architecture so adding a family is a deliberate act: five other fp8 configs exclude
 # lm_head too (glm-5, glm-5.2-fp8, glm-5.3, minimax-m2.5, minimax-m2.7) and are correct
@@ -2047,6 +2053,9 @@ HEAD_AT_BASE_ARCHS = frozenset({
 # bias is stored at the base width; how an engine converts or pads it is the engine's lowering
 # (inference-sim/inference-sim#2408).
 NODE_BIAS_ROLES = {
+    # OPT's four linears carry a bias whenever enable_bias is true, its default, which
+    # handler_opt refuses to see set false (opt.py:76-92, 121-135@4ba787ec).
+    "OPTForCausalLM": {"qkv_proj": None, "o_proj": None, "fc1": None, "fc2": None},
     "GptOssForCausalLM": {"qkv_proj": "attention_bias", "o_proj": "attention_bias",
                           "router": None, "experts": None},
     # GLM-4.6: Glm4MoeAttention builds qkv_proj with bias=config.attention_bias and o_proj with
@@ -3223,6 +3232,86 @@ def handler_longcat_flash_ngram(cfg, raw, model):
         "embedding": embedding,
     }
     return kinds, {"pattern": ["flash_moe"], "repeat": layers}, extras
+
+
+def handler_opt(cfg, raw, model):
+    """OPT (OPTForCausalLM), as transformers' modeling_opt.py (v4.57.6) and vLLM v0.33.0's
+    opt.py (@4ba787ec) build it: a decoder with learned absolute positions, multi-head attention
+    with a bias on every projection, a ReLU MLP of two biased linears, and LayerNorm.
+
+    do_layer_norm_before picks where the two norms sit. True (OPT-125m, 1.3b and up) normalizes
+    the input of each sub-layer and ends in a final norm; False (OPT-350m) adds the sub-layer's
+    output to its input and normalizes the sum, and has no final norm (opt.py:121-164, 252-263).
+
+    word_embed_proj_dim narrower than hidden_size (OPT-350m: 512 against 1024) makes the word
+    table 512 wide, with a replicated project_in (512 -> 1024) after the lookup and a replicated
+    project_out (1024 -> 512) before the head, which then reads 512-wide states
+    (opt.py:236-261, 288-308). The position table is hidden_size wide, replicated, and holds
+    max_position_embeddings + 2 rows: the offset of 2 is OPT's own (opt.py:55-62). The head is
+    the word table read again where tie_word_embeddings holds (opt.py:352-353), which
+    OPTConfig leaves at the PretrainedConfig default, true."""
+    hidden = int(require(cfg, "hidden_size", model))
+    layers = int(require(cfg, "num_layers", model))
+    vocab = int(require(cfg, "vocab_size", model))
+    nq = int(require(cfg, "num_q_heads", model))
+    ffn = int(require_key(cfg, "ffn_dim", model))
+    positions = int(require_key(cfg, "max_position_embeddings", model))
+    word = int(cfg.get("word_embed_proj_dim") or hidden)
+    act = DTYPE_WIDTHS[base_dtype(cfg, raw, model)]
+    pre_norm = bool(cfg.get("do_layer_norm_before", True))
+    if cfg.get("enable_bias") is False:
+        raise DeriveError(f"{model}: enable_bias is false; this handler states the bias every OPT "
+                          f"projection of the committed checkpoints carries")
+    if cfg.get("activation_function", "relu") != "relu":
+        raise DeriveError(f"{model}: activation_function {cfg.get('activation_function')!r}; the MLP "
+                          f"is priced as one ReLU pass")
+    if cfg.get("_remove_final_layer_norm") and not pre_norm:
+        raise DeriveError(f"{model}: _remove_final_layer_norm with a post-norm layer; the field "
+                          f"only drops the final norm of a pre-norm one")
+    if hidden % nq:
+        raise DeriveError(f"{model}: hidden_size {hidden} is not a multiple of {nq} heads")
+    tied = bool(cfg.get("tie_word_embeddings", True))
+    # OPT is multi-head attention: a key/value head for every query head.
+    layer_cfg = dict(cfg, num_key_value_heads=nq)
+
+    attn = attention_block(layer_cfg, model, hidden, raw=raw)
+    if attn[0].get("role") != "input_norm":
+        raise DeriveError(f"{model}: the attention block no longer opens with its input norm")
+    add = dict(norm("residual_add"), bytes_per_token=3 * hidden * act)
+    mlp = [gemm("fc1", ffn, hidden),
+           {"op": "Elementwise", "role": "mlp_act", "tp": "sharded", "bytes_per_token": 2 * ffn * act},
+           gemm("fc2", hidden, ffn),
+           collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL)]
+    if pre_norm:
+        nodes = [norm("self_attn_layer_norm"), *attn[1:], add,
+                 norm("final_layer_norm"), *mlp, dict(add, role="mlp_residual_add")]
+    else:
+        nodes = [*attn[1:], add, norm("self_attn_layer_norm"),
+                 *mlp, dict(add, role="mlp_residual_add"), norm("final_layer_norm")]
+    kinds = [{"id": "opt_layer", "nodes": nodes, "edges": chain(nodes)}]
+
+    embedding = [
+        {"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": word * act,
+         "rows_per_token": 1, "out_bytes_per_token": word * act, "shard": "rows"},
+        dict(collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL), bytes_per_token=word * act),
+        {"op": "Gather", "role": "embed_positions", "rows": positions + 2, "row_bytes": hidden * act,
+         "rows_per_token": 1, "out_bytes_per_token": hidden * act, "shard": "replicated"},
+    ]
+    head = []
+    if word != hidden:
+        embedding.append(dict(gemm("project_in", hidden, word), tp="replicated"))
+        head.append(dict(gemm("project_out", word, hidden), tp="replicated"))
+    # The sum of the word and position embeddings: read two rows, write one.
+    embedding.append(dict(norm("embed_add"), bytes_per_token=3 * hidden * act))
+    if pre_norm and not cfg.get("_remove_final_layer_norm"):
+        head.insert(0, norm("final_norm"))
+    lm_head = dict(gemm("lm_head", vocab, word), tp="column")
+    if tied:
+        lm_head["aliases"] = "embedding.embed_tokens"
+    head.append(lm_head)
+    extras = {"embedding": embedding, "head": head, "head_input_width": word,
+              **unscaled_context_window(cfg, raw, model)}
+    return kinds, {"pattern": ["opt_layer"], "repeat": layers}, extras
 
 
 def handler_minimax_m2(cfg, raw, model):
@@ -9321,6 +9410,8 @@ HANDLERS = {
     # LongCat-Flash-Lite: LongCat-Flash's two-attention layer with an n-gram embedding in front
     # (vllm/model_executor/models/longcat_flash_ngram.py@4ba787ec); see handler_longcat_flash_ngram.
     "LongcatFlashNgramForCausalLM": handler_longcat_flash_ngram,
+    # OPT's decoder with learned positions and biased projections; see handler_opt.
+    "OPTForCausalLM": handler_opt,
 }
 
 
@@ -9861,7 +9952,7 @@ def derive_encoder(raw: dict[str, Any], arch: str, text_hidden: int, model: str)
 # --- Driver ---------------------------------------------------------------------
 
 # What a handler's optional third result may carry; see derive().
-EXTRAS_KEYS = frozenset({"global", "embedding", "head", "speculator",
+EXTRAS_KEYS = frozenset({"global", "embedding", "head", "head_input_width", "speculator",
                          "base_capability_families", "arch_overrides"})
 # The global shapes a handler may add; the rest derive() computes itself.
 def architecture_of(raw: dict, model: str) -> str:
@@ -10220,7 +10311,7 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
         "global": {
             "hidden_size": int(require(cfg, "hidden_size", model)),
             "vocab_size": int(require(cfg, "vocab_size", model)),
-            "tie_word_embeddings": bool(cfg.get("tie_word_embeddings", False)),
+            "tie_word_embeddings": bool(cfg.get("tie_word_embeddings", arch in TIED_BY_DEFAULT)),
             "weight_dtype": weight_dtype(cfg, raw, model),
             # The configuration's architectures[0], for every graph (design D8, SUB-15). A
             # lookup that borrows across models reads it to find another target of the same
@@ -10302,10 +10393,13 @@ def _derive(config_path: Path, model: str) -> dict[str, Any]:
         # hidden, and at the width the exclusion list gives where it gives one: two
         # sources for one width must agree rather than the later silently winning.
         heads = [n for n in extras["head"] if n.get("role") == "lm_head"]
+        # The width of the state the head reads is hidden_size unless a projection narrows it
+        # first, which the handler states (OPT-350m's project_out).
+        head_k = int(extras.get("head_input_width", hidden))
         if len(heads) != 1 or (heads[0].get("n"), heads[0].get("k")) != (
-                graph["global"]["vocab_size"], hidden):
+                graph["global"]["vocab_size"], head_k):
             raise DeriveError(f"{model}: handler head does not state one "
-                              f"{graph['global']['vocab_size']} x {hidden} lm_head")
+                              f"{graph['global']['vocab_size']} x {head_k} lm_head")
         if head_widths.get("lm_head") not in (None, heads[0].get("weight_dtype")):
             raise DeriveError(
                 f"{model}: the fp8 exclusion list gives lm_head {head_widths['lm_head']} "

@@ -11383,3 +11383,126 @@ def test_longcat_flash_lite_fp8_graph_is_the_checkpoints_tensors():
     emb = {n["role"]: n for n in g["embedding"]}
     assert emb["ngram_embedders"]["rows"] == sum(10223616 + 2 * i + 1 for i in range(12))
     assert (emb["ngram_post_projs"]["n"], emb["ngram_post_projs"]["k"]) == (12 * 3072, 256)
+
+
+# --- OPTForCausalLM (OPT-350m) ------------------------------------------------------------------------------
+
+OPT = MODELS / "opt-350m"
+
+
+def _opt_raw(**edit) -> dict:
+    """A small OPT-350m-shaped config: post-norm layers, a 12-wide word embedding projected to a
+    24-wide hidden size, learned positions."""
+    raw = {
+        "architectures": ["OPTForCausalLM"], "model_type": "opt", "hidden_size": 24,
+        "word_embed_proj_dim": 12, "num_hidden_layers": 3, "num_attention_heads": 4,
+        "ffn_dim": 96, "vocab_size": 50, "max_position_embeddings": 64,
+        "do_layer_norm_before": False, "activation_function": "relu", "torch_dtype": "float16",
+    }
+    raw.update(edit)
+    return raw
+
+
+def _opt(tmp_path, **edit) -> dict:
+    return _derive_cfg(tmp_path, {k: v for k, v in _opt_raw(**edit).items() if v is not None}, "opt-probe")
+
+
+def test_opt_post_norm_layer_adds_then_normalizes_and_ends_without_a_final_norm(tmp_path):
+    g = _opt(tmp_path)
+    assert layer_sequence(g["stack"]) == ["opt_layer"] * 3
+    roles = _roles(_kind(g, "opt_layer"))
+    # No norm ahead of the attention; each sub-layer's residual add is followed by its norm.
+    assert roles[0] == "qkv_proj"
+    assert roles.index("self_attn_layer_norm") == roles.index("residual_add") + 1
+    assert roles[-2:] == ["mlp_residual_add", "final_layer_norm"]
+    assert "final_norm" not in [n["role"] for n in g["head"]]
+    layer = _kind(g, "opt_layer")
+    assert (_node(layer, "qkv_proj")["n"], _node(layer, "fc1")["n"], _node(layer, "fc2")["k"]) == (72, 96, 96)
+    attn = next(n for n in layer["nodes"] if n["op"] == "Attention")
+    assert (attn["kind"], attn["n_q"], attn["n_kv"], attn["d_h"]) == ("gqa", 4, 4, 6)
+
+
+def test_opt_pre_norm_layer_normalizes_first_and_the_head_has_a_final_norm(tmp_path):
+    g = _opt(tmp_path, do_layer_norm_before=True, word_embed_proj_dim=None)
+    roles = _roles(_kind(g, "opt_layer"))
+    assert roles[0] == "self_attn_layer_norm"
+    assert roles.index("final_layer_norm") == roles.index("residual_add") + 1
+    assert [n["role"] for n in g["head"]] == ["final_norm", "lm_head"]
+    assert "project_in" not in [n["role"] for n in g["embedding"]]
+    assert _node({"nodes": g["head"]}, "lm_head")["k"] == 24
+    # OPT's checkpoints that dropped the final norm for older fine-tunes say so.
+    g = _opt(tmp_path, do_layer_norm_before=True, word_embed_proj_dim=None, _remove_final_layer_norm=True)
+    assert [n["role"] for n in g["head"]] == ["lm_head"]
+
+
+def test_opt_word_embedding_is_narrow_and_projected_either_side_of_the_stack(tmp_path):
+    g = _opt(tmp_path)
+    emb = {n["role"]: n for n in g["embedding"]}
+    assert (emb["embed_tokens"]["rows"], emb["embed_tokens"]["row_bytes"]) == (50, 12 * 2)
+    # 64 learned positions plus OPT's offset of 2, each a hidden-wide row, replicated.
+    assert (emb["embed_positions"]["rows"], emb["embed_positions"]["row_bytes"],
+            emb["embed_positions"]["shard"]) == (66, 24 * 2, "replicated")
+    assert (emb["project_in"]["n"], emb["project_in"]["k"], emb["project_in"]["tp"]) == (24, 12, "replicated")
+    head = {n["role"]: n for n in g["head"]}
+    assert (head["project_out"]["n"], head["project_out"]["k"]) == (12, 24)
+    # The head reads the narrow states, and is the word table read again.
+    assert (head["lm_head"]["n"], head["lm_head"]["k"], head["lm_head"]["aliases"]) \
+        == (50, 12, "embedding.embed_tokens")
+    assert g["global"]["tie_word_embeddings"] is True
+
+
+def test_opt_untied_head_owns_its_weights(tmp_path):
+    g = _opt(tmp_path, tie_word_embeddings=False)
+    assert g["global"]["tie_word_embeddings"] is False
+    assert "aliases" not in _node({"nodes": g["head"]}, "lm_head")
+
+
+def test_opt_projections_carry_a_bias_and_weights_are_fp16(tmp_path):
+    g = _opt(tmp_path)
+    layer = _kind(g, "opt_layer")
+    for role in ("qkv_proj", "o_proj", "fc1", "fc2"):
+        assert _node(layer, role)["bias_dtype"] == "fp16", role
+    assert g["global"]["weight_dtype"] == "fp16"
+    assert g["global"]["context_window"] == 64
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"enable_bias": False}, "enable_bias is false"),
+    ({"activation_function": "gelu"}, "activation_function"),
+    ({"hidden_size": 26}, "not a multiple of 4 heads"),
+    ({"rope_scaling": {"rope_type": "linear", "factor": 2.0}}, "scales its RoPE"),
+    ({"ffn_dim": None}, "ffn_dim"),
+    ({"_remove_final_layer_norm": True}, "_remove_final_layer_norm with a post-norm layer"),
+])
+def test_opt_refuses_a_config_it_would_misprice(tmp_path, edit, why):
+    with pytest.raises(deriver().DeriveError, match=why):
+        _opt(tmp_path, **edit)
+
+
+def test_a_handler_head_must_read_the_width_the_handler_states(tmp_path, monkeypatch):
+    """The LM head reads hidden_size unless a handler says a projection narrowed it first; a
+    head at the narrow width with no such statement describes another model."""
+    d = deriver()
+    real = d.HANDLERS["OPTForCausalLM"]
+
+    def without_the_width(cfg, raw, model):
+        kinds, stack, extras = real(cfg, raw, model)
+        return kinds, stack, {k: v for k, v in extras.items() if k != "head_input_width"}
+    monkeypatch.setitem(d.HANDLERS, "OPTForCausalLM", without_the_width)
+    with pytest.raises(d.DeriveError, match="handler head does not state one 50 x 24 lm_head"):
+        _opt(tmp_path)
+
+
+def test_opt_350m_graph_is_the_checkpoints_shape():
+    """opt-350m: 24 post-norm layers of 1024 hidden, 16 heads, ffn 4096; a 512-wide word table of
+    50272 rows, 2050 position rows (2048 + 2), project_in 512 -> 1024 and project_out 1024 -> 512."""
+    g = graph_of(OPT)
+    assert len(layer_sequence(g["stack"])) == 24
+    layer = _kind(g, "opt_layer")
+    assert (_node(layer, "qkv_proj")["n"], _node(layer, "fc1")["n"], _node(layer, "fc2")["k"]) == (3072, 4096, 4096)
+    emb = {n["role"]: n for n in g["embedding"]}
+    assert (emb["embed_tokens"]["rows"], emb["embed_tokens"]["row_bytes"]) == (50272, 512 * 2)
+    assert emb["embed_positions"]["rows"] == 2050
+    head = {n["role"]: n for n in g["head"]}
+    assert (head["lm_head"]["n"], head["lm_head"]["k"]) == (50272, 512)
+    assert g["global"]["weight_dtype"] == "fp16" and g["global"]["tie_word_embeddings"] is True

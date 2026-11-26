@@ -1,0 +1,12 @@
+name: opt-350m
+# OPT-350m: fp16 post-LN decoder with a 512-wide word embedding projected to the 1024 hidden size. The repository's LICENSE.md is the OPT-175B licence, which limits use to non-commercial research and does not permit redistribution, so only the config's hash and the derived graph are committed (X12).
+source:
+  provider: huggingface
+  repo: facebook/opt-350m
+  revision: 08ab08cc4b72ff5593870b5d527cf4230323703c
+  retrieved: 2026-11-26
+licence:
+  id: LicenseRef-opt-175b
+  evidence: https://huggingface.co/facebook/opt-350m/raw/08ab08cc4b72ff5593870b5d527cf4230323703c/LICENSE.md
+config:
+  sha256: 3ec75df0e166476e342cf95226ba775d8155449a7b1e430728b3ca26b425e4ab
