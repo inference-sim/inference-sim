@@ -41,11 +41,16 @@ const engineKindSGLang = "sglang"
 // before it loads the weights (get_available_gpu_memory, tp_worker.py@297e54fd), but no SGLang log
 // states it, so it is vLLM's measurement carried over. A chip with no entry is refused until its
 // figure is measured.
+//
+// The b200 figure is SGLang's own: its start-up line `Load weight begin. avail mem=176.17 GB` (TP1) and
+// 176.23 (TP0) against the catalog's 178.35 GiB gives 2.12 to 2.18 GiB, taken as the midpoint 2.15
+// (vLLM's line gives 2.42). The b300 figure is the b200 SGLang figure plus vLLM's b300 minus b200
+// difference (2.45 - 2.42): no SGLang log states it.
 var sglangContextOverheadGiB = map[string]float64{
 	"h100":        79.19 - 76.0,
 	"h200":        2.16,
-	"b200":        178.35 - 175.93,
-	"b300":        267.69 - 265.24,
+	"b200":        2.15,
+	"b300":        2.18,
 	"gb200-nvl72": 184.0 - 180.15,
 	"gb300":       276.62 - 273.04,
 }
@@ -78,12 +83,20 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	if err != nil {
 		return sglangengine.Pool{}, err
 	}
+	pin := sglanglower.PoolInput{Deployment: in.Deployment, PoolIndex: in.PoolIndex, Model: in.Model, Chip: in.Chip}
+	// How a drafter's passes run is the engine's statement, not the catalog's: the pool's lowering
+	// states it in its plan (Drafts.FirstPassRows, PassRequests) and the kernel is told it here, as
+	// the vLLM host does from its settings. A pool that does not speculate states none.
+	low, err := sglanglower.Pool(pin)
+	if err != nil {
+		return sglangengine.Pool{}, err
+	}
+	in.DraftFirstPassRows, in.DraftPassRequests = low.Plan.Drafts.FirstPassRows, low.Plan.Drafts.PassRequests
 	k, err := latencykernel.New(in)
 	if err != nil {
 		return sglangengine.Pool{}, err
 	}
 	sglangKernels.put(s.Pool, k)
-	pin := sglanglower.PoolInput{Deployment: in.Deployment, PoolIndex: in.PoolIndex, Model: in.Model, Chip: in.Chip}
 	args, err := sglanglower.Args(pin)
 	if err != nil {
 		return sglangengine.Pool{}, err
@@ -221,6 +234,13 @@ func adoptSGLangTwin() error {
 				// same, so the twin carries the pool's value.
 				if v, ok := blk["stream_interval"]; ok {
 					twin["stream_interval"] = v
+				}
+				// The vLLM-form twin carries the pool's speculation so the host resolves the run's
+				// acceptance as it does for a deployment that drafts: K is the drafted tokens a step,
+				// speculative_num_steps at top-k 1 (the verify width, speculative_num_draft_tokens, is K+1).
+				// Without it the host sees a pool that drafts nothing and cannot resolve an acceptance.
+				if k := sglangDraftedTokens(blk); k > 0 {
+					twin["speculative_config"] = map[string]any{"method": "mtp", "num_speculative_tokens": k}
 				}
 				pm["engine"] = twin
 			}
@@ -389,4 +409,28 @@ func sglangResolutions(dep deployment.Deployment) []result.Resolution {
 	}
 	result.SortResolutions(out)
 	return out
+}
+
+// sglangDraftedTokens is the tokens an SGLang pool drafts a step: speculative_num_draft_tokens - 1
+// (the verify width holds the sampled token and the drafts), else speculative_num_steps, and 0 when
+// the block states no speculation.
+func sglangDraftedTokens(blk map[string]any) int {
+	if _, ok := blk["speculative_algorithm"]; !ok {
+		return 0
+	}
+	asInt := func(v any) int {
+		switch n := v.(type) {
+		case int:
+			return n
+		case int64:
+			return int(n)
+		case float64:
+			return int(n)
+		}
+		return 0
+	}
+	if n := asInt(blk["speculative_num_draft_tokens"]); n > 1 {
+		return n - 1
+	}
+	return asInt(blk["speculative_num_steps"])
 }

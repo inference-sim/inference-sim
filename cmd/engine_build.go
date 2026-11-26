@@ -165,13 +165,6 @@ func resolveAcceptanceFor(cmd *cobra.Command, m *engineModel, k int, method stri
 	if err := checkRealisationFlag(fl); err != nil {
 		logrus.Fatalf("%v", err)
 	}
-	if sglangSpeculation.Algorithm != "" {
-		for _, f := range []string{build.AcceptanceRateFlag, build.AcceptanceLengthFlag} {
-			if fl.Changed(f) {
-				logrus.Fatalf("%v", sglangSpeculationRefusal(f))
-			}
-		}
-	}
 	a, speculating, err := build.ResolveAcceptance(poolAcceptanceInputs(m, build.AcceptanceInputs{
 		Scenario: kernelScenario, Shape: scenarioShape, Data: mustRunData(), Hardware: gpu,
 		Workload: workloadAcceptance,
