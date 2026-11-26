@@ -68,6 +68,8 @@ WRITERS = [
     # Hopper block-FP8 grouped experts per MoE backend, keyed by the engine release's
     # kernel_impls.json ($BLIS_KERNEL_IMPLS) to the build each was measured on.
     ("fit_hopper_fp8_grouped_ramp.py", "the Hopper FP8 grouped ramp per MoE backend"),
+    # The Blackwell NVFP4 and BF16 grouped ramp and floor, 4-fold by geometry, graded assumed.
+    ("fit_blackwell_moe_grouped_ramp.py", "the Blackwell NVFP4 and BF16 grouped ramp and floor"),
     # The h100/h200 fp16 all-reduce on vLLM 0.31.0's custom kernel. Needs aisimulate
     # 7980e95 (the 0.31.0 sweep); exits 2, failing, on a tree without it.
     ("relane_allreduce_vllm.py", "the h100/h200 vLLM 0.31.0 all-reduce triples"),
