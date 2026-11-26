@@ -222,7 +222,7 @@ func checkAccepted(args *ServerArgs, in Input) error {
 		return &NotModelled{Name: "disaggregation_transfer_backend", Value: args.DisaggregationTransferBackend,
 			Reason: "Resolve models P/D disaggregation over nixl", Issue: refusalIssue("disaggregation_transfer_backend", args.DisaggregationTransferBackend)}
 	}
-	if args.SpeculativeAlgorithm != nil && !eagleDraftInTarget[in.Model.Architecture] {
+	if args.SpeculativeAlgorithm != nil && !eagleDraftInTarget[in.Model.Architecture] && !eagleDraftPathless[in.Model.Architecture] {
 		return &NotModelled{Name: "speculative_algorithm", Value: *args.SpeculativeAlgorithm,
 			Reason: "Resolve models speculative decoding only for a model whose MTP draft ships in its own checkpoint (a separate draft checkpoint, which EAGLE3 normally names, resolves speculative_draft_model_revision and is not modelled)",
 			Issue:  refusalIssue("speculative_algorithm", *args.SpeculativeAlgorithm)}
