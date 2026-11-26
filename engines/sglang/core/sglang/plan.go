@@ -74,6 +74,13 @@ type Runtime struct {
 	ContextLen         int
 	EOSTokenIDs        []int64
 	VocabSize          int
+	// BudgetBytes is the memory the KV pool may take: _profile_available_bytes, the device's free
+	// memory after the weights less the static memory fraction's slack
+	// (kv_cache_configurator.py:2990-3060@297e54fd). CellBytes is the pool's per-token cost, the
+	// figure TokenCapacity divides the budget by. They are the sizing's own terms, so a report of
+	// the pool states what this sizing used rather than recomputing it.
+	BudgetBytes int64
+	CellBytes   int64
 }
 
 // extraMaxContextLen is the request pool's row slack beyond the context length for a model with
@@ -237,5 +244,6 @@ func PoolPlan(k kernel.Kernel, in PoolInput) (Runtime, error) {
 		return Runtime{}, err
 	}
 	reqs := cache.MaxNumReqs(tokens, in.ContextLen, in.MaxRunningRequests, 1)
-	return Runtime{MaxTotalNumTokens: tokens, ReqPoolSize: reqs, MaxRunningRequests: reqs, ContextLen: in.ContextLen}, nil
+	return Runtime{MaxTotalNumTokens: tokens, ReqPoolSize: reqs, MaxRunningRequests: reqs, ContextLen: in.ContextLen,
+		BudgetBytes: budget, CellBytes: cell}, nil
 }

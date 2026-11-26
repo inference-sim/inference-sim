@@ -187,12 +187,28 @@ func (m *Model) kvBudget(reservedBytes int64, grouped bool) (KVBudget, error) {
 // bounded -- whose growing-context page (SequenceVariableBytes) is zero -- still has a pool.
 type KVMemory struct {
 	DeviceBytes, BudgetBytes, FixedBytes, AllocatableBytes int64
+	// ReservedBytes is the static LoRA adapter reservation taken out of this rank before its pool
+	// was sized (reservedBytes/tp), zero when none was. It is stated because AllocatableBytes on
+	// its own cannot say what happened to the difference between the budget, the fixed occupancy
+	// and the pool.
+	ReservedBytes int64
 }
 
 // KVMemory is the pool's rank's KV memory at the engine's gpu_memory_utilization, refusing what
 // KVBudget refuses before it divides by a page.
-func (m *Model) KVMemory() (KVMemory, error) { return m.kvMemory(0) }
+func (m *Model) KVMemory() (KVMemory, error) { return m.KVMemoryReserving(0) }
 
+// KVMemoryReserving is KVMemory with reservedBytes of the rank's HBM set aside before KV is
+// sized, as KVBudgetReserving takes it: the static LoRA adapter reservation.
+func (m *Model) KVMemoryReserving(reservedBytes int64) (KVMemory, error) {
+	return m.kvMemory(reservedBytes)
+}
+
+// kvMemory is KVMemoryReserving's body. AllocatableBytes is the budget less the occupancy the
+// profiler charges -- FixedBytes, or FixedBytes less the CUDA graph capture where
+// VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS is 0 (profiled, below) -- and less the reservation; a
+// stated kv_cache_memory_bytes is the exception, because the worker reserves it whole and skips
+// the profiling, and with it the reservation.
 func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 	if reservedBytes < 0 {
 		return KVMemory{}, fmt.Errorf("kernelmodel: reserved bytes must be >= 0, got %d", reservedBytes)
@@ -274,7 +290,10 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 	if !graphsEstimated {
 		profiled -= graphCapture
 	}
-	allocatable := budget - profiled - reservedBytes/int64(m.k.Resolved().TensorParallel())
+	// The reservation is a total across the rank's tensor-parallel GPUs, sharded as the weights
+	// are (KVBudgetReserving), which is the share this rank gives up.
+	reserved := reservedBytes / int64(m.k.Resolved().TensorParallel())
+	allocatable := budget - profiled - reserved
 	if allocatable <= 0 {
 		// vLLM's start-up refusal when nothing is left for the cache
 		// (_check_enough_kv_cache_memory, vllm/v1/core/kv_cache_utils.py:904-913 at v0.31.0).
@@ -286,7 +305,8 @@ func (m *Model) kvMemory(reservedBytes int64) (KVMemory, error) {
 			float64(deviceBytes)/float64(gibToBytes), util,
 			float64(budget)/float64(gibToBytes), float64(fixed)/float64(gibToBytes))
 	}
-	return KVMemory{DeviceBytes: deviceBytes, BudgetBytes: budget, FixedBytes: fixed, AllocatableBytes: allocatable}, nil
+	return KVMemory{DeviceBytes: deviceBytes, BudgetBytes: budget, FixedBytes: fixed, AllocatableBytes: allocatable,
+		ReservedBytes: reserved}, nil
 }
 
 // admissionReserver is the kernel's bounded per-sequence state, exported by

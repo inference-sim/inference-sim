@@ -1848,6 +1848,36 @@
         }
       },
       "decode": {
+        "memory": {
+          "allocatable_bytes": 37945988539,
+          "budget_bytes": 135098892283,
+          "device_bytes": 150109880314,
+          "engine": "vllm",
+          "fixed": {
+            "activation_peak": 1006632960,
+            "comm_buffers": 0,
+            "cuda_graph": 858783744,
+            "engine_buffers": 0,
+            "eplb_redundant": 0,
+            "non_torch": 0,
+            "total": 97152903744,
+            "weights": 95287487040
+          },
+          "kv": {
+            "aggregate_blocks": 11587,
+            "aggregate_bytes": 37944551424,
+            "aggregate_tokens": 741568,
+            "block_bytes": 3274752,
+            "block_tokens": 64,
+            "blocks_per_rank": 11587,
+            "bytes_per_rank": 37944551424,
+            "data_parallel": 1,
+            "per_token_bytes": 51168,
+            "tokens_per_rank": 741568
+          },
+          "reserved_bytes": 0,
+          "role": "decode"
+        },
         "prefix_cache": {
           "layout": {},
           "model_runner": "v2"
@@ -2090,6 +2120,36 @@
         }
       },
       "prefill": {
+        "memory": {
+          "allocatable_bytes": 37945988539,
+          "budget_bytes": 135098892283,
+          "device_bytes": 150109880314,
+          "engine": "vllm",
+          "fixed": {
+            "activation_peak": 1006632960,
+            "comm_buffers": 0,
+            "cuda_graph": 858783744,
+            "engine_buffers": 0,
+            "eplb_redundant": 0,
+            "non_torch": 0,
+            "total": 97152903744,
+            "weights": 95287487040
+          },
+          "kv": {
+            "aggregate_blocks": 11587,
+            "aggregate_bytes": 37944551424,
+            "aggregate_tokens": 741568,
+            "block_bytes": 3274752,
+            "block_tokens": 64,
+            "blocks_per_rank": 11587,
+            "bytes_per_rank": 37944551424,
+            "data_parallel": 1,
+            "per_token_bytes": 51168,
+            "tokens_per_rank": 741568
+          },
+          "reserved_bytes": 0,
+          "role": "prefill"
+        },
         "prefix_cache": {
           "layout": {},
           "model_runner": "v2"

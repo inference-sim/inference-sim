@@ -234,6 +234,79 @@ func poolAcceptanceInputs(m *engineModel, in build.AcceptanceInputs) build.Accep
 
 // The P/D pools (build.OpenPools and its pricing), as the run uses them.
 
+// vllmPoolMemory is one vLLM pool's memory per rank, as the kernel that sized it leaves it. Every
+// term is the pool's own: the memory half (KVBudget's device, budget, occupancy and allocatable
+// bytes, with the static LoRA adapter reservation it was sized with) and the settings the run
+// admits against (SettingsCheckedByGroups, the call the pool's settings and the engine both read).
+// Nothing is re-derived here, so the report and the pool's admission describe one pool.
+//
+// The per-rank figures are one EngineCore's KV pool. The aggregate is the instance's: DP-scaled
+// for a model with experts, whose DP cores share one pool, and per rank for a dense model, whose
+// data parallelism is replicas.
+func vllmPoolMemory(m *kernelmodel.Model, role deployment.Role) (poolMemory, error) {
+	if m == nil {
+		return poolMemory{}, fmt.Errorf("vllm memory: the %s pool is not open", role)
+	}
+	mem, err := m.KVMemoryReserving(loraReservedBytesForKV)
+	if err != nil {
+		return poolMemory{}, err
+	}
+	s, err := m.SettingsCheckedByGroupsReserving(loraReservedBytesForKV)
+	if err != nil {
+		return poolMemory{}, err
+	}
+	blockTokens := int64(s.BlockSize)
+	perToken, err := perTokenBytes(s.KVBytesPerBlock, s.BlockSize)
+	if err != nil {
+		return poolMemory{}, err
+	}
+	return poolMemory{
+		Role:             role,
+		Engine:           engineKindVLLM,
+		DeviceBytes:      mem.DeviceBytes,
+		BudgetBytes:      mem.BudgetBytes,
+		ReservedBytes:    mem.ReservedBytes,
+		Fixed:            fixedMemoryOf(m.Kernel().FixedBytes()),
+		AllocatableBytes: mem.AllocatableBytes,
+		KV: kvPoolMemory{
+			BlockTokens:     s.BlockSize,
+			BlockBytes:      s.KVBytesPerBlock,
+			PerTokenBytes:   perToken,
+			BlocksPerRank:   s.KVBlocks,
+			TokensPerRank:   s.KVBlocks * blockTokens,
+			BytesPerRank:    s.KVBlocks * s.KVBytesPerBlock,
+			DataParallel:    s.DataParallel,
+			AggregateBlocks: s.AggregateKVBlocks,
+			AggregateTokens: s.AggregateKVBlocks * blockTokens,
+			AggregateBytes:  s.AggregateKVBlocks * s.KVBytesPerBlock,
+		},
+	}, nil
+}
+
+// vllmMemoryRecords is each vLLM pool's memory from the kernels the run opened: the colocated
+// pool, or a disaggregated deployment's prefill and decode pools.
+func vllmMemoryRecords() ([]poolMemory, error) {
+	if kernelPDOpened != nil {
+		pre, err := vllmPoolMemory(kernelPDOpened.prefill, deployment.RolePrefill)
+		if err != nil {
+			return nil, err
+		}
+		dec, err := vllmPoolMemory(kernelPDOpened.decode, deployment.RoleDecode)
+		if err != nil {
+			return nil, err
+		}
+		return []poolMemory{pre, dec}, nil
+	}
+	if kernelOpened == nil {
+		return nil, fmt.Errorf("no pool is open: --scenario and --scenarios name the deployment to size")
+	}
+	p, err := vllmPoolMemory(kernelOpened, deployment.RoleColocated)
+	if err != nil {
+		return nil, err
+	}
+	return []poolMemory{p}, nil
+}
+
 // kernelPools is a disaggregated kernel run's per-role wiring: one kernel per pool.
 type kernelPools struct {
 	prefill, decode *kernelmodel.Model

@@ -1626,6 +1626,36 @@
         }
       },
       "colocated": {
+        "memory": {
+          "allocatable_bytes": 42202029947,
+          "budget_bytes": 135098892283,
+          "device_bytes": 150109880314,
+          "engine": "vllm",
+          "fixed": {
+            "activation_peak": 1342177280,
+            "comm_buffers": 0,
+            "cuda_graph": 1159725056,
+            "engine_buffers": 0,
+            "eplb_redundant": 0,
+            "non_torch": 0,
+            "total": 92896862336,
+            "weights": 90394960000
+          },
+          "kv": {
+            "aggregate_blocks": 321975,
+            "aggregate_bytes": 42201907200,
+            "aggregate_tokens": 5151600,
+            "block_bytes": 131072,
+            "block_tokens": 16,
+            "blocks_per_rank": 321975,
+            "bytes_per_rank": 42201907200,
+            "data_parallel": 1,
+            "per_token_bytes": 8192,
+            "tokens_per_rank": 5151600
+          },
+          "reserved_bytes": 0,
+          "role": "colocated"
+        },
         "prefix_cache": {
           "layout": {},
           "model_runner": "v2"

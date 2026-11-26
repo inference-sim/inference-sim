@@ -114,6 +114,15 @@ within it). The catalog and the coefficient registry default to the copies embed
 `--registry`/`BLIS_REGISTRY` replace them whole (the flag wins). The Result records which data the
 run read under `data`. To read a catalog of your own:
 
+Every Result carries each pool's memory under `reports.engine.<role>.memory`: the device, the
+budget and any static LoRA adapter reservation, the kernel's request-independent occupancy
+decomposed, and the KV pool the remainder was cut into (blocks, bytes a block, tokens and bytes per
+rank, and the instance's aggregate). The terms are the engine's sizing, not a second derivation:
+`allocatable_bytes` is the memory the engine's rules left for KV (vLLM cuts its pool from it, the
+budget less the occupancy its profiler charges and the reservation; SGLang subtracts the weights and
+a flat memory-fraction slack instead, and states what that leaves), and the pool's block, token and
+byte figures are the ones the run admits against.
+
 <!-- BEGIN GENERATED from stack.json: data-checkout -->
 ```bash
 export BLIS_CATALOG=$PWD/substrate/catalog   # optional: replaces the embedded catalog (or pass --catalog)

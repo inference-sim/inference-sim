@@ -50,20 +50,53 @@ func RegisterWith(h Host) { engine.Register(FactoryFor(h)) }
 // FactoryFor builds engines of kind "sglang" from a deployment document's engine block.
 func FactoryFor(h Host) engine.Factory { return factory{host: h} }
 
-// newFromDocument resolves the document's ServerArgs as SGLang resolves them, sizes the pools,
-// and builds the engine. Anything the engine does not model is refused by name.
-func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
-	if s.UpstreamVersion != "" && s.UpstreamVersion != blissglang.Upstream.Version {
-		return nil, fmt.Errorf("sglangengine: this build models SGLang %s, not %s", blissglang.Upstream.Version, s.UpstreamVersion)
+// resolution is a pool's configuration as SGLang resolves it: the ServerArgs, the process
+// environment its settings read, the scheduler's arguments and the pool sizes they produce. The
+// engine and the memory report are both built from it, so neither describes a pool the other did
+// not size.
+type resolution struct {
+	pool Pool
+	args config.ServerArgs
+	env  sglang.Env
+	sa   sglang.SchedArgs
+	rt   sglang.Runtime
+}
+
+// resolvePool opens the pool s selects and resolves it (resolveFromPool).
+func resolvePool(h Host, s engine.Spec) (resolution, error) {
+	// The release check runs before anything is opened: a spec naming a release this build does
+	// not model is refused without sizing (and recording) a pool the run can never use.
+	if err := checkUpstreamVersion(s); err != nil {
+		return resolution{}, err
 	}
 	pool, err := h.Open(s)
 	if err != nil {
-		return nil, err
+		return resolution{}, err
+	}
+	return resolveFromPool(pool, s)
+}
+
+// checkUpstreamVersion refuses a spec that names a release this build does not model. It is
+// called before a pool is opened and again where an already-opened pool is resolved, so both
+// paths refuse by name.
+func checkUpstreamVersion(s engine.Spec) error {
+	if s.UpstreamVersion != "" && s.UpstreamVersion != blissglang.Upstream.Version {
+		return fmt.Errorf("sglangengine: this build models SGLang %s, not %s", blissglang.Upstream.Version, s.UpstreamVersion)
+	}
+	return nil
+}
+
+// resolveFromPool resolves an opened pool's ServerArgs as SGLang resolves them, and sizes the
+// pools. Anything the engine does not model is refused by name.
+func resolveFromPool(pool Pool, s engine.Spec) (resolution, error) {
+	if err := checkUpstreamVersion(s); err != nil {
+		return resolution{}, err
 	}
 	args := pool.Args
+	var err error
 	if args == nil {
 		if err := s.Config.Decode(&args); err != nil {
-			return nil, fmt.Errorf("sglangengine: the engine block: %w", err)
+			return resolution{}, fmt.Errorf("sglangengine: the engine block: %w", err)
 		}
 	}
 	// The engine block's env map is the process environment the scheduler's settings read: it is
@@ -75,10 +108,10 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 	if raw, ok := args["env"]; ok {
 		m, isMap := raw.(map[string]any)
 		if !isMap {
-			return nil, fmt.Errorf("sglangengine: the engine block's env must be a map of variable names to values, got %T", raw)
+			return resolution{}, fmt.Errorf("sglangengine: the engine block's env must be a map of variable names to values, got %T", raw)
 		}
 		if env, err = sglang.EnvFrom(env, m); err != nil {
-			return nil, fmt.Errorf("sglangengine: %w", err)
+			return resolution{}, fmt.Errorf("sglangengine: %w", err)
 		}
 		rest := make(map[string]any, len(args))
 		for k, v := range args {
@@ -90,35 +123,47 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 	}
 	res, err := config.Resolve(config.Input{Args: args, Chip: pool.Chip, Model: pool.Model})
 	if err != nil {
-		return nil, err
+		return resolution{}, err
 	}
 	a := res.Args
 	if err := config.CheckServerArgs(&a); err != nil {
-		return nil, err
+		return resolution{}, err
 	}
 	if err := refuseUnmodelled(&a); err != nil {
-		return nil, err
+		return resolution{}, err
 	}
 	sa, err := schedArgs(&a, s.Seed)
 	if err != nil {
-		return nil, err
+		return resolution{}, err
 	}
 	in := sglang.PoolInput{PreModelLoadGiB: pool.PreModelLoadGiB, MemFractionStatic: *a.MemFractionStatic,
 		PageSize: sa.PageSize, MaxTotalTokens: a.MaxTotalTokens, MaxRunningRequests: a.MaxRunningRequests,
 		ContextLen: pool.ContextLen, AttnDPSize: max(a.AttnDpSize, 1)}
 	rt, err := sglang.PoolPlan(pool.Kernel, in)
 	if err != nil {
-		return nil, err
+		return resolution{}, err
 	}
 	rt.EOSTokenIDs, rt.VocabSize = pool.EOSTokenIDs, pool.VocabSize
-	cfg, err := sglang.SchedConfig(sa, rt, env)
+	return resolution{pool: pool, args: a, env: env, sa: sa, rt: rt}, nil
+}
+
+// newFromDocument resolves the document's ServerArgs as SGLang resolves them, sizes the pools,
+// and builds the engine (resolvePool), then derives the scheduler's settings and capture buckets
+// from that one resolution.
+func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
+	r, err := resolvePool(h, s)
+	if err != nil {
+		return nil, err
+	}
+	a, rt := r.args, r.rt
+	cfg, err := sglang.SchedConfig(r.sa, rt, r.env)
 	if err != nil {
 		return nil, err
 	}
 	var buckets []int
 	// A verify pass carries the target's whole draft width per request (num_draft_tokens), and the
 	// decode runner captures its batch sizes at that width (base_cuda_graph_runner.py:65-110).
-	width := max(sa.SpeculativeNumDraftTokens, 1)
+	width := max(r.sa.SpeculativeNumDraftTokens, 1)
 	if !a.DisableCudaGraph {
 		if buckets, err = lower.CaptureBatchSizes(&a, rt.ReqPoolSize, width); err != nil {
 			return nil, err
@@ -128,7 +173,7 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return sglang.New(cfg, &pricer{k: pool.Kernel, buckets: buckets, width: width}, list)
+	return sglang.New(cfg, &pricer{k: r.pool.Kernel, buckets: buckets, width: width}, list)
 }
 
 type factory struct{ host Host }

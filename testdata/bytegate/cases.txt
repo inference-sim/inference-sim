@@ -4,10 +4,12 @@
 # golden/<name>.json. Each case states its seed, so no default seed is part of the record.
 #
 # The scenarios are fixed copies: a scenario elsewhere in the repository may change for its own
-# reasons, and the gate must not move with it. They cover a colocated MoE deployment, one
-# instance and a cluster through the router, a speculative deployment with expert parallelism,
-# and a disaggregated (P/D) deployment, under the open-loop and the closed-loop clients.
+# reasons, and the gate must not move with it. They cover a colocated MoE deployment, that
+# deployment with data parallelism above one (the aggregate-vs-per-rank case), one instance and
+# a cluster through the router, a speculative deployment with expert parallelism, and a
+# disaggregated (P/D) deployment, under the open-loop and the closed-loop clients.
 moe-single: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --rate 8 --num-requests 40 --seed 3
+moe-dp2: run --scenario minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml --rate 4 --num-requests 30 --seed 2
 moe-cluster: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --num-instances 4 --rate 30 --num-requests 120 --seed 5
 moe-closed-loop: run --scenario gpt-oss-120b-h100-fp4-vllm-tp2.yaml --num-instances 2 --concurrency 16 --num-requests 64 --seed 11
 # moe-prefix scrapes the endpoints' metrics out of phase (--epp-scrape-jitter): its arrivals are 50 ms apart, the router's default
