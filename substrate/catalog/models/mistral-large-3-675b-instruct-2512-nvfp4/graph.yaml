@@ -1,0 +1,316 @@
+kind: ModelGraph
+name: mistral-large-3-675b-instruct-2512-nvfp4
+derived_from:
+  format: mistral_params_json
+  path: params.json
+  sha256: c8e3817171b33091d9e557bf1989f3ebf90953204b11e5ae4d0ad4581be568d6
+  deriver_version: 1
+global:
+  hidden_size: 7168
+  vocab_size: 131072
+  tie_word_embeddings: false
+  weight_dtype: nvfp4
+  architecture: PixtralForConditionalGeneration
+  context_window: 294912
+layer_kinds:
+- id: attn_dense
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2112
+    k: 7168
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: q_a_layernorm
+    bytes_per_token: 6144
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+  - op: GEMM
+    role: q_b_proj
+    n: 24576
+    k: 1536
+    weight_dtype: bf16
+  - op: GEMM
+    role: kv_b_proj
+    n: 32768
+    k: 512
+    weight_dtype: bf16
+  - op: Attention
+    holds_engine_kv: true
+    kind: mla
+    n_q: 128
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    prefill_qk_head_dim: 192
+    prefill_v_head_dim: 128
+  - op: GEMM
+    role: o_proj
+    n: 7168
+    k: 16384
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: mlp_gate_up
+    n: 32768
+    k: 7168
+  - op: GEMM
+    role: mlp_down
+    n: 7168
+    k: 16384
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+- id: attn_moe
+  nodes:
+  - op: Elementwise
+    role: input_norm
+  - op: GEMM
+    role: qkv_a_proj
+    n: 2112
+    k: 7168
+    tp: replicated
+    weight_dtype: bf16
+  - op: Elementwise
+    role: q_a_layernorm
+    bytes_per_token: 6144
+  - op: Elementwise
+    role: kv_a_layernorm
+    bytes_per_token: 2048
+  - op: GEMM
+    role: q_b_proj
+    n: 24576
+    k: 1536
+    weight_dtype: bf16
+  - op: GEMM
+    role: kv_b_proj
+    n: 32768
+    k: 512
+    weight_dtype: bf16
+  - op: Attention
+    holds_engine_kv: true
+    kind: mla
+    n_q: 128
+    n_kv: 1
+    d_h: 576
+    kv_lora_rank: 512
+    qk_rope_head_dim: 64
+    prefill_qk_head_dim: 192
+    prefill_v_head_dim: 128
+  - op: GEMM
+    role: o_proj
+    n: 7168
+    k: 16384
+    weight_dtype: bf16
+  - op: AllReduce
+    role: attn_out
+    emit: tensor_parallel
+  - op: Elementwise
+    role: post_attn_norm
+  - op: GEMM
+    role: router
+    n: 128
+    k: 7168
+    tp: replicated
+    weight_dtype: bf16
+  - op: GroupedGEMM
+    shared: false
+    role: experts
+    n: 4096
+    k: 7168
+    experts: 128
+    top_k: 4
+  - op: GEMM
+    role: shared_gate_up
+    n: 8192
+    k: 7168
+    tp: column
+  - op: Elementwise
+    role: shared_act
+    tp: sharded
+    bytes_per_token: 24576
+  - op: GEMM
+    role: shared_down
+    n: 7168
+    k: 4096
+    tp: row
+  - op: All2All
+    role: moe_dispatch_combine
+    emit: expert_parallel
+  - op: AllReduce
+    role: mlp_out
+    emit: tensor_parallel_unless_sp_moe
+  edges:
+  - - 0
+    - 1
+  - - 1
+    - 2
+  - - 2
+    - 3
+  - - 3
+    - 4
+  - - 4
+    - 5
+  - - 5
+    - 6
+  - - 6
+    - 7
+  - - 7
+    - 8
+  - - 8
+    - 9
+  - - 9
+    - 10
+  - - 10
+    - 11
+  - - 11
+    - 12
+  - - 12
+    - 13
+  - - 13
+    - 14
+  - - 14
+    - 15
+  - - 15
+    - 16
+stack:
+  prologue:
+  - attn_dense
+  - attn_dense
+  - attn_dense
+  pattern:
+  - attn_moe
+  repeat: 58
+modality: multimodal
+encoder:
+  towers:
+  - modality: image
+    input:
+      patch_size: 14
+      channels: 3
+    merge_ratio: 4
+    output_hidden_size: 7168
+    parallel: tensor
+    weight_dtype: bf16
+    embedding:
+    - op: gemm
+      role: patch_embed
+      n: 1664
+      k: 588
+      tp: replicated
+    - op: elementwise
+      role: ln_pre
+      bytes_per_row: 6656
+      params: 1664
+      tp: replicated
+    layer_kinds:
+    - id: vit_block
+      nodes:
+      - op: elementwise
+        role: norms
+        bytes_per_row: 13312
+        params: 3328
+        tp: replicated
+      - op: gemm
+        role: qkv
+        n: 4992
+        k: 1664
+        tp: column
+      - op: attention
+        role: attention
+        n_heads: 16
+        d_h: 104
+        tp: sharded
+      - op: gemm
+        role: o_proj
+        n: 1664
+        k: 1664
+        tp: row
+      - op: gemm
+        role: gate_up
+        n: 16384
+        k: 1664
+        tp: column
+      - op: elementwise
+        role: act
+        bytes_per_row: 49152
+        tp: sharded
+      - op: gemm
+        role: down
+        n: 1664
+        k: 8192
+        tp: row
+    stack:
+      pattern:
+      - vit_block
+      repeat: 48
+    projector:
+    - op: elementwise
+      role: pre_mm_projector_norm
+      bytes_per_row: 6656
+      params: 1664
+      tp: replicated
+    - op: gemm
+      role: merging_layer
+      n: 1664
+      k: 6656
+      tp: replicated
+      rows: output_tokens
+    - op: gemm
+      role: proj_in
+      n: 7168
+      k: 1664
+      tp: replicated
+      rows: output_tokens
+    - op: elementwise
+      role: proj_act
+      bytes_per_row: 28672
+      rows: output_tokens
+    - op: gemm
+      role: proj_out
+      n: 7168
+      k: 7168
+      tp: replicated
+      rows: output_tokens
+head:
+- op: Elementwise
+  role: final_norm
+- op: GEMM
+  role: lm_head
+  n: 131072
+  k: 7168
+  weight_dtype: bf16

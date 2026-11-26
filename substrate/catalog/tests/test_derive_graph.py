@@ -10584,6 +10584,151 @@ def test_mistral_large4_committed_graphs_census(model, layers_indexed, sharers):
     assert g["derived_from"]["format"] == "mistral_params_json"
 
 
+# --- Mistral-Large-3 (params.json, a DeepSeek-V3-style MLA MoE) -------------------------------------
+# A scaled-down document with the real key set of the two Mistral-Large-3 repos: 5 layers, the
+# first 2 dense, a 48-wide head (32 nope + 16 rope), a low-rank query.
+
+_L3_FP8_IGNORE = ["model.embed_tokens", "re:patch_merger.*", "re:vision_encoder.*",
+                  "re:vision_language_adapter.*", "re:.*kv_a_proj_with_mqa$", "re:.*q_a_proj$",
+                  "re:.*gate$", "lm_head"]
+_L3_NVFP4_IGNORE = ["model.embed_tokens", "re:patch_merger.*", "re:vision_encoder.*",
+                    "re:vision_language_adapter.*", "re:.*attn.*", "re:.*gate$", "lm_head"]
+
+
+def _large3_quant(nvfp4=False, ignore=None):
+    if nvfp4:
+        group = {"format": "nvfp4-pack-quantized", "output_activations": None, "targets": ["Linear"],
+                 "weights": {"num_bits": 4, "group_size": 16, "strategy": "tensor_group",
+                             "symmetric": True, "type": "float", "block_structure": None}}
+    else:
+        group = {"format": "float-quantized", "output_activations": None, "targets": ["Linear"],
+                 "weights": {"num_bits": 8, "group_size": None, "strategy": "block", "symmetric": True,
+                             "type": "float", "block_structure": [128, 128]}}
+    return {"config_groups": {"G": group}, "format": group["format"], "quant_method": "compressed-tensors",
+            "ignore": ignore or (_L3_NVFP4_IGNORE if nvfp4 else _L3_FP8_IGNORE), "kv_cache_scheme": None,
+            "sparsity_config": {}}
+
+
+def _large3_params(nvfp4=False, **edit) -> dict:
+    p = {"dim": 256, "head_dim": 48, "hidden_dim": 512, "kv_lora_rank": 64,
+         "llama_4_scaling": {"beta": 0.1, "original_max_position_embeddings": 8192},
+         "max_position_embeddings": 4096,
+         "moe": {"expert_hidden_dim": 96, "expert_model_parallel": 1, "expert_parallel": 1,
+                 "first_k_dense_replace": 2, "num_expert_groups": 1, "num_expert_groups_per_tok": 1,
+                 "num_experts": 8, "num_experts_per_tok": 2, "num_shared_experts": 1,
+                 "route_every_n": 1, "routed_scale": 1.0},
+         "n_heads": 4, "n_kv_heads": 4, "n_layers": 5, "norm_eps": 1e-06, "q_lora_rank": 80,
+         "qk_nope_head_dim": 32, "qk_rope_head_dim": 16, "quantization_config": _large3_quant(nvfp4),
+         "rope_theta": 10000.0, "tied_embeddings": False, "v_head_dim": 32, "vocab_size": 1000,
+         "vision_encoder": json.loads(_mistral_params_text_vision()),
+         "yarn": {"alpha": 1, "apply_scale": False, "beta": 32, "factor": 36,
+                  "original_max_position_embeddings": 8192}}
+    p.update(edit)
+    return p
+
+
+def _mistral_params_text_vision() -> str:
+    return json.dumps(_mistral_params()["vision_encoder"])
+
+
+def _large3(tmp_path, **kw):
+    return _mistral_derive(tmp_path, _large3_params(**kw))
+
+
+def _large3_roles(g, kid="attn_moe"):
+    return {n.get("role"): n for n in _mistral_kind(g, kid)["nodes"] if n.get("role")}
+
+
+def test_large3_is_a_deepseek_style_mla_stack_with_a_low_rank_query(tmp_path):
+    g = _large3(tmp_path)
+    assert layer_sequence(g["stack"]) == ["attn_dense"] * 2 + ["attn_moe"] * 3
+    r = _large3_roles(g)
+    # One fused A-projection over [q_lora_rank, kv_lora_rank + rope], then the two up-projections.
+    assert (r["qkv_a_proj"]["n"], r["qkv_a_proj"]["k"]) == (80 + 64 + 16, 256)
+    assert (r["q_b_proj"]["n"], r["q_b_proj"]["k"]) == (4 * 48, 80)
+    assert (r["kv_b_proj"]["n"], r["kv_b_proj"]["k"]) == (4 * (32 + 32), 64)
+    attn = next(n for n in _mistral_kind(g, "attn_moe")["nodes"] if n["op"] == "Attention")
+    assert (attn["kind"], attn["n_kv"], attn["d_h"]) == ("mla", 1, 64 + 16)
+    assert (r["experts"]["experts"], r["experts"]["top_k"], r["experts"]["n"]) == (8, 2, 96)
+    assert r["shared_gate_up"]["n"] == 2 * 96
+    dense = _large3_roles(g, "attn_dense")
+    assert dense["mlp_gate_up"]["n"] == 2 * 512 and "router" not in dense
+    assert g["global"]["context_window"] == 4096 and g["modality"] == "multimodal"
+
+
+def test_large3_block_fp8_keeps_the_ignored_latent_projections_and_head_at_bf16(tmp_path):
+    g = _large3(tmp_path)
+    assert (g["global"]["weight_dtype"], g["global"]["weight_scale"]) == ("fp8", {"elements": 16384, "bytes": 4})
+    r = _large3_roles(g)
+    for role in ("qkv_a_proj", "router"):
+        assert r[role]["weight_dtype"] == "bf16", role
+    for role in ("q_b_proj", "kv_b_proj", "o_proj", "experts", "shared_gate_up", "shared_down"):
+        assert "weight_dtype" not in r[role], role
+    assert "weight_dtype" not in _large3_roles(g, "attn_dense")["mlp_gate_up"]
+    assert _node({"nodes": g["head"]}, "lm_head")["weight_dtype"] == "bf16"
+
+
+def test_large3_nvfp4_keeps_attention_at_bf16_and_quantizes_every_mlp(tmp_path):
+    g = _large3(tmp_path, nvfp4=True)
+    assert g["global"]["weight_dtype"] == "nvfp4" and "weight_scale" not in g["global"]
+    r = _large3_roles(g)
+    for role in ("qkv_a_proj", "q_b_proj", "kv_b_proj", "o_proj", "router"):
+        assert r[role]["weight_dtype"] == "bf16", role
+    for role in ("experts", "shared_gate_up", "shared_down"):
+        assert "weight_dtype" not in r[role], role
+    d = _large3_roles(g, "attn_dense")
+    assert "weight_dtype" not in d["mlp_gate_up"] and "weight_dtype" not in d["mlp_down"]
+
+
+def test_large3_ignore_list_decides_each_module_not_the_scheme(tmp_path):
+    # Dropping the attention exclusion from the NVFP4 list quantizes the attention linears.
+    ignore = [e for e in _L3_NVFP4_IGNORE if e != "re:.*attn.*"]
+    g = _large3(tmp_path, nvfp4=True, quantization_config=_large3_quant(True, ignore))
+    r = _large3_roles(g)
+    assert all("weight_dtype" not in r[x] for x in ("q_b_proj", "o_proj", "kv_b_proj"))
+
+
+@pytest.mark.parametrize("edit,match", [
+    ({"tied_embeddings": True}, "tied_embeddings"),
+    ({"mtp": {"n_layers": 1}}, "mtp"),
+    ({"ragged_attention": "64"}, "ragged_attention"),
+    ({"llama_4_scaling": None}, "llama_4_scaling"),
+    ({"llama_4_scaling": {"beta": 0.1}}, "llama_4_scaling"),
+    ({"yarn": {"factor": 2, "surprise": 1}}, "surprise"),
+    ({"n_kv_heads": 2}, "n_kv_heads"),
+    ({"head_dim": 64}, "head_dim"),
+    ({"surprise_key": 1}, "surprise_key"),
+    ({"quantization_config": None}, "quantization_config"),
+])
+def test_large3_refuses_what_it_does_not_price(tmp_path, edit, match):
+    with pytest.raises(Exception, match=match):
+        _large3(tmp_path, **edit)
+
+
+def test_large3_refuses_a_head_the_ignore_list_leaves_quantized(tmp_path):
+    ignore = [e for e in _L3_FP8_IGNORE if e != "lm_head"]
+    with pytest.raises(Exception, match="lm_head"):
+        _large3(tmp_path, quantization_config=_large3_quant(False, ignore))
+
+
+def test_large3_refuses_a_module_quantized_on_some_layers_only(tmp_path):
+    ignore = _L3_FP8_IGNORE + ["model.layers.0.self_attn.o_proj"]
+    with pytest.raises(Exception, match="some layers"):
+        _large3(tmp_path, quantization_config=_large3_quant(False, ignore))
+
+
+def test_large3_refuses_a_scheme_it_has_not_read(tmp_path):
+    q = _large3_quant(False)
+    q["config_groups"]["G"]["weights"]["strategy"] = "tensor"
+    with pytest.raises(Exception, match="neither 128 x 128 block FP8 nor NVFP4"):
+        _large3(tmp_path, quantization_config=q)
+
+
+def test_large4_params_with_a_dsa_block_still_refuse_a_low_rank_query(tmp_path):
+    with pytest.raises(Exception, match="q_lora_rank"):
+        _mistral_derive(tmp_path, _mistral_params(q_lora_rank=1536))
+
+
 # --- HYV3ForCausalLM and MiMoV2ForCausalLM (inference-sim/inference-sim#2412) ----------------------------
 
 HY3 = MODELS / "hy3-fp8"

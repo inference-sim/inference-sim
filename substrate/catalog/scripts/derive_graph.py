@@ -1434,6 +1434,18 @@ def block_fp8_scale(cfg: dict[str, Any], raw: dict[str, Any], model: str) -> dic
     from a per-tensor FP8 weight (inference-sim/inference-sim#2463). A block that is not square
     128 has no kernel form, so it is refused rather than priced as 128 x 128."""
     quant = raw.get("quantization_config") or cfg.get("quantization_config") or {}
+    if str(quant.get("quant_method", "")).lower() == "compressed-tensors":
+        # CompressedTensorsW8A8Fp8 with the BLOCK strategy allocates the same float32 scale per
+        # block (create_fp8_scale_parameter with no scale_dtype, schemes/compressed_tensors_w8a8_fp8.py:
+        # 90-139@4ba787ec9959), so a group of 8-bit float weights in 128 x 128 blocks holds it too.
+        for group in (quant.get("config_groups") or {}).values():
+            w = (group or {}).get("weights") or {}
+            if (w.get("num_bits"), w.get("type"), w.get("strategy")) == (8, "float", "block"):
+                if w.get("block_structure") != [128, 128]:
+                    raise DeriveError(f"{model}: block-FP8 block_structure {w.get('block_structure')!r}; "
+                                      f"only the 128 x 128 block has a kernel form")
+                return {"elements": 128 * 128, "bytes": 4}
+        return None
     if str(quant.get("quant_method", "")).lower() != "fp8" or not quant.get("weight_block_size"):
         return None
     if architecture_of(raw, model) in BLOCK_FP8_OWN_SCALE_ARCHS:
@@ -2243,6 +2255,9 @@ def chain(nodes: list[dict[str, Any]]) -> list[list[int]]:
 MLA_LAYOUTS = {
     "DeepseekV2ForCausalLM": {"fused_a": True, "fused_norm": False, "replicated_a": True},
     "DeepseekV3ForCausalLM": {"fused_a": True, "fused_norm": False, "replicated_a": True},
+    # MistralLarge3ForCausalLM subclasses DeepseekV3ForCausalLM and adds only a weight-name
+    # mapper (models/mistral_large_3.py@4ba787ec9959), so it builds DeepseekV2MLAAttention.
+    "MistralLarge3ForCausalLM": {"fused_a": True, "fused_norm": False, "replicated_a": True},
     # fused_index_norm: deepseek_v32 calls fused_norm_rope ONCE per layer,
     # unconditionally on the shared code path, passing the q norm, the kv norm, the rope
     # cache AND the indexer's k-norm weight/bias/eps into that single launch
@@ -8493,6 +8508,120 @@ def mistral_large4_quant_classes(raw: dict[str, Any], model: str, layers: int, f
 
 
 def handler_mistral_large4(cfg, raw, model):
+    if cfg.get("model_type") == "deepseek_v3":
+        return handler_mistral_large3(cfg, raw, model)
+    return _handler_mistral_large4(cfg, raw, model)
+
+
+# The vLLM modules Mistral-Large-3 builds (MistralLarge3ForCausalLM is a DeepseekV3ForCausalLM,
+# models/mistral_large_3.py@4ba787ec9959, whose hf_to_vllm_mapper renames the checkpoint's
+# layers.{i}.attention.wq_a to model.layers.{i}.self_attn.q_a_proj and so on), by the graph role
+# each prices. The fused A-projection is deepseek_v2's fused_qkv_a_proj over q_a_proj and
+# kv_a_proj_with_mqa (deepseek_v2.py:1052-1058), the dense MLP and shared experts a fused
+# gate_up_proj over gate_proj and up_proj, and the routed experts one FusedMoE at mlp.experts.
+MISTRAL_LARGE3_MODULES = {
+    "qkv_a_proj": "model.layers.{i}.self_attn.fused_qkv_a_proj",
+    "q_b_proj": "model.layers.{i}.self_attn.q_b_proj",
+    "kv_b_proj": "model.layers.{i}.self_attn.kv_b_proj",
+    "o_proj": "model.layers.{i}.self_attn.o_proj",
+    "mlp_gate_up": "model.layers.{i}.mlp.gate_up_proj",
+    "mlp_down": "model.layers.{i}.mlp.down_proj",
+    "shared_gate_up": "model.layers.{i}.mlp.shared_experts.gate_up_proj",
+    "shared_down": "model.layers.{i}.mlp.shared_experts.down_proj",
+    "experts": "model.layers.{i}.mlp.experts",
+}
+
+
+def mistral_large3_scheme(quant: dict[str, Any], model: str) -> str:
+    """The width the checkpoint's one compressed-tensors scheme stores a quantized linear at.
+
+    Accepted: one group targeting Linear, either block FP8 (8-bit float weights in 128 x 128
+    blocks, dynamic 128-group activations: the FP8_BLOCK group of the repo) or NVFP4 (4-bit
+    float weights in groups of 16). Anything else is a layout this handler has not read."""
+    groups = quant.get("config_groups") or {}
+    if (str(quant.get("quant_method", "")).lower() != "compressed-tensors" or len(groups) != 1
+            or quant.get("sparsity_config") or quant.get("kv_cache_scheme")):
+        raise DeriveError(f"{model}: a quantization block other than one compressed-tensors group "
+                          f"with no sparsity and no quantized KV cache, which the Mistral-Large-3 "
+                          f"handler does not place")
+    group = next(iter(groups.values()))
+    w = group.get("weights") or {}
+    if group.get("targets") != ["Linear"] or group.get("output_activations") is not None \
+            or w.get("symmetric") is not True or w.get("type") != "float":
+        raise DeriveError(f"{model}: a compressed-tensors group that is not symmetric float weights "
+                          f"over Linear with unquantized outputs")
+    if (w.get("num_bits"), w.get("strategy"), w.get("block_structure")) == (8, "block", [128, 128]):
+        return "fp8"
+    if (w.get("num_bits"), w.get("strategy"), w.get("group_size"), group.get("format")) == (
+            4, "tensor_group", 16, "nvfp4-pack-quantized"):
+        return "nvfp4"
+    raise DeriveError(f"{model}: compressed-tensors weights {w!r} are neither 128 x 128 block FP8 nor "
+                      f"NVFP4 in groups of 16")
+
+
+def handler_mistral_large3(cfg, raw, model):
+    """Mistral-Large-3-675B-Instruct-2512 (PixtralForConditionalGeneration over
+    MistralLarge3ForCausalLM, a DeepseekV3ForCausalLM: vllm/model_executor/models/mistral_large_3.py
+    and deepseek_v2.py@4ba787ec9959, v0.33.0), block FP8 and NVFP4.
+
+    Sixty-one DeepSeek-V3-style MLA layers: a low-rank query (q_lora_rank 1536), a 512-wide latent
+    cache with a 64-wide rope part, three dense MLPs then routed MoE with one shared expert. It is
+    priced by handler_moe, the DeepSeek-V3 layout, with the stored width of each module read from
+    the checkpoint's compressed-tensors ignore list at the module names vLLM builds
+    (MISTRAL_LARGE3_MODULES): a module the list names is BF16, any other linear and the routed
+    experts carry the scheme's width. The router is a GateLinear built without a quantization
+    config and the head is ignored, both BF16. The stored widths agree with the safetensors
+    headers of both repos (the FP8 repo's q_a, kv_a, router, head and embedding are BF16, its other
+    linears F8_E4M3 with a BF16 scale per 128 x 128 block that the engine holds as float32; the
+    NVFP4 repo's attention is BF16 and its dense MLPs, shared and routed experts U8-packed FP4
+    with an F8_E4M3 scale per 16).
+
+    NOT PRICED: llama_4_scaling (a per-position scalar multiplied into q, deepseek_v2.py:445-454,
+    1532-1543, a single elementwise pass over a tensor the attention already moves), yarn rotary
+    scaling, the softmax router's renormalisation, and per-tensor global scales of NVFP4 experts
+    (two float32 per expert matrix). The vision tower is the Pixtral one the Mistral-Large-4
+    entries use (its tensors are BF16 in both repos and its modules are in both ignore lists)."""
+    quant = raw.get("quantization_config") or {}
+    quantized = mistral_large3_scheme(quant, model)
+    if weight_dtype(cfg, raw, model) != quantized:
+        raise DeriveError(f"{model}: the global width is {weight_dtype(cfg, raw, model)}, not "
+                          f"the {quantized} the quantization block states")
+    result = handler_moe(cfg, raw, model)
+    kinds, stack = result[0], result[1]
+    base = base_dtype(cfg, raw, model)
+    layers_of: dict[str, list[int]] = {}
+    for i, kid in enumerate(expand_stack(stack)):
+        layers_of.setdefault(kid, []).append(i)
+    placed = []
+    for kind in kinds:
+        nodes = []
+        for node in kind["nodes"]:
+            role = node.get("role")
+            if node.get("op") in ("GEMM", "GroupedGEMM") and role != "router":
+                if role not in MISTRAL_LARGE3_MODULES:
+                    raise DeriveError(f"{model}: no recorded vLLM module for the {role!r} node")
+                found = {ct_ignores(quant, MISTRAL_LARGE3_MODULES[role].format(i=i), model)
+                         for i in layers_of.get(kind["id"], [])}
+                if len(found) != 1:
+                    raise DeriveError(f"{model}: the ignore list leaves {role!r} unquantized on "
+                                      f"some layers of {kind['id']!r} and not others")
+                if found.pop():
+                    node = dict(node, weight_dtype=base)
+            nodes.append(node)
+        placed.append(dict(kind, nodes=nodes))
+    if not ct_ignores(quant, "lm_head", model):
+        raise DeriveError(f"{model}: the ignore list leaves lm_head quantized; it is priced at the "
+                          f"base width")
+    vocab = int(require(cfg, "vocab_size", model))
+    hidden = int(require(cfg, "hidden_size", model))
+    head = [norm("final_norm"), dict(gemm("lm_head", vocab, hidden), weight_dtype=base)]
+    extras = {"global": {"architecture": raw["architectures"][0],
+                         "context_window": int(require_key(cfg, "max_position_embeddings", model))},
+              "head": head}
+    return placed, stack, extras
+
+
+def _handler_mistral_large4(cfg, raw, model):
     """Mistral-Large-4-1T-A52B (PixtralForConditionalGeneration over MistralLarge4ForCausalLM,
     vllm/models/mistral/nvidia/{attention,indexer,mlp,moe}.py@0fda86a35419), FP8 and NVFP4.
 
@@ -9434,6 +9563,91 @@ def _int_list(text: Any, key: str, model: str) -> list[int]:
                           f"whole numbers") from None
 
 
+PARAMS_LARGE3_ABSENT = ("dsa", "kv_sharing", "mtp", "ragged_attention", "nope", "ssmax_scaling",
+                        "lerope", "softmax_tanh_gating")
+PARAMS_YARN_KEYS = frozenset({"original_max_position_embeddings", "factor", "apply_scale", "beta",
+                              "alpha"})
+
+
+def params_to_hf_large3(params: dict[str, Any], model: str) -> dict[str, Any]:
+    """The Hugging Face-shaped config vLLM builds from a Mistral-Large-3 params.json.
+
+    adapt_config_dict (transformers_utils/configs/mistral.py@4ba787ec9959, v0.33.0) sees an MLA
+    config (qk_nope_head_dim) with a routed MoE that has shared experts, and builds a deepseek_v3
+    text config for MistralLarge3ForCausalLM -- a DeepseekV3ForCausalLM (models/
+    mistral_large_3.py) whose weight names are remapped -- under the Pixtral multimodal wrapper
+    because the file states a vision_encoder. Routing is softmax with renormalised top-k and no
+    group selection (_remap_moe_args). A key the deriver has not read is refused, and so is every
+    Mistral-Large-4 feature (indexer, KV sharing, NoPE, ragged attention, a draft) this file
+    does not state, since the handler prices none of them."""
+    present = [k for k in PARAMS_LARGE3_ABSENT if params.get(k) is not None]
+    if present or params.get("tied_embeddings"):
+        raise DeriveError(f"{model}: params.json states {present or ['tied_embeddings']} beside a "
+                          f"q_lora_rank, which the DeepSeek-style Mistral-Large-3 handler does not price")
+
+    def need(key: str) -> Any:
+        if params.get(key) is None:
+            raise DeriveError(f"{model}: params.json states no {key!r}, which this architecture needs")
+        return params[key]
+
+    scaling = need("llama_4_scaling")
+    if not isinstance(scaling, dict) or set(scaling) != {"beta", "original_max_position_embeddings"}:
+        raise DeriveError(f"{model}: llama_4_scaling states {scaling!r}, not exactly beta and "
+                          f"original_max_position_embeddings")
+    yarn = params.get("yarn") or {}
+    if set(yarn) - PARAMS_YARN_KEYS:
+        raise DeriveError(f"{model}: yarn states {sorted(set(yarn) - PARAMS_YARN_KEYS)}, which the "
+                          f"deriver has not read")
+    if int(need("n_kv_heads")) != int(need("n_heads")):
+        raise DeriveError(f"{model}: n_kv_heads differs from n_heads; the latent cache has one head")
+    if int(need("qk_nope_head_dim")) + int(need("qk_rope_head_dim")) != int(need("head_dim")):
+        raise DeriveError(f"{model}: qk_nope_head_dim + qk_rope_head_dim is not head_dim")
+    moe = _params_section(params, "moe", PARAMS_MOE_KEYS, model)
+    if (moe.get("route_every_n") != 1 or moe.get("num_expert_groups") != 1
+            or moe.get("num_expert_groups_per_tok") != 1 or moe.get("expert_parallel") != 1
+            or moe.get("expert_model_parallel") != 1 or not moe.get("num_shared_experts")):
+        raise DeriveError(f"{model}: grouped routing, a stated expert parallelism, a layer stride or "
+                          f"no shared experts, which the Mistral-Large-3 handler does not price")
+    vision = (_params_section(params, "vision_encoder", PARAMS_VISION_KEYS, model)
+              if params.get("vision_encoder") is not None else None)
+
+    text: dict[str, Any] = {
+        "model_type": "deepseek_v3",
+        "architectures": ["MistralLarge3ForCausalLM"],
+        "hidden_size": int(need("dim")),
+        "num_hidden_layers": int(need("n_layers")),
+        "num_attention_heads": int(need("n_heads")),
+        "num_key_value_heads": int(need("n_kv_heads")),
+        "head_dim": int(need("head_dim")),
+        "intermediate_size": int(need("hidden_dim")),
+        "vocab_size": int(need("vocab_size")),
+        "tie_word_embeddings": False,
+        "max_position_embeddings": int(need("max_position_embeddings")),
+        "q_lora_rank": int(need("q_lora_rank")),
+        "kv_lora_rank": int(need("kv_lora_rank")),
+        "qk_nope_head_dim": int(need("qk_nope_head_dim")),
+        "qk_rope_head_dim": int(need("qk_rope_head_dim")),
+        "v_head_dim": int(need("v_head_dim")),
+        "n_routed_experts": int(moe["num_experts"]),
+        "num_experts_per_tok": int(moe["num_experts_per_tok"]),
+        "moe_intermediate_size": int(moe["expert_hidden_dim"]),
+        "n_shared_experts": int(moe["num_shared_experts"]),
+        "first_k_dense_replace": int(moe["first_k_dense_replace"]),
+        "moe_layer_freq": 1,
+        "llama_4_scaling": dict(scaling),
+    }
+    out: dict[str, Any] = {"architectures": ["PixtralForConditionalGeneration"], "dtype": "bfloat16",
+                           "text_config": text}
+    if vision is not None:
+        out["vision_config"] = dict(vision)
+    quant = params.get("quantization_config")
+    if quant is None:
+        raise DeriveError(f"{model}: params.json states no quantization_config; the handler reads the "
+                          f"stored widths from it")
+    out["quantization_config"] = quant
+    return out
+
+
 def params_to_hf(params: dict[str, Any], model: str) -> dict[str, Any]:
     """The Hugging Face-shaped config vLLM builds from a Mistral-Large-4 params.json.
 
@@ -9445,6 +9659,8 @@ def params_to_hf(params: dict[str, Any], model: str) -> dict[str, Any]:
     unread = sorted(set(params) - PARAMS_JSON_KEYS)
     if unread:
         raise DeriveError(f"{model}: params.json states {unread}, which the deriver has not read")
+    if params.get("dsa") is None and params.get("q_lora_rank") is not None:
+        return params_to_hf_large3(params, model)
 
     def need(key: str) -> Any:
         if params.get(key) is None:
