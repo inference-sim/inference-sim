@@ -1,5 +1,5 @@
 {
- "engine_version": "0.5.23",
+ "engine_version": "1.0.0+c4af57ff93f3",
  "extra_env": [],
  "dynamic_reads": {
   "python/sglang/kernels/aot/include/utils.h: std::getenv(name)": {
@@ -190,6 +190,121 @@
     "SGLANG_HEALTH_CHECK_TIMEOUT",
     "SGLANG_MAX_BATCH_REQS_PER_HTTP_REQ",
     "SGLANG_WARMUP_TIMEOUT"
+   ]
+  },
+  "python/sglang/cli/interactive.py: os.environ.get(key, env[key])": {
+   "reason": "`sglang serve <model>` applies a cookbook recipe's environment (python/sglang/cli/_commands/*.json, each recipe's \"env\" object) and compares each key with the caller's; the names are the union of the recipes' keys",
+   "names": [
+    "AITER_BF16_FP8_MOE_BOUND",
+    "AITER_FLYDSL_FORCE",
+    "AITER_ONLINE_TUNE",
+    "AITER_SITUV2_A8W4",
+    "ALLOW_JIT",
+    "CMAKE_BUILD_PARALLEL_LEVEL",
+    "FMHA_SM100_ALLOW_JIT",
+    "HSA_USERPTR_FOR_PAGED_MEM",
+    "MAX_JOBS",
+    "MC_MS_AUTO_DISC",
+    "MOONCAKE_DEVICE",
+    "MOONCAKE_GLOBAL_SEGMENT_SIZE",
+    "MOONCAKE_MASTER",
+    "MOONCAKE_PROTOCOL",
+    "MOONCAKE_TE_META_DATA_SERVER",
+    "MUSE_MOE_BACKEND",
+    "NCCL_CUMEM_ENABLE",
+    "NCCL_MIN_NCHANNELS",
+    "NCCL_MNNVL_ENABLE",
+    "NCCL_NVLS_ENABLE",
+    "NCCL_P2P_LEVEL",
+    "NO_COLOR",
+    "OMP_NUM_THREADS",
+    "PYTHONNOUSERSITE",
+    "PYTHONUNBUFFERED",
+    "PYTORCH_CUDA_ALLOC_CONF",
+    "PYTORCH_HIP_ALLOC_CONF",
+    "ROCM_QUICK_REDUCE_QUANTIZATION",
+    "RUSTUP_TOOLCHAIN",
+    "SGLANG_AITER_K3_OPT",
+    "SGLANG_ALLOW_OVERWRITE_LONGER_CONTEXT_LEN",
+    "SGLANG_AMD_MONO_K31_WIDE",
+    "SGLANG_CHUNKED_PREFIX_CACHE_THRESHOLD",
+    "SGLANG_CUSTOM_ALL_REDUCE_V2_MAX_SIZE_KB",
+    "SGLANG_DCP_PUSH_COMBINE_MAX_ROWS",
+    "SGLANG_DEEPEP_NUM_MAX_DISPATCH_TOKENS_PER_RANK",
+    "SGLANG_DP_SHARED_EXPERT_LOCAL",
+    "SGLANG_DP_USE_GATHERV",
+    "SGLANG_DP_USE_REDUCE_SCATTER",
+    "SGLANG_DSA_FUSE_TOPK",
+    "SGLANG_DSV4_FP4_EXPERTS",
+    "SGLANG_ENABLE_DFLASH_DRAFT_KV_RING",
+    "SGLANG_ENABLE_JIT_DEEPGEMM",
+    "SGLANG_ENABLE_MOE_DEFERRED_FINALIZE",
+    "SGLANG_ENABLE_ROCM_K3_ROW_SHARDED_ROUTED_FRONT",
+    "SGLANG_ENABLE_ROCM_K3_ROW_SHARDED_STREAM",
+    "SGLANG_ENABLE_WAR_BARRIER",
+    "SGLANG_FORCE_COARSE_WAR_BARRIER",
+    "SGLANG_HACK_FLASHMLA_BACKEND",
+    "SGLANG_HICACHE_MAMBA_HOST_RATIO",
+    "SGLANG_HIP_DSV41_INDEX_K_PAGE8",
+    "SGLANG_HIP_FP4_INDEXER_ROWGROUP",
+    "SGLANG_MAX_KV_CHUNK_CAPACITY",
+    "SGLANG_NVFP4_CKPT_FP8_NEXTN_MOE",
+    "SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK",
+    "SGLANG_OPT_DSV41_DSPARK_MID_FOLD",
+    "SGLANG_OPT_DSV41_DSPARK_PREPARE_INPUTS_ONCE",
+    "SGLANG_OPT_DSV41_DSPARK_SKIP_PREFILLED_INPUTS",
+    "SGLANG_OPT_FUSED_KDA_VERIFY",
+    "SGLANG_OPT_HIP_OPUS_SPARSE_PREFILL",
+    "SGLANG_OPT_INKLING2_VERIFY_REL_BIAS_KERNEL",
+    "SGLANG_OPT_MAMBA_SKIP_DECODE_LOCK",
+    "SGLANG_OPT_USE_TOPK_V2",
+    "SGLANG_ROCM_RUNTIME_RESERVE_GB",
+    "SGLANG_SHARED_EXPERT_TP1",
+    "SGLANG_TIMEOUT_KEEP_ALIVE",
+    "SGLANG_USE_AITER",
+    "SGLANG_USE_AITER_UNIFIED_ATTN",
+    "SGLANG_USE_IPC_POOL_HANDLE_CACHE",
+    "SGLANG_USE_ROCM700A",
+    "SGLANG_WARMUP_TIMEOUT",
+    "TORCH_BLAS_PREFER_HIPBLASLT"
+   ]
+  },
+  "python/sglang/srt/disaggregation/utils.py: os.environ[customized_info_capacity_env.name]": {
+   "reason": "the read of the one Envs field SGLANG_DISAGG_CUSTOMIZED_INFO_MAX_BYTES, through its own .name",
+   "names": [
+    "SGLANG_DISAGG_CUSTOMIZED_INFO_MAX_BYTES"
+   ]
+  },
+  "python/sglang/srt/kernel_plugins/nvidia/kimi_k31_gb_runtime_optimization.py: _ALIASES.get(key, key) in os.environ": {
+   "reason": "the Kimi K3.1 GB-series plugin checks each variable it would set, and PYTORCH_CUDA_ALLOC_CONF's alias, in the environment; GB_PROCESS_ENVS and _ALIASES hold the names",
+   "names": [
+    "PYTORCH_ALLOC_CONF",
+    "PYTORCH_CUDA_ALLOC_CONF",
+    "CUDA_MODULE_LOADING"
+   ]
+  },
+  "python/sglang/srt/utils/aiter_tuned_tables.py: os.environ.get(table.env)": {
+   "reason": "AMD AITER tuned-table merge reads the env of each entry of TABLES (aiter_tuned_tables.py)",
+   "names": [
+    "AITER_CONFIG_FMOE",
+    "AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE",
+    "AITER_CONFIG_GEMM_A8W8_BPRESHUFFLE",
+    "AITER_CONFIG_GEMM_BF16"
+   ]
+  },
+  "rust/sglang-mm/src/common/mod.rs: env::var(key)": {
+   "reason": "the Rust multimodal CPU pool reads its thread-count override through a closure; the one caller passes the literal SGLANG_MM_RS_THREADS",
+   "names": [
+    "SGLANG_MM_RS_THREADS"
+   ]
+  },
+  "rust/sglang-server/src/api_server/http/ollama.rs: env::var(env)": {
+   "reason": "route_path(env, default) in the Rust server's Ollama routes; its callers pass the four literals",
+   "names": [
+    "SGLANG_OLLAMA_CHAT_ROUTE",
+    "SGLANG_OLLAMA_GENERATE_ROUTE",
+    "SGLANG_OLLAMA_TAGS_ROUTE",
+    "SGLANG_OLLAMA_SHOW_ROUTE"
    ]
   }
  },
@@ -881,15 +996,6 @@
     "rule": "none"
    }
   },
-  "config:disable_fast_image_processor": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "config:disable_flashinfer_autotune": {
    "status": "not_modelled",
    "evidence": {
@@ -912,15 +1018,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2359"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "config:disable_outlines_disk_cache": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
    },
    "estimation": {
     "rule": "none"
@@ -1455,15 +1552,6 @@
     "rule": "none"
    }
   },
-  "config:enable_dp_attention": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2356"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "config:enable_dp_attention_local_control_broadcast": {
    "status": "not_modelled",
    "evidence": {
@@ -1552,18 +1640,6 @@
    },
    "estimation": {
     "rule": "none"
-   }
-  },
-  "config:enable_flashinfer_allreduce_fusion": {
-   "status": "modelled",
-   "evidence": {
-    "traces": [
-     "config/testdata/serverargs.json",
-     "lower/testdata/sglang_lower.json"
-    ]
-   },
-   "estimation": {
-    "rule": "leave_unset"
    }
   },
   "config:enable_flexkv": {
@@ -1900,15 +1976,6 @@
    }
   },
   "config:enable_pd_role_switch": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2455"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "config:enable_pdmux": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2455"
@@ -3851,15 +3918,6 @@
     "rule": "none"
    }
   },
-  "config:pdmux_config_path": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2455"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "config:ple_offload_backend": {
    "status": "not_modelled",
    "evidence": {
@@ -4389,15 +4447,6 @@
     "rule": "none"
    }
   },
-  "config:show_time_cost": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "config:sidecar": {
    "status": "not_modelled",
    "evidence": {
@@ -4438,33 +4487,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2344"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "config:sm_group_num": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2455"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "config:smg_grpc_mode": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "config:smg_http_sidecar_port": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
    },
    "estimation": {
     "rule": "none"
@@ -5050,15 +5072,6 @@
    }
   },
   "config:triton_attention_num_kv_splits": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2344"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "config:triton_attention_reduce_in_fp32": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2344"
@@ -6039,15 +6052,6 @@
     "rule": "none"
    }
   },
-  "env:FLASHINFER_MOE_EP_KNOB_CACHE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2344"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:FLASHINFER_NVFP4_4OVER6": {
    "status": "not_modelled",
    "evidence": {
@@ -7013,15 +7017,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_AITER_MLA_DCP_DECODE_BACKEND": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_AITER_MLA_DECODE_BACKEND": {
    "status": "not_modelled",
    "evidence": {
@@ -7134,15 +7129,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_AMD_USE_FLYDSL_MEGA_MOE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2344"
    },
    "estimation": {
     "rule": "none"
@@ -7427,15 +7413,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_DATA_PARALLEL_BUDGET_INTERVAL": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_DEBUG_C128_ONLINE_GUARD": {
    "status": "not_modelled",
    "evidence": {
@@ -7598,15 +7575,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_DEEPGEMM_ON_H20": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_DEEPGEMM_PDL": {
    "status": "not_modelled",
    "evidence": {
@@ -7751,15 +7719,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_DISABLE_DRAFT_EXTEND_CUDA_GRAPH": {
    "status": "not_modelled",
    "evidence": {
@@ -7841,15 +7800,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_DISABLE_LFM_FUSED_CONV": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_DISABLE_M3_FP8_ATTN_GEMM": {
    "status": "not_modelled",
    "evidence": {
@@ -7860,24 +7810,6 @@
    }
   },
   "env:SGLANG_DISABLE_MSA": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_DISABLE_MSA_V1_Q8KV4": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_DISABLE_OUTLINES_DISK_CACHE": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -8012,15 +7944,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_DISAGGREGATION_SAMPLING_MASK_MAX_TOKENS": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2455"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_DISAGGREGATION_THREAD_POOL_SIZE": {
    "status": "not_modelled",
    "evidence": {
@@ -8085,15 +8008,6 @@
    }
   },
   "env:SGLANG_DISTRIBUTED_INIT_METHOD_OVERRIDE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_DP_MASK_PAD_ROWS": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -8327,34 +8241,7 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_DSPARK_FAST_KERNEL": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_DSPARK_FAST_SAMPLING": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_DSPARK_FOLDED_PROPOSAL": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_DSPARK_FOLDED_SAMPLING": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2456"
@@ -8391,15 +8278,6 @@
    }
   },
   "env:SGLANG_DSPARK_NVLINK_VOCAB_GATHER": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_DSPARK_OPT_FUSED_GREEDY_MARKOV": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2456"
@@ -8457,24 +8335,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_DSV41_FUSED_WO_A": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
    },
    "estimation": {
     "rule": "none"
@@ -8750,25 +8610,7 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_ENABLE_BF16_SPLITK_GEMM": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_ENABLE_COLOCATED_BATCH_GEN": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ENABLE_CP_V2": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -8876,24 +8718,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_ENABLE_DSA_Q8KV8_TOPK_LENGTH": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_ENABLE_EMBED_REPLICATION": {
    "status": "not_modelled",
    "evidence": {
@@ -8922,15 +8746,6 @@
    }
   },
   "env:SGLANG_ENABLE_FLUX3_PRIMS_TS_AUTOTUNE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -8970,15 +8785,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ENABLE_HICACHE_BUFFER_ANCHOR_LOCK": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2453"
    },
    "estimation": {
     "rule": "none"
@@ -9093,15 +8899,6 @@
    }
   },
   "env:SGLANG_ENABLE_MUSE_SPARK_AG_NORM_FUSION": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ENABLE_MUSE_SPARK_FINALIZE_AR": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -9246,15 +9043,6 @@
    }
   },
   "env:SGLANG_ENABLE_SINGLE_CG_DRAFT": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ENABLE_SPLITKV_VERIFY": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -9506,24 +9294,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_EPLB_ROCM_P2P_BATCH_CHUNK_SIZE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_EXACT_CHUNK_FILL": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_EXA_INCLUDE_HIGHLIGHTS": {
    "status": "not_modelled",
    "evidence": {
@@ -9543,15 +9313,6 @@
    }
   },
   "env:SGLANG_EXA_SEARCH_TYPE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_EXPERIMENTAL_DSA_KPOOL_METADATA_FUSION": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -9686,15 +9447,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_FA4_TMEM_LOAD_RED_MAX": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_FAILED_SESSION_IDLE_TIMEOUT_S": {
    "status": "not_modelled",
    "evidence": {
@@ -9777,24 +9529,6 @@
    }
   },
   "env:SGLANG_FLASHINFER_MEGAMOE_MAX_TOKENS_PER_RANK": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_FLASHINFER_MNNVL_CUTEDSL_AR_FUSION": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_FLASHINFER_MNNVL_CUTEDSL_AR_FUSION_MAX_INSTANCES": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -10095,15 +9829,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_GFX1250_W4A8_MOE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2344"
    },
    "estimation": {
     "rule": "none"
@@ -10424,15 +10149,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_HICACHE_TMA_TRANSFER": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2453"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_HIP_DSPARK_DRAFT_RAW_METADATA": {
    "status": "not_modelled",
    "evidence": {
@@ -10451,52 +10167,7 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_HIP_DSV4_C4_INDEXER_ROWGROUP": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_HIP_FFN_NORM_MXFP8": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_HIP_FP4_INDEXER_ROWGROUP": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_HIP_MHC_BOUNDARY_WIDE_TILE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_HIP_SHARED_ACT_MXFP8": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_HIP_WO_A_MXFP8": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -10776,15 +10447,6 @@
    }
   },
   "env:SGLANG_K3_AR_FUSION": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_K3_FLYDSL_SOURCE": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -11621,15 +11283,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_MOE_SHUFFLE_GFX1250": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2344"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_MOONCAKE_CUSTOM_MEM_POOL": {
    "status": "not_modelled",
    "evidence": {
@@ -11877,15 +11530,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2451"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_NGRAM_FORCE_GREEDY_VERIFY": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
    },
    "estimation": {
     "rule": "none"
@@ -12188,15 +11832,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_OPT_DEEPGEMM_MEGA_MOE_FUSE_SHARED_EXPERTS": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2344"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_OPT_DEEPGEMM_MEGA_MOE_NUM_MAX_TOKENS_PER_RANK": {
    "status": "not_modelled",
    "evidence": {
@@ -12315,15 +11950,6 @@
    }
   },
   "env:SGLANG_OPT_DSV41_ENGRAM_HOST_STAGING": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_OPT_DSV41_ENGRAM_PEER_SHARDS": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2456"
@@ -12531,15 +12157,6 @@
    }
   },
   "env:SGLANG_OPT_GATE_GEMV_MODE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_OPT_HIP_FLYDSL_MXFP8": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -12800,15 +12417,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_OPT_SM120_MTP_ROUTER_TOP22": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_OPT_SM120_NVFP4_PHASE_LAYOUT": {
    "status": "not_modelled",
    "evidence": {
@@ -12818,34 +12426,7 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_OPT_SWA_RELEASE_LEAF_LOCK_AFTER_WINDOW": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_OPT_UNIFIED_CACHE_FREE_OUT_OF_WINDOW_SLOTS": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_OPT_USE_AITER_BATCHED_GEMM": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_OPT_USE_AITER_INDEXER": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -12900,15 +12481,6 @@
    }
   },
   "env:SGLANG_OPT_USE_FUSED_HASH_TOPK": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_OPT_USE_FUSED_QK_NORM_ROPE": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -13071,15 +12643,6 @@
    }
   },
   "env:SGLANG_OPT_USE_MINIMAX_DENSE_SPARSE_DECODE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_OPT_USE_MINIMAX_FP8_Q_EPILOGUE": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -13322,25 +12885,7 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_PREFILL_DELAYER_MAX_DELAY_PASSES": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2451"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_PREFILL_DELAYER_MAX_PREFILL_BS_WINDOW_SIZE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2451"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_PREFILL_DELAYER_TOKEN_USAGE_LOW_WATERMARK": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2451"
@@ -13431,15 +12976,6 @@
    }
   },
   "env:SGLANG_QUANT_ALLOW_DOWNCASTING": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_QWEN35_NATIVE_FINAL_NORM": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -13637,37 +13173,10 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_ROCM_K3_KDA_FUSED_BACKEND": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ROCM_KDA_HIP_PREFILL": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_ROCM_MXFP8_AITER_PRESHUFFLE": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ROCM_OPT_DSPARK_FP8_LM_HEAD": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2456"
    },
    "estimation": {
     "rule": "none"
@@ -13682,28 +13191,10 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_ROCM_SMALLM_FP8_PROJ": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_ROCM_SMALLM_MOE": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2344"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_ROCM_SMALLM_ROUTER": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
    },
    "estimation": {
     "rule": "none"
@@ -13830,15 +13321,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_SCHEDULER_DECREASE_PREFILL_IDLE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2451"
    },
    "estimation": {
     "rule": "none"
@@ -13971,15 +13453,6 @@
    }
   },
   "env:SGLANG_SKIP_P2P_CHECK": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_SKIP_RUST_TESTS": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -14172,15 +13645,6 @@
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2453"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_TEST_MAMBA_LAZY_ALLOC_FAIL": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
    },
    "estimation": {
     "rule": "none"
@@ -14456,15 +13920,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_TRACE_QWEN35_FINAL_NORM": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_TRACE_QWEN_MOE_DEEPEP_E2E": {
    "status": "not_modelled",
    "evidence": {
@@ -14510,15 +13965,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_TRITON_DENSE_PREFILL_ATTN": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_TRITON_FP8_PREFILL_ATTN": {
    "status": "not_modelled",
    "evidence": {
@@ -14529,15 +13975,6 @@
    }
   },
   "env:SGLANG_TRITON_LOAD_WARNING_THRESHOLD_GB": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_TRITON_PREFILL_TRUNCATION_ALIGN_SIZE": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -14672,25 +14109,7 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_USE_BREAKABLE_CUDA_GRAPH": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2344"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_USE_CPU_ENGINE": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGLANG_USE_CUDA_IPC_TRANSPORT": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -14825,15 +14244,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_USE_TRITON_ROUTER_SUM": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_UVICORN_WORKER_HEALTHCHECK_TIMEOUT": {
    "status": "not_modelled",
    "evidence": {
@@ -14924,15 +14334,6 @@
     "rule": "none"
    }
   },
-  "env:SGLANG_XPU_LN_MOD_NUM_WARPS": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
   "env:SGLANG_ZBAL_BOOTSTRAP_URL": {
    "status": "not_modelled",
    "evidence": {
@@ -14961,15 +14362,6 @@
    }
   },
   "env:SGLANG_ZMQ_SOURCE_IP": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGL_FORCE_SHUTDOWN": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -15051,24 +14443,6 @@
    }
   },
   "env:SGL_METAL_STD": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SGL_MM_RS_THREADS": {
-   "status": "not_modelled",
-   "evidence": {
-    "issue": "inference-sim/inference-sim#2460"
-   },
-   "estimation": {
-    "rule": "none"
-   }
-  },
-  "env:SYNC_TOKEN_IDS_ACROSS_TP": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"
@@ -15447,6 +14821,2643 @@
    }
   },
   "env:no_proxy": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:allow_local_media_files": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:cp_kv_layout": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:cuda_graph_persistence": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:cuda_graph_persistence_config": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:decode_state_free_radix_default": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2366"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:disable_multimodal": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:disable_normalize_embedding": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:disaggregation_max_top_logprobs_num": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:enable_dsa_fp4_indexer": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:enable_flashmla_prefill_token_packing": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:enable_fp4_indexer": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:enable_prefill_weight_versions": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:enable_token_space_processor": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:enable_uniboost_gamma_ada": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2451"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:engram_config": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:gc_freeze_on_idle_secs": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:hicache_storage_head_partition": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:hicache_storage_key_scheme": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:hicache_storage_layer_partition": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:hybrid_cache_checkpoints_level": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2366"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:indexer_kv_cache_dtype": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:kda_dwdp_size": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:layernorm_sp_min_tokens": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:log_schedule_decisions": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2451"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:media_url_timeout": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:moe_ascend_ops_config": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:paged_experts_enable_disk": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:paged_experts_host_memory_gb": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:shortest_prefill_aging_factor": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2451"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:shortest_prefill_boundary_decay_start_chunks": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2451"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:shortest_prefill_boundary_halving_chunks": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2451"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:shortest_prefill_budget_doubling_chunks": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2451"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:shortest_prefill_budget_min_ratio": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2451"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:speculative_dflash_draft_kv_ring": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:speculative_dspark_lm_head_dtype": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2454"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:uniboost_gamma": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2451"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:uocr_doc_page_window": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:uocr_doc_split": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:uocr_max_page_tokens": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:watermark_algorithm": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:watermark_context_history_size": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:watermark_keys": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:watermark_ngram_len": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:watermark_num_candidates": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:watermark_skip_first_ngram_calls": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "config:weight_cache_transport": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_BF16_FP8_MOE_BOUND": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_CONFIG_FMOE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_CONFIG_GEMM_A8W8_BPRESHUFFLE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_CONFIG_GEMM_BF16": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_CONFIG_GROUPED_FMOE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_CUSTOM_AR_MAX_SIZE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_FLYDSL_FORCE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_ONLINE_TUNE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:AITER_OPUS_STAGE2_FP8": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:ALLOW_JIT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:ASCEND_USE_PAGED_MTP": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:CMAKE_BUILD_PARALLEL_LEVEL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:CUDA_MODULE_LOADING": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:EDITOR": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:GITHUB_EVENT_NAME": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:HIP_FORCE_DEV_KERNARG": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:LOCAL_WORLD_SIZE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MC_MS_AUTO_DISC": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MC_TRANSFER_TIMEOUT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MOONCAKE_EGM_NUMA_NODES": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MOONCAKE_ENABLE_EGM_STORE_POOL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_AITER_DENSE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_FUSE_FFN_BOUNDARY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_FUSE_QK_NORM": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_MOE_ALIGN": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_MOE_BACKEND": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_MOE_FP4_MODE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_MOE_SPLITK": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_ROUTER_GEMV": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:MUSE_SPARK_NVFP4_NATIVE_FINALIZE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:NCCL_P2P_LEVEL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:NO_COLOR": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:OMP_NUM_THREADS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:PYTHONNOUSERSITE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:PYTHONUNBUFFERED": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:PYTORCH_HIP_ALLOC_CONF": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:ROCPROFILER_REGISTER_LIBRARY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:RUSTUP_TOOLCHAIN": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ADMIN_API_KEY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_AITER_DECODE_PARTITION_BUCKETS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_AITER_SYNC_FREE_VERIFY_LENS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_AMD_MONO_K31_WIDE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_CPU_GRAPH_COMPILE_BACKEND": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DCP_PUSH_COMBINE_MAX_ROWS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DECODE_STATE_FREE_RADIX": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DEEP_SELECT_MULTIWAVE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DISABLE_DFLASH_COMPACT_SWA_WINDOW": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DISABLE_GFX115_KERNELS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DISABLE_OVERLAP_AFTER_PREFILL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DISABLE_THP": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DISAGGREGATION_PAGE_MOVE_WAIT_TIMEOUT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2453"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DISAGG_CUSTOMIZED_INFO_MAX_BYTES": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2453"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DISAGG_PREFILL_POLL_HICACHE_WHILE_WAITING": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DISAGG_PREFILL_POLL_TRANSFERS_WHILE_WAITING": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2453"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DSA_INDEXER_BF16_LOGITS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DSPARK_OPT_INT8_MARKOV_WALK": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DSPARK_USE_ONLINE_ESTIMATOR": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_DUMP_FUSED_OPS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_BEAM_SHARED_CONTEXT_ATTENTION": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_BEAM_TRIE_SELECTION_GRAPH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_DCP_PUSH_COMBINE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_DFLASH_DRAFT_KV_RING": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_DISAGG_DECODE_DEFERRED_PUBLISH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2453"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_DSA_DCP_FUSED_TOPK": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_EAGLE_POST_VERIFY_CUDA_GRAPH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_FP8_BLOCK_GEMV": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_FUSED_KDA_OUTPUT_QUANT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_GDN_PREFILL_GRAPH_EXTEND": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_LORA_DUAL_GRAPH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_MINIMAX_M3_AMD_QUICK_REDUCE_INT4": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_MLP_SYNC_METADATA_FILL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_NIXL_KV_PACKING": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_NVTX_FORWARD": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_NV_MEGA_PDDEC_RUNTIME_OPTIMIZATION": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_NV_MEGA_RUNTIME_K31_GB_OPTIMIZATION": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_NV_MEGA_RUNTIME_OPTIMIZATION": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_PP_OUTPUT_RECV_AFTER_FORWARD": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_PREFILL_GRAPH_IDLE_RANK_EAGER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_ROCM_K3_ROW_SHARDED_ROUTED_FRONT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_ROCM_K3_ROW_SHARDED_STREAM": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_RUNNING_REQS_CHECK": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_UOCR_ASYNC_SHM_MATERIALIZATION": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_UOCR_CROP_PREFETCH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_UOCR_DOC_PREFETCH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ENABLE_UOCR_SHM_WRAP_MODEL_DATA": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_FLASHINFER_MEGAMOE_DECODE_MAX_TOKENS_PER_RANK": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_FUSED_ROPE_KV_TILED": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GATED_TRANSFER_WATCHDOG_MS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GDN_PREFILL_GRAPH_MAX_SEQS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GDN_REPLAYSSM_VERIFY_NUM_STAGES": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GEMMA4_AR_FUSION": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GEMMA4_AR_FUSION_MAX_TOKENS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GFX1250_W4A8_BYPASS_TOPK": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GFX1250_W4A8_FLYDSL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GFX1250_W4A8_FLYDSL_MIN_TOKENS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_GFX1250_W4A8_FUSED_GATHER_QUANT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_HICACHE_MAMBA_HOST_RATIO": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_HIP_VMM_HANDLE_TYPE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_HUGEPAGE_MODE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_JIT_BENCHMARK_CASE_FILTER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_JIT_BENCHMARK_FORCE_FULL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_JIT_BENCHMARK_OUTPUT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_JIT_BENCHMARK_RUN_KIND": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_JIT_CUDA_ARCH_POLICY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_JIT_DEBUG_TRACE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_JIT_ENABLE_LINEINFO": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_K3_SHARDED_MOE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_KV_CANARY_ENABLE_INFO": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_KV_CANARY_PERTURB_DETOKENIZER_SWAP_AT_OUTPUT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_MINIMAX_M3_AMD_KV_FORMAT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_MM_RS_THREADS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_MOONCAKE_TRANSFER_ENGINE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_MUSA_GIT_PROXY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_NIXL_KV_PACK_BUFFER_SIZE_MB": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_NPU_DCP_EXTEND_GATHER_PIECE_ROWS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_NPU_DCP_EXTEND_QUERY_GATHER_MAX_TOKENS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_NPU_ENABLE_STATIC_KERNEL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_NPU_USE_FLASH_MLA": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_NVIDIA_MEGAKERNEL_SLOTS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_COSMOS3_SM120_GEMM": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_CUTEDSL_EP_DEFERRED_FINALIZE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DEEPGEMM_MEGA_MOE_LOCALIZE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DFLASH_AUX_GRAPH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DFLASH_AUX_OVERLAP": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DFLASH_BATCHED_SMALL_COPY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DFLASH_COMMIT_METADATA": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DFLASH_DEFER_PLAIN_GATHER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DFLASH_DRAFT_L2_PREFETCH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DFLASH_FUSED_CANDIDATE_AG": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DFLASH_TP_AUX_FC": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DSV41_LARGE_PREFILL_SCORE_BUDGET": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DSV41_SM90_DEEPGEMM_PREFILL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DSV41_TRITON_PREFILL_SELECTION": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DSV41_VERIFY_INDEXER_BF16_K_REUSE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_DSV4_INDEXER_TP_SHARD": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_ERNIE5_5_FUSE_INEXACT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_INKLING2_ATTN_PUSH_ALL_REDUCE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_INKLING2_EP_PARTIAL_COMBINE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_INKLING2_MEGA_MOE_LOCAL_INPUT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_INKLING2_MEGA_MOE_MIN_TOKENS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_INKLING2_VERIFY_REL_BIAS_KERNEL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_MAMBA_HOST_ONLY_CHECKPOINT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SCHEDULER_SHM_SYNC": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SCHEDULER_SHM_SYNC_LEADER_TCP": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SCHEDULER_SHM_SYNC_MULTIHOST": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SMALL_FIELD_COPY_VECTORIZED": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SPEC_COMPACT_VERIFY_SAMPLING": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SPEC_DECODE_HEADROOM_PAGES": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SPEC_PACKED_VERIFY_BCAST": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SPEC_POST_VERIFY_ONE_LAUNCH_LOAD": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SPEC_RELAY_IN_PLACE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_SPEC_VERIFY_REUSE_STAGED_INPUTS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_TRTLLM_MHA_CHAIN_VERIFY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_USE_FUSED_DRAFT_SAMPLE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_OPT_USE_PREFILL_LITE_TOPK": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_PLB_SCATTER_CTAS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_PLB_SCATTER_DEFER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_PLB_STREAM_PRIORITY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_DISABLE_AITER_TOPK_GATING": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_DSPARK_SPLIT_ACCEPT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_ENABLE_DFLASH_SWA_DRAFT_KV": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_GDN_ONLINE_MXFP4": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_KEEP_INHERITED_ROCPROFILER_REGISTER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_A4W4_MOE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_COMPACT_A4_VERIFY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_DENSE_FP8": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_DENSE_TILED": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_DENSE_TUNED": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_DFLASH_DENSE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_DFLASH_FUSED_CANDIDATES": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_DFLASH_FUSED_CONV": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_DFLASH_SPLITKV": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2456"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_EXPERT_PLACEMENT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_EXTEND_FLYDSL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_EXTEND_FP8_Q": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_EXTEND_GLUON": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_EXTEND_SWA_GLUON": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_FINALIZE_AR_PUSH": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_FUSED_QKV_CACHE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_FUSED_UNPOOL_BOUNDARY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_GFX1250_A8W4": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_GFX1250_EXTEND": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_GFX1250_EXTEND_FLY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_GFX1250_LMHEAD": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_GFX1250_SP_MX_GATHER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_GFX1250_TRY_GFX95": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_JOINT_ROUTER_MAX_ROWS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_JOINT_ROUTER_POOLER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_PREFILL_DENSE_FP8": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_PREFILL_SP": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_PREFILL_ULYSSES": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_QK_ROPE_CACHE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_QK_ROPE_CACHE_MAX_ROWS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_REUSE_EXTEND_METADATA": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_REUSE_VERIFY_LENGTHS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_SHARDED_GREEDY_LOGITS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_SHARED_ROUTER_POOLER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_SYNC_FREE_VERIFY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_ULYSSES_LOCAL_GATE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_ULYSSES_PIPELINE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_BALANCED": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_FLYDSL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_FP8": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_FULL_GQA": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_FULL_V2": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_REDUCE_NORM_GATE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_SP": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_SWA_FLYDSL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_SWA_GQA": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_MUSE_VERIFY_SWA_SPLITKV": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_QUICK_ALL_REDUCE_JIT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_QUICK_REDUCE_INT8_BELOW_MB": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_ROCM_RUNTIME_RESERVE_GB": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_RUST_REQUEST_LOG_FULL_BUFFER": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_TENT_CONFIG_OVERRIDE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_TEST_MAMBA_LAZY_POOL_FULL": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2449"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_TEST_PD_ROUTER_BINARY": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2453"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_TOPK_V2_MODE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_TRTLLM_MHA_FULL_ATTN_KV_SPLITS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_TRTLLM_MHA_FULL_ATTN_KV_SPLITS_MIN_BS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_TRTLLM_MLA_WORKSPACE_MB": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_UNIBOOST_ALPHA_US_PER_TOKEN": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_UOCR_ASYNC_SHM_MAX_MB": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_UOCR_CROP_PREFETCH_MAX_MB": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_UOCR_DOC_PREFETCH_MAX_MB": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_USAGE_HEADER_PREFIX": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_USE_CUDA_MXFP4_DECODE_MOE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_USE_HIP_K3_FLYDSL_SOURCE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_USE_HIP_K3_KDA_FUSED_BACKEND": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2344"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_USE_TLX_BOUNDARY_NORM": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_USE_TLX_GEMM": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_USE_TLX_ROUTER_GEMM": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_WAITING_PREFIX_REFRESH_BOOTSTRAP_MAX": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:SGLANG_WARMUP_BF16_GEMM_MAX_M": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TLX_GFX950_TILE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TLX_TMP_RAGGED_MAIN_MAPPING": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TLX_TMP_RAGGED_MAIN_XCDS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TLX_TMP_RAGGED_TAIL_TILE": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TLX_TMP_RAGGED_TAIL_WARP_GRID": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TLX_TMP_STREAMK_GROUP_M": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TLX_TMP_STREAMK_NUM_XCDS": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TORCH_BLAS_PREFER_HIPBLASLT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TORCH_DISTRIBUTED_DEFAULT_TIMEOUT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TORCH_SYMM_MEM_DISABLE_MULTICAST": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TRITON_COMPILE_IQ_COLLECT": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:TRITON_DUMP_TLX_BENCHMARK": {
+   "status": "not_modelled",
+   "evidence": {
+    "issue": "inference-sim/inference-sim#2460"
+   },
+   "estimation": {
+    "rule": "none"
+   }
+  },
+  "env:VISUAL": {
    "status": "not_modelled",
    "evidence": {
     "issue": "inference-sim/inference-sim#2460"

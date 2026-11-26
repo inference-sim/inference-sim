@@ -22,13 +22,16 @@ import (
 // Kind is the engine kind this module registers with the contracts' engine factory.
 const Kind = "sglang"
 
-// Upstream identifies the SGLang release this build models. The tag sits on SGLang's
-// release/v0.5.23 branch and is not an ancestor of its main, so an upgrade compares release tag
-// with release tag.
+// Upstream identifies the SGLang commit this build models. SGLang has cut no release there: the
+// commit is the head of its main branch on 2026-11-25, 2289 commits after v0.5.23, whose tag sits
+// on the release/v0.5.23 branch and is not an ancestor of main. The version is a label (the
+// "1.0.0" that main's own removal notices name, with the commit), not a git tag, so tools fetch
+// the source by commit. The previous pin was v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90); a
+// citation that still names it was not re-read at this commit and is true of v0.5.23 only.
 var Upstream = harness.Upstream{
-	Version: "0.5.23",
-	Tag:     "v0.5.23",
-	Commit:  "297e54fd105e974cdf401e5b4d20253a22c16f90",
+	Version: "1.0.0+c4af57ff93f3",
+	Tag:     "v1.0.0+c4af57ff93f3",
+	Commit:  "c4af57ff93f301846fa1da4c31f8523c08c7510d",
 }
 
 // Provenance is what a run must record to be reproduced: the engine kind, the upstream release it

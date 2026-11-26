@@ -2,7 +2,7 @@
  "kind": "ValueClasses",
  "engine": {
   "kind": "sglang",
-  "version": "0.5.23"
+  "version": "1.0.0+c4af57ff93f3"
  },
  "limits": "Comparisons are found where the field, or a name the same function assigned from it, is compared with a literal: ==, !=, <, <=, >, >=, in, not in, is None, is not None, and a bare truth test. A value passed to another function, stored in a container or computed before the comparison is not followed, and a ServerArgs field is recognised only through the base names listed in CONFIG_BASES. The classes under-approximate what SGLang does with the field: a field with one class is one no scanned comparison singles out, not one SGLang treats alike at every value.",
  "fields": {
@@ -97,10 +97,10 @@
      "torch_native",
      "flex_attention",
      "dsa",
-     "nsa",
      "qsa",
+     "unlimited_ocr_v2",
      "dsv4",
-     "compressed",
+     "ernie55",
      "fa3",
      "fa4",
      "flashinfer",
@@ -108,7 +108,6 @@
      "flashmla",
      "trtllm_mla",
      "cutedsl_mla",
-     "tokenspeed_mla",
      "trtllm_mha",
      "hpc_ops",
      "minicpm_flashattn",
@@ -125,7 +124,7 @@
     "kind": "enumerated",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:48",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:51",
       "op": "Truth",
       "values": [
        null
@@ -133,7 +132,7 @@
       "expr": "cfg.attention_backend"
      },
      {
-      "at": "python/sglang/srt/arg_groups/mamba_hook.py:161",
+      "at": "python/sglang/srt/arg_groups/mamba_hook.py:166",
       "op": "NotEq",
       "values": [
        "trtllm_mha"
@@ -141,7 +140,7 @@
       "expr": "view.attention_backend != 'trtllm_mha'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_hook.py:897",
+      "at": "python/sglang/srt/arg_groups/model_hook.py:826",
       "op": "Truth",
       "values": [
        null
@@ -149,7 +148,7 @@
       "expr": "cfg.attention_backend"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_override_base.py:179",
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:195",
       "op": "Is",
       "values": [
        null
@@ -157,7 +156,7 @@
       "expr": "cfg.attention_backend is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:181",
+      "at": "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:223",
       "op": "Is",
       "values": [
        null
@@ -181,7 +180,15 @@
       "expr": "cfg.attention_backend is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/gemma4.py:43",
+      "at": "python/sglang/srt/arg_groups/model_overrides/flint.py:44",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/gemma4.py:76",
       "op": "Is",
       "values": [
        null
@@ -221,6 +228,22 @@
       "expr": "cfg.attention_backend is None"
      },
      {
+      "at": "python/sglang/srt/arg_groups/model_overrides/lfm3.py:28",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/lfm3.py:33",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "backend"
+     },
+     {
       "at": "python/sglang/srt/arg_groups/model_overrides/llama4.py:23",
       "op": "Is",
       "values": [
@@ -237,7 +260,7 @@
       "expr": "cfg.attention_backend is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/olmo2.py:24",
+      "at": "python/sglang/srt/arg_groups/model_overrides/olmo2.py:19",
       "op": "Is",
       "values": [
        null
@@ -269,7 +292,15 @@
       "expr": "cfg.attention_backend is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1098",
+      "at": "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:81",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.attention_backend is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1353",
       "op": "Is",
       "values": [
        null
@@ -277,7 +308,7 @@
       "expr": "view.attention_backend is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1132",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1390",
       "op": "Is",
       "values": [
        null
@@ -285,7 +316,7 @@
       "expr": "view.attention_backend is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1148",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1406",
       "op": "Eq",
       "values": [
        "flashmla"
@@ -293,7 +324,7 @@
       "expr": "view.attention_backend == 'flashmla'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1156",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1414",
       "op": "Eq",
       "values": [
        "trtllm_mla"
@@ -301,7 +332,7 @@
       "expr": "view.attention_backend == 'trtllm_mla'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1165",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1423",
       "op": "Eq",
       "values": [
        "cutedsl_mla"
@@ -309,7 +340,7 @@
       "expr": "view.attention_backend == 'cutedsl_mla'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1175",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1433",
       "op": "Eq",
       "values": [
        "trtllm_mha"
@@ -317,7 +348,7 @@
       "expr": "view.attention_backend == 'trtllm_mha'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1189",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1447",
       "op": "Eq",
       "values": [
        "hpc_ops"
@@ -325,7 +356,7 @@
       "expr": "view.attention_backend == 'hpc_ops'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1207",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1465",
       "op": "Eq",
       "values": [
        "trtllm_mla"
@@ -333,7 +364,7 @@
       "expr": "view.attention_backend == 'trtllm_mla'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1236",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1494",
       "op": "Eq",
       "values": [
        "cutedsl_mla"
@@ -341,7 +372,7 @@
       "expr": "view.attention_backend == 'cutedsl_mla'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1264",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1522",
       "op": "Eq",
       "values": [
        "fa3"
@@ -349,7 +380,7 @@
       "expr": "view.attention_backend == 'fa3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1277",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1535",
       "op": "Eq",
       "values": [
        "fa4"
@@ -357,7 +388,7 @@
       "expr": "view.attention_backend == 'fa4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1303",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1561",
       "op": "Eq",
       "values": [
        "intel_amx"
@@ -365,7 +396,7 @@
       "expr": "view.attention_backend == 'intel_amx'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1312",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1570",
       "op": "Eq",
       "values": [
        "intel_xpu"
@@ -373,7 +404,7 @@
       "expr": "view.attention_backend == 'intel_xpu'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1698",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2010",
       "op": "NotIn",
       "values": [
        "triton",
@@ -382,7 +413,7 @@
       "expr": "view.attention_backend not in ['triton', 'aiter']"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1704",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2016",
       "op": "NotEq",
       "values": [
        "ascend"
@@ -390,7 +421,7 @@
       "expr": "view.attention_backend != 'ascend'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1710",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2022",
       "op": "NotEq",
       "values": [
        "flashinfer"
@@ -398,7 +429,7 @@
       "expr": "view.attention_backend != 'flashinfer'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1776",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2088",
       "op": "NotIn",
       "values": [
        null,
@@ -407,7 +438,7 @@
       "expr": "view.attention_backend not in (None, 'triton')"
      },
      {
-      "at": "python/sglang/srt/arg_groups/platform_hook.py:161",
+      "at": "python/sglang/srt/arg_groups/platform_hook.py:338",
       "op": "Is",
       "values": [
        null
@@ -415,7 +446,7 @@
       "expr": "cfg.attention_backend is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1359",
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1554",
       "op": "NotEq",
       "values": [
        "flashinfer"
@@ -423,7 +454,7 @@
       "expr": "view.attention_backend != 'flashinfer'"
      },
      {
-      "at": "python/sglang/srt/server_args.py:607",
+      "at": "python/sglang/srt/server_args.py:613",
       "op": "Eq",
       "values": [
        "trtllm_mha"
@@ -1227,8 +1258,8 @@
        "triton"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1698",
-       "python/sglang/srt/arg_groups/overrides.py:1776"
+       "python/sglang/srt/arg_groups/overrides.py:2010",
+       "python/sglang/srt/arg_groups/overrides.py:2088"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -1239,7 +1270,7 @@
        "fa3"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1264"
+       "python/sglang/srt/arg_groups/overrides.py:1522"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -1251,7 +1282,7 @@
        "fa4"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1277"
+       "python/sglang/srt/arg_groups/overrides.py:1535"
       ],
       "covered_by": []
      },
@@ -1260,8 +1291,8 @@
        "flashinfer"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1710",
-       "python/sglang/srt/arg_groups/speculative_hook.py:1359"
+       "python/sglang/srt/arg_groups/overrides.py:2022",
+       "python/sglang/srt/arg_groups/speculative_hook.py:1554"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -1273,7 +1304,7 @@
        "flashmla"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1148"
+       "python/sglang/srt/arg_groups/overrides.py:1406"
       ],
       "covered_by": []
      },
@@ -1282,8 +1313,8 @@
        "trtllm_mla"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1156",
-       "python/sglang/srt/arg_groups/overrides.py:1207"
+       "python/sglang/srt/arg_groups/overrides.py:1414",
+       "python/sglang/srt/arg_groups/overrides.py:1465"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -1294,8 +1325,8 @@
        "cutedsl_mla"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1165",
-       "python/sglang/srt/arg_groups/overrides.py:1236"
+       "python/sglang/srt/arg_groups/overrides.py:1423",
+       "python/sglang/srt/arg_groups/overrides.py:1494"
       ],
       "covered_by": []
      },
@@ -1304,9 +1335,9 @@
        "trtllm_mha"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/mamba_hook.py:161",
-       "python/sglang/srt/arg_groups/overrides.py:1175",
-       "python/sglang/srt/server_args.py:607"
+       "python/sglang/srt/arg_groups/mamba_hook.py:166",
+       "python/sglang/srt/arg_groups/overrides.py:1433",
+       "python/sglang/srt/server_args.py:613"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -1317,7 +1348,7 @@
        "hpc_ops"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1189"
+       "python/sglang/srt/arg_groups/overrides.py:1447"
       ],
       "covered_by": []
      },
@@ -1326,7 +1357,7 @@
        "aiter"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1698"
+       "python/sglang/srt/arg_groups/overrides.py:2010"
       ],
       "covered_by": []
      },
@@ -1335,7 +1366,7 @@
        "intel_amx"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1303"
+       "python/sglang/srt/arg_groups/overrides.py:1561"
       ],
       "covered_by": []
      },
@@ -1344,7 +1375,7 @@
        "ascend"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1704"
+       "python/sglang/srt/arg_groups/overrides.py:2016"
       ],
       "covered_by": []
      },
@@ -1353,34 +1384,38 @@
        "intel_xpu"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:1312"
+       "python/sglang/srt/arg_groups/overrides.py:1570"
       ],
       "covered_by": []
      },
      {
       "unset": true,
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:48",
-       "python/sglang/srt/arg_groups/model_hook.py:897",
-       "python/sglang/srt/arg_groups/model_override_base.py:179",
-       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:181",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:51",
+       "python/sglang/srt/arg_groups/model_hook.py:826",
+       "python/sglang/srt/arg_groups/model_override_base.py:195",
+       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:223",
        "python/sglang/srt/arg_groups/model_overrides/embedding_gemma2.py:39",
        "python/sglang/srt/arg_groups/model_overrides/falcon_h1.py:17",
-       "python/sglang/srt/arg_groups/model_overrides/gemma4.py:43",
+       "python/sglang/srt/arg_groups/model_overrides/flint.py:44",
+       "python/sglang/srt/arg_groups/model_overrides/gemma4.py:76",
        "python/sglang/srt/arg_groups/model_overrides/granitemoehybrid.py:18",
        "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:45",
        "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:47",
        "python/sglang/srt/arg_groups/model_overrides/lfm2.py:15",
+       "python/sglang/srt/arg_groups/model_overrides/lfm3.py:28",
+       "python/sglang/srt/arg_groups/model_overrides/lfm3.py:33",
        "python/sglang/srt/arg_groups/model_overrides/llama4.py:23",
        "python/sglang/srt/arg_groups/model_overrides/minicpmv.py:16",
-       "python/sglang/srt/arg_groups/model_overrides/olmo2.py:24",
+       "python/sglang/srt/arg_groups/model_overrides/olmo2.py:19",
        "python/sglang/srt/arg_groups/model_overrides/qwen3_5.py:26",
        "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:129",
        "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:57",
-       "python/sglang/srt/arg_groups/overrides.py:1098",
-       "python/sglang/srt/arg_groups/overrides.py:1132",
-       "python/sglang/srt/arg_groups/overrides.py:1776",
-       "python/sglang/srt/arg_groups/platform_hook.py:161"
+       "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:81",
+       "python/sglang/srt/arg_groups/overrides.py:1353",
+       "python/sglang/srt/arg_groups/overrides.py:1390",
+       "python/sglang/srt/arg_groups/overrides.py:2088",
+       "python/sglang/srt/arg_groups/platform_hook.py:338"
       ],
       "covered_by": []
      }
@@ -1416,7 +1451,7 @@
     "kind": "numeric",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:564",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:581",
       "op": "NotEq",
       "values": [
        -1
@@ -1424,7 +1459,7 @@
       "expr": "cfg.chunked_prefill_size != -1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:129",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:183",
       "op": "Gt",
       "values": [
        0
@@ -1432,7 +1467,7 @@
       "expr": "cfg.chunked_prefill_size > 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:129",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:183",
       "op": "IsNot",
       "values": [
        null
@@ -1440,7 +1475,7 @@
       "expr": "cfg.chunked_prefill_size is not None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:260",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:304",
       "op": "Truth",
       "values": [
        null
@@ -1448,7 +1483,7 @@
       "expr": "cfg.chunked_prefill_size"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:904",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:1073",
       "op": "NotEq",
       "values": [
        -1
@@ -1456,7 +1491,7 @@
       "expr": "cfg.chunked_prefill_size != -1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:281",
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:333",
       "op": "Is",
       "values": [
        null
@@ -1464,7 +1499,7 @@
       "expr": "chunk_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:281",
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:333",
       "op": "LtE",
       "values": [
        0
@@ -1472,7 +1507,7 @@
       "expr": "chunk_size <= 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/layernorm_sp_hook.py:74",
+      "at": "python/sglang/srt/arg_groups/layernorm_sp_hook.py:81",
       "op": "LtE",
       "values": [
        0
@@ -1480,7 +1515,7 @@
       "expr": "cfg.chunked_prefill_size <= 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/mamba_hook.py:143",
+      "at": "python/sglang/srt/arg_groups/mamba_hook.py:148",
       "op": "IsNot",
       "values": [
        null
@@ -1488,7 +1523,7 @@
       "expr": "view.chunked_prefill_size is not None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:191",
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:204",
       "op": "Is",
       "values": [
        null
@@ -1496,7 +1531,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:191",
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:204",
       "op": "LtE",
       "values": [
        0
@@ -1504,7 +1539,7 @@
       "expr": "cfg.chunked_prefill_size <= 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:225",
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:270",
       "op": "LtE",
       "values": [
        0
@@ -1512,7 +1547,7 @@
       "expr": "local_chunked_prefill_size <= 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:93",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:95",
       "op": "Is",
       "values": [
        null
@@ -1520,7 +1555,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:107",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:109",
       "op": "Is",
       "values": [
        null
@@ -1528,7 +1563,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:121",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:125",
       "op": "Is",
       "values": [
        null
@@ -1536,7 +1571,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:135",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:139",
       "op": "Is",
       "values": [
        null
@@ -1544,7 +1579,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:149",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:153",
       "op": "Is",
       "values": [
        null
@@ -1552,7 +1587,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:163",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:167",
       "op": "Is",
       "values": [
        null
@@ -1560,7 +1595,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:173",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:177",
       "op": "Is",
       "values": [
        null
@@ -1568,7 +1603,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:304",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:317",
       "op": "Gt",
       "values": [
        0
@@ -1576,7 +1611,7 @@
       "expr": "cfg.chunked_prefill_size > 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:566",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:657",
       "op": "Gt",
       "values": [
        0
@@ -1584,7 +1619,7 @@
       "expr": "cfg.chunked_prefill_size > 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:614",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:705",
       "op": "Gt",
       "values": [
        0
@@ -1592,7 +1627,7 @@
       "expr": "cfg.chunked_prefill_size > 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:755",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:863",
       "op": "LtE",
       "values": [
        0
@@ -1600,7 +1635,7 @@
       "expr": "view.chunked_prefill_size <= 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:203",
+      "at": "python/sglang/srt/arg_groups/overrides.py:201",
       "op": "Gt",
       "values": [
        0
@@ -1608,7 +1643,23 @@
       "expr": "cfg.chunked_prefill_size > 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1851",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1640",
+      "op": "Gt",
+      "values": [
+       0
+      ],
+      "expr": "chunk > 0"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1640",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "chunk is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:2160",
       "op": "LtE",
       "values": [
        0
@@ -1616,7 +1667,7 @@
       "expr": "cfg.chunked_prefill_size <= 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1874",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2186",
       "op": "Gt",
       "values": [
        0
@@ -1624,7 +1675,7 @@
       "expr": "cfg.chunked_prefill_size > 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1874",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2186",
       "op": "Truth",
       "values": [
        null
@@ -1632,7 +1683,7 @@
       "expr": "cfg.chunked_prefill_size"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:243",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:403",
       "op": "Gt",
       "values": [
        0
@@ -1640,15 +1691,7 @@
       "expr": "cfg.chunked_prefill_size > 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:253",
-      "op": "Eq",
-      "values": [
-       -1
-      ],
-      "expr": "cfg.chunked_prefill_size == -1"
-     },
-     {
-      "at": "python/sglang/srt/hardware_backend/npu/utils.py:108",
+      "at": "python/sglang/srt/hardware_backend/npu/utils.py:134",
       "op": "Is",
       "values": [
        null
@@ -1656,7 +1699,7 @@
       "expr": "cfg.chunked_prefill_size is None"
      },
      {
-      "at": "python/sglang/srt/hardware_backend/npu/utils.py:138",
+      "at": "python/sglang/srt/hardware_backend/npu/utils.py:164",
       "op": "Is",
       "values": [
        null
@@ -2438,9 +2481,8 @@
       "lo_closed": false,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:564",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:904",
-       "python/sglang/srt/arg_groups/validation_hook.py:253"
+       "python/sglang/srt/arg_groups/attention_hook.py:581",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:1073"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -2452,9 +2494,8 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:564",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:904",
-       "python/sglang/srt/arg_groups/validation_hook.py:253"
+       "python/sglang/srt/arg_groups/attention_hook.py:581",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:1073"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -2466,22 +2507,22 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:564",
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:129",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:904",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:281",
-       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:74",
-       "python/sglang/srt/arg_groups/mega_moe_hook.py:191",
-       "python/sglang/srt/arg_groups/mega_moe_hook.py:225",
-       "python/sglang/srt/arg_groups/memory_hook.py:304",
-       "python/sglang/srt/arg_groups/moe_hook.py:566",
-       "python/sglang/srt/arg_groups/moe_hook.py:614",
-       "python/sglang/srt/arg_groups/moe_hook.py:755",
-       "python/sglang/srt/arg_groups/overrides.py:203",
-       "python/sglang/srt/arg_groups/overrides.py:1851",
-       "python/sglang/srt/arg_groups/overrides.py:1874",
-       "python/sglang/srt/arg_groups/validation_hook.py:243",
-       "python/sglang/srt/arg_groups/validation_hook.py:253"
+       "python/sglang/srt/arg_groups/attention_hook.py:581",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:183",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:1073",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:333",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:81",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:204",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:270",
+       "python/sglang/srt/arg_groups/memory_hook.py:317",
+       "python/sglang/srt/arg_groups/moe_hook.py:657",
+       "python/sglang/srt/arg_groups/moe_hook.py:705",
+       "python/sglang/srt/arg_groups/moe_hook.py:863",
+       "python/sglang/srt/arg_groups/overrides.py:201",
+       "python/sglang/srt/arg_groups/overrides.py:1640",
+       "python/sglang/srt/arg_groups/overrides.py:2160",
+       "python/sglang/srt/arg_groups/overrides.py:2186",
+       "python/sglang/srt/arg_groups/validation_hook.py:403"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -2493,19 +2534,20 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:129",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:281",
-       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:74",
-       "python/sglang/srt/arg_groups/mega_moe_hook.py:191",
-       "python/sglang/srt/arg_groups/mega_moe_hook.py:225",
-       "python/sglang/srt/arg_groups/memory_hook.py:304",
-       "python/sglang/srt/arg_groups/moe_hook.py:566",
-       "python/sglang/srt/arg_groups/moe_hook.py:614",
-       "python/sglang/srt/arg_groups/moe_hook.py:755",
-       "python/sglang/srt/arg_groups/overrides.py:203",
-       "python/sglang/srt/arg_groups/overrides.py:1851",
-       "python/sglang/srt/arg_groups/overrides.py:1874",
-       "python/sglang/srt/arg_groups/validation_hook.py:243"
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:183",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:333",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:81",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:204",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:270",
+       "python/sglang/srt/arg_groups/memory_hook.py:317",
+       "python/sglang/srt/arg_groups/moe_hook.py:657",
+       "python/sglang/srt/arg_groups/moe_hook.py:705",
+       "python/sglang/srt/arg_groups/moe_hook.py:863",
+       "python/sglang/srt/arg_groups/overrides.py:201",
+       "python/sglang/srt/arg_groups/overrides.py:1640",
+       "python/sglang/srt/arg_groups/overrides.py:2160",
+       "python/sglang/srt/arg_groups/overrides.py:2186",
+       "python/sglang/srt/arg_groups/validation_hook.py:403"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -3281,7 +3323,7 @@
       "expr": "cfg.cuda_graph_max_bs_decode is not None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:844",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:952",
       "op": "IsNot",
       "values": [
        null
@@ -4101,7 +4143,7 @@
     "kind": "boolean",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:369",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
       "op": "Truth",
       "values": [
        null
@@ -4109,7 +4151,15 @@
       "expr": "cfg.disable_priority_preemption"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:295",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:431",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "cfg.disable_priority_preemption"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:445",
       "op": "Truth",
       "values": [
        null
@@ -4129,8 +4179,9 @@
        false
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:369",
-       "python/sglang/srt/arg_groups/validation_hook.py:295"
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
+       "python/sglang/srt/arg_groups/validation_hook.py:431",
+       "python/sglang/srt/arg_groups/validation_hook.py:445"
       ],
       "covered_by": []
      },
@@ -4139,8 +4190,9 @@
        true
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:369",
-       "python/sglang/srt/arg_groups/validation_hook.py:295"
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
+       "python/sglang/srt/arg_groups/validation_hook.py:431",
+       "python/sglang/srt/arg_groups/validation_hook.py:445"
       ],
       "covered_by": [
        "oracle/scenarios-sched/priority-fcfs-no-preempt.json"
@@ -4162,7 +4214,7 @@
     "kind": "boolean",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:169",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:174",
       "op": "Truth",
       "values": [
        null
@@ -4170,7 +4222,7 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:556",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:573",
       "op": "Truth",
       "values": [
        null
@@ -4186,7 +4238,7 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/hicache_hook.py:45",
+      "at": "python/sglang/srt/arg_groups/hicache_hook.py:49",
       "op": "Truth",
       "values": [
        null
@@ -4194,7 +4246,7 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/hisparse_hook.py:109",
+      "at": "python/sglang/srt/arg_groups/hisparse_hook.py:136",
       "op": "Truth",
       "values": [
        null
@@ -4202,7 +4254,7 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:393",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:474",
       "op": "Truth",
       "values": [
        null
@@ -4210,7 +4262,7 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:576",
       "op": "Truth",
       "values": [
        null
@@ -4218,7 +4270,7 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:910",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:1079",
       "op": "Truth",
       "values": [
        null
@@ -4226,7 +4278,7 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:139",
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:182",
       "op": "Truth",
       "values": [
        null
@@ -4234,7 +4286,7 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_override_base.py:262",
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:278",
       "op": "Is",
       "values": [
        false
@@ -4242,7 +4294,15 @@
       "expr": "cfg.disable_radix_cache is False"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/inkling.py:59",
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:289",
+      "op": "Is",
+      "values": [
+       false
+      ],
+      "expr": "cfg.disable_radix_cache is False"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/inkling.py:88",
       "op": "Truth",
       "values": [
        null
@@ -4266,15 +4326,15 @@
       "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:272",
-      "op": "Is",
+      "at": "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:84",
+      "op": "Truth",
       "values": [
-       false
+       null
       ],
-      "expr": "cfg.disable_radix_cache is False"
+      "expr": "cfg.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:473",
+      "at": "python/sglang/srt/arg_groups/overrides.py:491",
       "op": "Truth",
       "values": [
        null
@@ -4282,7 +4342,7 @@
       "expr": "view.disable_radix_cache"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1737",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2049",
       "op": "Truth",
       "values": [
        null
@@ -5026,22 +5086,23 @@
        false
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:169",
-       "python/sglang/srt/arg_groups/attention_hook.py:556",
+       "python/sglang/srt/arg_groups/attention_hook.py:174",
+       "python/sglang/srt/arg_groups/attention_hook.py:573",
        "python/sglang/srt/arg_groups/dllm_hook.py:66",
-       "python/sglang/srt/arg_groups/hicache_hook.py:45",
-       "python/sglang/srt/arg_groups/hisparse_hook.py:109",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:393",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:910",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:139",
-       "python/sglang/srt/arg_groups/model_override_base.py:262",
-       "python/sglang/srt/arg_groups/model_overrides/inkling.py:59",
+       "python/sglang/srt/arg_groups/hicache_hook.py:49",
+       "python/sglang/srt/arg_groups/hisparse_hook.py:136",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:474",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:576",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:1079",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:182",
+       "python/sglang/srt/arg_groups/model_override_base.py:278",
+       "python/sglang/srt/arg_groups/model_override_base.py:289",
+       "python/sglang/srt/arg_groups/model_overrides/inkling.py:88",
        "python/sglang/srt/arg_groups/model_overrides/qwen3_5.py:42",
        "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:66",
-       "python/sglang/srt/arg_groups/overrides.py:272",
-       "python/sglang/srt/arg_groups/overrides.py:473",
-       "python/sglang/srt/arg_groups/overrides.py:1737"
+       "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:84",
+       "python/sglang/srt/arg_groups/overrides.py:491",
+       "python/sglang/srt/arg_groups/overrides.py:2049"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -5053,20 +5114,21 @@
        true
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:169",
-       "python/sglang/srt/arg_groups/attention_hook.py:556",
+       "python/sglang/srt/arg_groups/attention_hook.py:174",
+       "python/sglang/srt/arg_groups/attention_hook.py:573",
        "python/sglang/srt/arg_groups/dllm_hook.py:66",
-       "python/sglang/srt/arg_groups/hicache_hook.py:45",
-       "python/sglang/srt/arg_groups/hisparse_hook.py:109",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:393",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:444",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:910",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:139",
-       "python/sglang/srt/arg_groups/model_overrides/inkling.py:59",
+       "python/sglang/srt/arg_groups/hicache_hook.py:49",
+       "python/sglang/srt/arg_groups/hisparse_hook.py:136",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:474",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:576",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:1079",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:182",
+       "python/sglang/srt/arg_groups/model_overrides/inkling.py:88",
        "python/sglang/srt/arg_groups/model_overrides/qwen3_5.py:42",
        "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:66",
-       "python/sglang/srt/arg_groups/overrides.py:473",
-       "python/sglang/srt/arg_groups/overrides.py:1737"
+       "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:84",
+       "python/sglang/srt/arg_groups/overrides.py:491",
+       "python/sglang/srt/arg_groups/overrides.py:2049"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -5099,7 +5161,7 @@
     "kind": "numeric",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:94",
+      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:118",
       "op": "Gt",
       "values": [
        1
@@ -5107,7 +5169,7 @@
       "expr": "cfg.dp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_override_base.py:235",
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:252",
       "op": "Gt",
       "values": [
        1
@@ -5115,7 +5177,7 @@
       "expr": "cfg.dp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_override_base.py:240",
+      "at": "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:38",
       "op": "Gt",
       "values": [
        1
@@ -5123,7 +5185,7 @@
       "expr": "cfg.dp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:287",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:350",
       "op": "Gt",
       "values": [
        1
@@ -5131,7 +5193,7 @@
       "expr": "cfg.dp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:199",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:338",
       "op": "Gt",
       "values": [
        1
@@ -5139,7 +5201,15 @@
       "expr": "cfg.dp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:650",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:348",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.dp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:963",
       "op": "NotEq",
       "values": [
        1
@@ -5147,7 +5217,7 @@
       "expr": "getattr(cfg, 'dp_size', 1) != 1"
      },
      {
-      "at": "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:89",
+      "at": "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:106",
       "op": "Eq",
       "values": [
        1
@@ -6037,8 +6107,8 @@
       "lo_closed": false,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/validation_hook.py:650",
-       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:89"
+       "python/sglang/srt/arg_groups/validation_hook.py:963",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:106"
       ],
       "covered_by": []
      },
@@ -6048,13 +6118,14 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:94",
-       "python/sglang/srt/arg_groups/model_override_base.py:235",
-       "python/sglang/srt/arg_groups/model_override_base.py:240",
-       "python/sglang/srt/arg_groups/parallel_hook.py:287",
-       "python/sglang/srt/arg_groups/validation_hook.py:199",
-       "python/sglang/srt/arg_groups/validation_hook.py:650",
-       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:89"
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:118",
+       "python/sglang/srt/arg_groups/model_override_base.py:252",
+       "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:38",
+       "python/sglang/srt/arg_groups/parallel_hook.py:350",
+       "python/sglang/srt/arg_groups/validation_hook.py:338",
+       "python/sglang/srt/arg_groups/validation_hook.py:348",
+       "python/sglang/srt/arg_groups/validation_hook.py:963",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:106"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -6067,807 +6138,14 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:94",
-       "python/sglang/srt/arg_groups/model_override_base.py:235",
-       "python/sglang/srt/arg_groups/model_override_base.py:240",
-       "python/sglang/srt/arg_groups/parallel_hook.py:287",
-       "python/sglang/srt/arg_groups/validation_hook.py:199",
-       "python/sglang/srt/arg_groups/validation_hook.py:650",
-       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:89"
-      ],
-      "covered_by": [
-       "config/testdata/serverargs.json",
-       "lower/testdata/sglang_lower.json"
-      ]
-     }
-    ]
-   }
-  },
-  "enable_flashinfer_allreduce_fusion": {
-   "value_classes": {
-    "type": "boolean",
-    "covered": [
-     "false",
-     "true"
-    ]
-   },
-   "basis": {
-    "name": "enable_flashinfer_allreduce_fusion",
-    "kind": "boolean",
-    "sites": [
-     {
-      "at": "python/sglang/srt/arg_groups/serving_hook.py:286",
-      "op": "Truth",
-      "values": [
-       null
-      ],
-      "expr": "cfg.enable_flashinfer_allreduce_fusion"
-     }
-    ],
-    "stated": [
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": false,
-      "trace": "config/testdata/serverargs.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     },
-     {
-      "value": true,
-      "trace": "lower/testdata/sglang_lower.json"
-     }
-    ],
-    "classes": [
-     {
-      "values": [
-       false
-      ],
-      "compared_at": [
-       "python/sglang/srt/arg_groups/serving_hook.py:286"
-      ],
-      "covered_by": [
-       "config/testdata/serverargs.json"
-      ]
-     },
-     {
-      "values": [
-       true
-      ],
-      "compared_at": [
-       "python/sglang/srt/arg_groups/serving_hook.py:286"
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:118",
+       "python/sglang/srt/arg_groups/model_override_base.py:252",
+       "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:38",
+       "python/sglang/srt/arg_groups/parallel_hook.py:350",
+       "python/sglang/srt/arg_groups/validation_hook.py:338",
+       "python/sglang/srt/arg_groups/validation_hook.py:348",
+       "python/sglang/srt/arg_groups/validation_hook.py:963",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:106"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -6890,7 +6168,7 @@
     "kind": "boolean",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:367",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:442",
       "op": "Truth",
       "values": [
        null
@@ -6898,7 +6176,7 @@
       "expr": "cfg.enable_priority_scheduling"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:281",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:424",
       "op": "Truth",
       "values": [
        null
@@ -6906,7 +6184,7 @@
       "expr": "cfg.enable_priority_scheduling"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:303",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:453",
       "op": "Truth",
       "values": [
        null
@@ -6930,9 +6208,9 @@
        false
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:367",
-       "python/sglang/srt/arg_groups/validation_hook.py:281",
-       "python/sglang/srt/arg_groups/validation_hook.py:303"
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:442",
+       "python/sglang/srt/arg_groups/validation_hook.py:424",
+       "python/sglang/srt/arg_groups/validation_hook.py:453"
       ],
       "covered_by": [
        "core/sched/testdata/golden-sched/chunked-retract.trace.json"
@@ -6943,9 +6221,9 @@
        true
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:367",
-       "python/sglang/srt/arg_groups/validation_hook.py:281",
-       "python/sglang/srt/arg_groups/validation_hook.py:303"
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:442",
+       "python/sglang/srt/arg_groups/validation_hook.py:424",
+       "python/sglang/srt/arg_groups/validation_hook.py:453"
       ],
       "covered_by": [
        "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
@@ -6980,7 +6258,7 @@
     "kind": "enumerated",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:211",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:216",
       "op": "Eq",
       "values": [
        "fp8_e4m3"
@@ -6988,7 +6266,7 @@
       "expr": "cfg.kv_cache_dtype == 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:54",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:60",
       "op": "NotEq",
       "values": [
        "fp8_e4m3"
@@ -6996,7 +6274,7 @@
       "expr": "cfg.kv_cache_dtype != 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:108",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:162",
       "op": "In",
       "values": [
        "auto",
@@ -7005,7 +6283,7 @@
       "expr": "cfg.kv_cache_dtype in ('auto', 'fp8_e4m3')"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:39",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:42",
       "op": "NotEq",
       "values": [
        "nvfp4"
@@ -7013,7 +6291,7 @@
       "expr": "cfg.kv_cache_dtype != 'nvfp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:103",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:106",
       "op": "NotEq",
       "values": [
        "mxfp8"
@@ -7021,7 +6299,7 @@
       "expr": "cfg.kv_cache_dtype != 'mxfp8'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:117",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:159",
       "op": "NotIn",
       "values": [
        "nvfp4",
@@ -7030,7 +6308,7 @@
       "expr": "cfg.kv_cache_dtype not in ('nvfp4', 'fp4_mx_block16')"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:125",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:167",
       "op": "Eq",
       "values": [
        "nvfp4"
@@ -7038,7 +6316,7 @@
       "expr": "cfg.kv_cache_dtype == 'nvfp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:144",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:186",
       "op": "Eq",
       "values": [
        "nvfp4"
@@ -7046,7 +6324,7 @@
       "expr": "cfg.kv_cache_dtype == 'nvfp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:149",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:191",
       "op": "Eq",
       "values": [
        "nvfp4"
@@ -7054,7 +6332,7 @@
       "expr": "cfg.kv_cache_dtype == 'nvfp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:885",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:1047",
       "op": "In",
       "values": [
        "nvfp4",
@@ -7063,7 +6341,7 @@
       "expr": "cfg.kv_cache_dtype in ('nvfp4', 'fp4_mx_block16')"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:891",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:1053",
       "op": "Eq",
       "values": [
        "mxfp8"
@@ -7071,7 +6349,7 @@
       "expr": "cfg.kv_cache_dtype == 'mxfp8'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:48",
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:91",
       "op": "NotEq",
       "values": [
        "fp8_e4m3"
@@ -7079,7 +6357,7 @@
       "expr": "cfg.kv_cache_dtype != 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:116",
+      "at": "python/sglang/srt/arg_groups/model_overrides/ernie55.py:151",
       "op": "Eq",
       "values": [
        "auto"
@@ -7087,7 +6365,15 @@
       "expr": "cfg.kv_cache_dtype == 'auto'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:118",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:134",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ],
+      "expr": "cfg.kv_cache_dtype == 'auto'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:136",
       "op": "NotEq",
       "values": [
        "fp8_e4m3"
@@ -7095,7 +6381,7 @@
       "expr": "cfg.kv_cache_dtype != 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:150",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:175",
       "op": "Eq",
       "values": [
        "fp8_e4m3"
@@ -7103,7 +6389,7 @@
       "expr": "cfg.kv_cache_dtype == 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:201",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:226",
       "op": "Eq",
       "values": [
        "fp8_e5m2"
@@ -7111,7 +6397,7 @@
       "expr": "cfg.kv_cache_dtype == 'fp8_e5m2'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:209",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:234",
       "op": "Eq",
       "values": [
        "fp8_e4m3"
@@ -7119,7 +6405,7 @@
       "expr": "cfg.kv_cache_dtype == 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:318",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:116",
       "op": "Eq",
       "values": [
        "auto"
@@ -7127,7 +6413,15 @@
       "expr": "cfg.kv_cache_dtype == 'auto'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:503",
+      "at": "python/sglang/srt/arg_groups/overrides.py:322",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ],
+      "expr": "cfg.kv_cache_dtype == 'auto'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:522",
       "op": "Eq",
       "values": [
        "auto"
@@ -7135,7 +6429,7 @@
       "expr": "view.kv_cache_dtype == 'auto'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:518",
+      "at": "python/sglang/srt/arg_groups/overrides.py:540",
       "op": "Eq",
       "values": [
        "auto"
@@ -7143,7 +6437,7 @@
       "expr": "view.kv_cache_dtype == 'auto'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:527",
+      "at": "python/sglang/srt/arg_groups/overrides.py:549",
       "op": "NotIn",
       "values": [
        "auto",
@@ -7153,7 +6447,7 @@
       "expr": "kv_cache_dtype not in ('auto', 'bf16', 'bfloat16')"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:532",
+      "at": "python/sglang/srt/arg_groups/overrides.py:554",
       "op": "Eq",
       "values": [
        "auto"
@@ -7161,7 +6455,7 @@
       "expr": "kv_cache_dtype == 'auto'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:539",
+      "at": "python/sglang/srt/arg_groups/overrides.py:574",
       "op": "Eq",
       "values": [
        "bf16"
@@ -7169,7 +6463,7 @@
       "expr": "kv_cache_dtype == 'bf16'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:541",
+      "at": "python/sglang/srt/arg_groups/overrides.py:576",
       "op": "In",
       "values": [
        "bfloat16",
@@ -7178,7 +6472,7 @@
       "expr": "kv_cache_dtype in ['bfloat16', 'fp8_e4m3']"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:640",
+      "at": "python/sglang/srt/arg_groups/overrides.py:717",
       "op": "Eq",
       "values": [
        "fp8_e4m3"
@@ -7186,7 +6480,7 @@
       "expr": "kv_cache_dtype == 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:689",
+      "at": "python/sglang/srt/arg_groups/overrides.py:762",
       "op": "Eq",
       "values": [
        "fp8_e4m3"
@@ -7194,7 +6488,7 @@
       "expr": "kv_cache_dtype == 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:714",
+      "at": "python/sglang/srt/arg_groups/overrides.py:789",
       "op": "Eq",
       "values": [
        "fp8_e4m3"
@@ -7202,7 +6496,24 @@
       "expr": "kv_cache_dtype == 'fp8_e4m3'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:902",
+      "at": "python/sglang/srt/arg_groups/overrides.py:855",
+      "op": "NotIn",
+      "values": [
+       "auto",
+       "fp8_e4m3"
+      ],
+      "expr": "view.kv_cache_dtype not in ('auto', 'fp8_e4m3')"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:860",
+      "op": "NotEq",
+      "values": [
+       "fp8_e4m3"
+      ],
+      "expr": "view.kv_cache_dtype != 'fp8_e4m3'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1083",
       "op": "Eq",
       "values": [
        "auto"
@@ -7210,7 +6521,7 @@
       "expr": "kv_cache_dtype == 'auto'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:907",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1088",
       "op": "In",
       "values": [
        "fp8_e4m3",
@@ -7219,7 +6530,17 @@
       "expr": "kv_cache_dtype in ['fp8_e4m3', 'bfloat16']"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1214",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1322",
+      "op": "In",
+      "values": [
+       "auto",
+       "bf16",
+       "bfloat16"
+      ],
+      "expr": "view.kv_cache_dtype in ('auto', 'bf16', 'bfloat16')"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1472",
       "op": "NotIn",
       "values": [
        "fp8_e4m3",
@@ -7229,7 +6550,7 @@
       "expr": "view.kv_cache_dtype not in ['fp8_e4m3', 'bf16', 'auto']"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1248",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1506",
       "op": "NotIn",
       "values": [
        "fp8_e4m3",
@@ -7240,7 +6561,7 @@
       "expr": "view.kv_cache_dtype not in ['fp8_e4m3', 'bf16', 'bfloat16', 'auto']"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1264",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1522",
       "op": "Eq",
       "values": [
        "fp8_e5m2"
@@ -7248,15 +6569,16 @@
       "expr": "view.kv_cache_dtype == 'fp8_e5m2'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/serving_hook.py:326",
-      "op": "NotEq",
+      "at": "python/sglang/srt/arg_groups/platform_hook.py:294",
+      "op": "NotIn",
       "values": [
-       "fp8_e4m3"
+       "fp8_e4m3",
+       "fp8_e5m2"
       ],
-      "expr": "cfg.kv_cache_dtype != 'fp8_e4m3'"
+      "expr": "view.kv_cache_dtype not in ('fp8_e4m3', 'fp8_e5m2')"
      },
      {
-      "at": "python/sglang/srt/server_args.py:606",
+      "at": "python/sglang/srt/server_args.py:612",
       "op": "Eq",
       "values": [
        "fp8_e4m3"
@@ -8044,16 +7366,20 @@
        "auto"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:108",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:116",
-       "python/sglang/srt/arg_groups/overrides.py:318",
-       "python/sglang/srt/arg_groups/overrides.py:503",
-       "python/sglang/srt/arg_groups/overrides.py:518",
-       "python/sglang/srt/arg_groups/overrides.py:527",
-       "python/sglang/srt/arg_groups/overrides.py:532",
-       "python/sglang/srt/arg_groups/overrides.py:902",
-       "python/sglang/srt/arg_groups/overrides.py:1214",
-       "python/sglang/srt/arg_groups/overrides.py:1248"
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:162",
+       "python/sglang/srt/arg_groups/model_overrides/ernie55.py:151",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:134",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:116",
+       "python/sglang/srt/arg_groups/overrides.py:322",
+       "python/sglang/srt/arg_groups/overrides.py:522",
+       "python/sglang/srt/arg_groups/overrides.py:540",
+       "python/sglang/srt/arg_groups/overrides.py:549",
+       "python/sglang/srt/arg_groups/overrides.py:554",
+       "python/sglang/srt/arg_groups/overrides.py:855",
+       "python/sglang/srt/arg_groups/overrides.py:1083",
+       "python/sglang/srt/arg_groups/overrides.py:1322",
+       "python/sglang/srt/arg_groups/overrides.py:1472",
+       "python/sglang/srt/arg_groups/overrides.py:1506"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -8064,8 +7390,9 @@
        "fp8_e5m2"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:201",
-       "python/sglang/srt/arg_groups/overrides.py:1264"
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:226",
+       "python/sglang/srt/arg_groups/overrides.py:1522",
+       "python/sglang/srt/arg_groups/platform_hook.py:294"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -8076,22 +7403,24 @@
        "fp8_e4m3"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:211",
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:54",
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:108",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:48",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:118",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:150",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:209",
-       "python/sglang/srt/arg_groups/overrides.py:541",
-       "python/sglang/srt/arg_groups/overrides.py:640",
-       "python/sglang/srt/arg_groups/overrides.py:689",
-       "python/sglang/srt/arg_groups/overrides.py:714",
-       "python/sglang/srt/arg_groups/overrides.py:907",
-       "python/sglang/srt/arg_groups/overrides.py:1214",
-       "python/sglang/srt/arg_groups/overrides.py:1248",
-       "python/sglang/srt/arg_groups/serving_hook.py:326",
-       "python/sglang/srt/server_args.py:606"
+       "python/sglang/srt/arg_groups/attention_hook.py:216",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:60",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:162",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:91",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:136",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:175",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:234",
+       "python/sglang/srt/arg_groups/overrides.py:576",
+       "python/sglang/srt/arg_groups/overrides.py:717",
+       "python/sglang/srt/arg_groups/overrides.py:762",
+       "python/sglang/srt/arg_groups/overrides.py:789",
+       "python/sglang/srt/arg_groups/overrides.py:855",
+       "python/sglang/srt/arg_groups/overrides.py:860",
+       "python/sglang/srt/arg_groups/overrides.py:1088",
+       "python/sglang/srt/arg_groups/overrides.py:1472",
+       "python/sglang/srt/arg_groups/overrides.py:1506",
+       "python/sglang/srt/arg_groups/platform_hook.py:294",
+       "python/sglang/srt/server_args.py:612"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -8103,8 +7432,8 @@
        "mxfp8"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:103",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:891"
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:106",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:1053"
       ],
       "covered_by": []
      },
@@ -8113,10 +7442,11 @@
        "bf16"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:527",
-       "python/sglang/srt/arg_groups/overrides.py:539",
-       "python/sglang/srt/arg_groups/overrides.py:1214",
-       "python/sglang/srt/arg_groups/overrides.py:1248"
+       "python/sglang/srt/arg_groups/overrides.py:549",
+       "python/sglang/srt/arg_groups/overrides.py:574",
+       "python/sglang/srt/arg_groups/overrides.py:1322",
+       "python/sglang/srt/arg_groups/overrides.py:1472",
+       "python/sglang/srt/arg_groups/overrides.py:1506"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -8128,10 +7458,11 @@
        "bfloat16"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/overrides.py:527",
-       "python/sglang/srt/arg_groups/overrides.py:541",
-       "python/sglang/srt/arg_groups/overrides.py:907",
-       "python/sglang/srt/arg_groups/overrides.py:1248"
+       "python/sglang/srt/arg_groups/overrides.py:549",
+       "python/sglang/srt/arg_groups/overrides.py:576",
+       "python/sglang/srt/arg_groups/overrides.py:1088",
+       "python/sglang/srt/arg_groups/overrides.py:1322",
+       "python/sglang/srt/arg_groups/overrides.py:1506"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -8143,12 +7474,12 @@
        "nvfp4"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:39",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:117",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:125",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:144",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:149",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:885"
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:42",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:159",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:167",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:186",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:191",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:1047"
       ],
       "covered_by": []
      },
@@ -8157,8 +7488,8 @@
        "fp4_mx_block16"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:117",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:885"
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:159",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:1047"
       ],
       "covered_by": []
      }
@@ -8184,7 +7515,7 @@
     "kind": "enumerated",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:293",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:303",
       "op": "Eq",
       "values": [
        "bfloat16"
@@ -8192,7 +7523,7 @@
       "expr": "cfg.mamba_ssm_dtype == 'bfloat16'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:337",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:347",
       "op": "NotEq",
       "values": [
        "bfloat16"
@@ -8200,7 +7531,7 @@
       "expr": "cfg.mamba_ssm_dtype != 'bfloat16'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:369",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:379",
       "op": "NotEq",
       "values": [
        "bfloat16"
@@ -8208,7 +7539,7 @@
       "expr": "cfg.mamba_ssm_dtype != 'bfloat16'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:506",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:523",
       "op": "Is",
       "values": [
        null
@@ -8216,7 +7547,7 @@
       "expr": "cfg.mamba_ssm_dtype is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:517",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:534",
       "op": "NotEq",
       "values": [
        "float32"
@@ -8224,7 +7555,7 @@
       "expr": "cfg.mamba_ssm_dtype != 'float32'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kimi_k3_hook.py:67",
+      "at": "python/sglang/srt/arg_groups/kimi_k3_hook.py:66",
       "op": "Eq",
       "values": [
        "bfloat16"
@@ -8232,7 +7563,7 @@
       "expr": "cfg.mamba_ssm_dtype == 'bfloat16'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/mamba_hook.py:31",
+      "at": "python/sglang/srt/arg_groups/mamba_hook.py:30",
       "op": "NotEq",
       "values": [
        "float16"
@@ -8240,7 +7571,7 @@
       "expr": "cfg.mamba_ssm_dtype != 'float16'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/serving_hook.py:439",
+      "at": "python/sglang/srt/arg_groups/serving_hook.py:349",
       "op": "IsNot",
       "values": [
        null
@@ -8956,7 +8287,7 @@
        "float32"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:517"
+       "python/sglang/srt/arg_groups/attention_hook.py:534"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -8968,10 +8299,10 @@
        "bfloat16"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:293",
-       "python/sglang/srt/arg_groups/attention_hook.py:337",
-       "python/sglang/srt/arg_groups/attention_hook.py:369",
-       "python/sglang/srt/arg_groups/kimi_k3_hook.py:67"
+       "python/sglang/srt/arg_groups/attention_hook.py:303",
+       "python/sglang/srt/arg_groups/attention_hook.py:347",
+       "python/sglang/srt/arg_groups/attention_hook.py:379",
+       "python/sglang/srt/arg_groups/kimi_k3_hook.py:66"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -8983,7 +8314,7 @@
        "float16"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/mamba_hook.py:31"
+       "python/sglang/srt/arg_groups/mamba_hook.py:30"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -8993,8 +8324,8 @@
      {
       "unset": true,
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:506",
-       "python/sglang/srt/arg_groups/serving_hook.py:439"
+       "python/sglang/srt/arg_groups/attention_hook.py:523",
+       "python/sglang/srt/arg_groups/serving_hook.py:349"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -9015,7 +8346,15 @@
     "kind": "numeric",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:644",
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:217",
+      "op": "Truth",
+      "values": [
+       null
+      ],
+      "expr": "getattr(cfg, 'max_prefill_tokens', 0)"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:752",
       "op": "Truth",
       "values": [
        null
@@ -9023,7 +8362,7 @@
       "expr": "view.max_prefill_tokens"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1879",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2191",
       "op": "Truth",
       "values": [
        null
@@ -9849,7 +9188,7 @@
     "kind": "numeric",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:138",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:192",
       "op": "Is",
       "values": [
        null
@@ -9857,7 +9196,7 @@
       "expr": "cfg.max_running_requests is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:258",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:302",
       "op": "Is",
       "values": [
        null
@@ -9865,7 +9204,7 @@
       "expr": "cfg.max_running_requests is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:259",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:303",
       "op": "LtE",
       "values": [
        0
@@ -9873,7 +9212,15 @@
       "expr": "cfg.max_running_requests <= 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:97",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:550",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "server_args.max_running_requests is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:95",
       "op": "IsNot",
       "values": [
        null
@@ -9881,7 +9228,7 @@
       "expr": "cfg.max_running_requests is not None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:117",
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:115",
       "op": "Is",
       "values": [
        null
@@ -9889,7 +9236,7 @@
       "expr": "cfg.max_running_requests is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:184",
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:173",
       "op": "IsNot",
       "values": [
        null
@@ -9897,7 +9244,15 @@
       "expr": "cfg.max_running_requests is not None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:300",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:188",
+      "op": "IsNot",
+      "values": [
+       null
+      ],
+      "expr": "cfg.max_running_requests is not None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:313",
       "op": "Truth",
       "values": [
        null
@@ -9937,7 +9292,7 @@
       "expr": "cfg.max_running_requests >= 400"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:668",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:776",
       "op": "IsNot",
       "values": [
        null
@@ -9945,7 +9300,7 @@
       "expr": "view.max_running_requests is not None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:198",
+      "at": "python/sglang/srt/arg_groups/overrides.py:196",
       "op": "Truth",
       "values": [
        null
@@ -9961,7 +9316,7 @@
       "expr": "cfg.max_running_requests is not None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/speculative_hook.py:438",
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:439",
       "op": "Is",
       "values": [
        null
@@ -9969,7 +9324,7 @@
       "expr": "cfg.max_running_requests is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/speculative_hook.py:852",
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:867",
       "op": "Is",
       "values": [
        null
@@ -9977,7 +9332,7 @@
       "expr": "cfg.max_running_requests is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/speculative_hook.py:992",
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1141",
       "op": "Is",
       "values": [
        null
@@ -9985,7 +9340,7 @@
       "expr": "cfg.max_running_requests is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1086",
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1279",
       "op": "Is",
       "values": [
        null
@@ -9993,7 +9348,7 @@
       "expr": "cfg.max_running_requests is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1294",
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:1489",
       "op": "Is",
       "values": [
        null
@@ -10009,7 +9364,7 @@
       "expr": "cfg.max_running_requests is None"
      },
      {
-      "at": "python/sglang/srt/layers/attention/deepseek_v4_backend.py:1784",
+      "at": "python/sglang/srt/layers/attention/deepseek_v4_backend.py:1932",
       "op": "Truth",
       "values": [
        null
@@ -10795,7 +10150,7 @@
       "lo_closed": false,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:259"
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:303"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -10807,7 +10162,7 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:259",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:303",
        "python/sglang/srt/arg_groups/model_overrides/qwen3_vl.py:115"
       ],
       "covered_by": [
@@ -10853,7 +10208,7 @@
     "kind": "numeric",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:302",
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:354",
       "op": "Is",
       "values": [
        null
@@ -10861,7 +10216,15 @@
       "expr": "cfg.mem_fraction_static is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:281",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:294",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.mem_fraction_static is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/muse_spark_hook.py:96",
       "op": "Is",
       "values": [
        null
@@ -11659,7 +11022,7 @@
     "kind": "open",
     "sites": [
      {
-      "at": "python/sglang/srt/configs/model_config.py:956",
+      "at": "python/sglang/srt/configs/model_config.py:1112",
       "op": "Truth",
       "values": [
        null
@@ -12349,7 +11712,7 @@
      {
       "unset": true,
       "compared_at": [
-       "python/sglang/srt/configs/model_config.py:956"
+       "python/sglang/srt/configs/model_config.py:1112"
       ],
       "covered_by": []
      },
@@ -12385,7 +11748,7 @@
     "kind": "numeric",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:80",
+      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:99",
       "op": "Gt",
       "values": [
        1
@@ -12393,7 +11756,7 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:93",
+      "at": "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:117",
       "op": "Gt",
       "values": [
        1
@@ -12409,7 +11772,15 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:346",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:107",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:390",
       "op": "Gt",
       "values": [
        1
@@ -12425,7 +11796,15 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:542",
+      "at": "python/sglang/srt/arg_groups/hicache_hook.py:44",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:634",
       "op": "Eq",
       "values": [
        1
@@ -12433,15 +11812,7 @@
       "expr": "cfg.pp_size == 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:40",
-      "op": "NotEq",
-      "values": [
-       1
-      ],
-      "expr": "cfg.pp_size != 1"
-     },
-     {
-      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:206",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:744",
       "op": "Gt",
       "values": [
        1
@@ -12449,15 +11820,7 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/layernorm_sp_hook.py:64",
-      "op": "NotEq",
-      "values": [
-       1
-      ],
-      "expr": "cfg.pp_size != 1"
-     },
-     {
-      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:188",
+      "at": "python/sglang/srt/arg_groups/kv_cache_hook.py:754",
       "op": "Gt",
       "values": [
        1
@@ -12465,15 +11828,7 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:244",
-      "op": "Gt",
-      "values": [
-       1
-      ],
-      "expr": "cfg.pp_size > 1"
-     },
-     {
-      "at": "python/sglang/srt/arg_groups/model_hook.py:178",
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:83",
       "op": "NotEq",
       "values": [
        1
@@ -12481,7 +11836,7 @@
       "expr": "cfg.pp_size != 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_hook.py:402",
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:258",
       "op": "Gt",
       "values": [
        1
@@ -12489,12 +11844,68 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_hook.py:998",
+      "at": "python/sglang/srt/arg_groups/layernorm_sp_hook.py:71",
       "op": "NotEq",
       "values": [
        1
       ],
       "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/mega_moe_hook.py:201",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:257",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_hook.py:184",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_hook.py:405",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_hook.py:927",
+      "op": "NotEq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size != 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/ernie55.py:100",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/glm5_next.py:29",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size == 1"
      },
      {
       "at": "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:39",
@@ -12505,7 +11916,7 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:73",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:80",
       "op": "NotEq",
       "values": [
        1
@@ -12521,7 +11932,15 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1625",
+      "at": "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:22",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:1937",
       "op": "Gt",
       "values": [
        1
@@ -12529,7 +11948,7 @@
       "expr": "view.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1878",
+      "at": "python/sglang/srt/arg_groups/overrides.py:2190",
       "op": "Gt",
       "values": [
        1
@@ -12537,7 +11956,7 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:178",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:156",
       "op": "Eq",
       "values": [
        1
@@ -12545,7 +11964,15 @@
       "expr": "cfg.pp_size == 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:454",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:270",
+      "op": "Gt",
+      "values": [
+       1
+      ],
+      "expr": "cfg.pp_size > 1"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:517",
       "op": "Eq",
       "values": [
        1
@@ -12553,7 +11980,7 @@
       "expr": "cfg.pp_size == 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:538",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:601",
       "op": "Eq",
       "values": [
        1
@@ -12561,7 +11988,7 @@
       "expr": "cfg.pp_size == 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:681",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:744",
       "op": "Eq",
       "values": [
        1
@@ -12569,7 +11996,7 @@
       "expr": "cfg.pp_size == 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:174",
+      "at": "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:184",
       "op": "Gt",
       "values": [
        1
@@ -12577,7 +12004,7 @@
       "expr": "view.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:206",
+      "at": "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:216",
       "op": "NotEq",
       "values": [
        1
@@ -12585,7 +12012,7 @@
       "expr": "cfg.pp_size != 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/serving_hook.py:505",
+      "at": "python/sglang/srt/arg_groups/serving_hook.py:417",
       "op": "Gt",
       "values": [
        1
@@ -12593,7 +12020,7 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/serving_hook.py:894",
+      "at": "python/sglang/srt/arg_groups/serving_hook.py:766",
       "op": "NotEq",
       "values": [
        1
@@ -12601,7 +12028,7 @@
       "expr": "cfg.pp_size != 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/speculative_hook.py:319",
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:330",
       "op": "NotEq",
       "values": [
        1
@@ -12609,7 +12036,7 @@
       "expr": "cfg.pp_size != 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/speculative_hook.py:713",
+      "at": "python/sglang/srt/arg_groups/speculative_hook.py:731",
       "op": "NotEq",
       "values": [
        1
@@ -12617,7 +12044,7 @@
       "expr": "cfg.pp_size != 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:95",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:87",
       "op": "Gt",
       "values": [
        1
@@ -12625,7 +12052,7 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:196",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:335",
       "op": "Gt",
       "values": [
        1
@@ -12633,15 +12060,15 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:250",
-      "op": "Eq",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:419",
+      "op": "Gt",
       "values": [
        1
       ],
-      "expr": "cfg.pp_size == 1"
+      "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:649",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:962",
       "op": "NotEq",
       "values": [
        1
@@ -12649,7 +12076,7 @@
       "expr": "getattr(cfg, 'pp_size', 1) != 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:724",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:1058",
       "op": "NotEq",
       "values": [
        1
@@ -12657,7 +12084,7 @@
       "expr": "cfg.pp_size != 1"
      },
      {
-      "at": "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:91",
+      "at": "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:92",
       "op": "Gt",
       "values": [
        1
@@ -12665,12 +12092,20 @@
       "expr": "cfg.pp_size > 1"
      },
      {
-      "at": "python/sglang/srt/layers/cp/bcg/__init__.py:49",
+      "at": "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:107",
       "op": "Eq",
       "values": [
        1
       ],
       "expr": "cfg.pp_size == 1"
+     },
+     {
+      "at": "python/sglang/srt/mem_cache/kv_weight_version_tracker.py:82",
+      "op": "Eq",
+      "values": [
+       1
+      ],
+      "expr": "server_args.pp_size == 1"
      }
     ],
     "stated": [
@@ -13367,24 +12802,25 @@
       "lo_closed": false,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:542",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:40",
-       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:64",
-       "python/sglang/srt/arg_groups/model_hook.py:178",
-       "python/sglang/srt/arg_groups/model_hook.py:998",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:73",
-       "python/sglang/srt/arg_groups/parallel_hook.py:178",
-       "python/sglang/srt/arg_groups/parallel_hook.py:454",
-       "python/sglang/srt/arg_groups/parallel_hook.py:538",
-       "python/sglang/srt/arg_groups/parallel_hook.py:681",
-       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:206",
-       "python/sglang/srt/arg_groups/serving_hook.py:894",
-       "python/sglang/srt/arg_groups/speculative_hook.py:319",
-       "python/sglang/srt/arg_groups/speculative_hook.py:713",
-       "python/sglang/srt/arg_groups/validation_hook.py:250",
-       "python/sglang/srt/arg_groups/validation_hook.py:649",
-       "python/sglang/srt/arg_groups/validation_hook.py:724",
-       "python/sglang/srt/layers/cp/bcg/__init__.py:49"
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:634",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:83",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:71",
+       "python/sglang/srt/arg_groups/model_hook.py:184",
+       "python/sglang/srt/arg_groups/model_hook.py:927",
+       "python/sglang/srt/arg_groups/model_overrides/glm5_next.py:29",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:80",
+       "python/sglang/srt/arg_groups/parallel_hook.py:156",
+       "python/sglang/srt/arg_groups/parallel_hook.py:517",
+       "python/sglang/srt/arg_groups/parallel_hook.py:601",
+       "python/sglang/srt/arg_groups/parallel_hook.py:744",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:216",
+       "python/sglang/srt/arg_groups/serving_hook.py:766",
+       "python/sglang/srt/arg_groups/speculative_hook.py:330",
+       "python/sglang/srt/arg_groups/speculative_hook.py:731",
+       "python/sglang/srt/arg_groups/validation_hook.py:962",
+       "python/sglang/srt/arg_groups/validation_hook.py:1058",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:107",
+       "python/sglang/srt/mem_cache/kv_weight_version_tracker.py:82"
       ],
       "covered_by": []
      },
@@ -13394,42 +12830,51 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:80",
-       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:93",
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:99",
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:117",
        "python/sglang/srt/arg_groups/cuda_graph_hook.py:150",
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:346",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:107",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:390",
        "python/sglang/srt/arg_groups/dllm_hook.py:91",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:542",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:40",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:206",
-       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:64",
-       "python/sglang/srt/arg_groups/mega_moe_hook.py:188",
-       "python/sglang/srt/arg_groups/memory_hook.py:244",
-       "python/sglang/srt/arg_groups/model_hook.py:178",
-       "python/sglang/srt/arg_groups/model_hook.py:402",
-       "python/sglang/srt/arg_groups/model_hook.py:998",
+       "python/sglang/srt/arg_groups/hicache_hook.py:44",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:634",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:744",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:754",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:83",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:258",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:71",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:201",
+       "python/sglang/srt/arg_groups/memory_hook.py:257",
+       "python/sglang/srt/arg_groups/model_hook.py:184",
+       "python/sglang/srt/arg_groups/model_hook.py:405",
+       "python/sglang/srt/arg_groups/model_hook.py:927",
+       "python/sglang/srt/arg_groups/model_overrides/ernie55.py:100",
+       "python/sglang/srt/arg_groups/model_overrides/glm5_next.py:29",
        "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:39",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:73",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:80",
        "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:31",
-       "python/sglang/srt/arg_groups/overrides.py:1625",
-       "python/sglang/srt/arg_groups/overrides.py:1878",
-       "python/sglang/srt/arg_groups/parallel_hook.py:178",
-       "python/sglang/srt/arg_groups/parallel_hook.py:454",
-       "python/sglang/srt/arg_groups/parallel_hook.py:538",
-       "python/sglang/srt/arg_groups/parallel_hook.py:681",
-       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:174",
-       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:206",
-       "python/sglang/srt/arg_groups/serving_hook.py:505",
-       "python/sglang/srt/arg_groups/serving_hook.py:894",
-       "python/sglang/srt/arg_groups/speculative_hook.py:319",
-       "python/sglang/srt/arg_groups/speculative_hook.py:713",
-       "python/sglang/srt/arg_groups/validation_hook.py:95",
-       "python/sglang/srt/arg_groups/validation_hook.py:196",
-       "python/sglang/srt/arg_groups/validation_hook.py:250",
-       "python/sglang/srt/arg_groups/validation_hook.py:649",
-       "python/sglang/srt/arg_groups/validation_hook.py:724",
-       "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:91",
-       "python/sglang/srt/layers/cp/bcg/__init__.py:49"
+       "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:22",
+       "python/sglang/srt/arg_groups/overrides.py:1937",
+       "python/sglang/srt/arg_groups/overrides.py:2190",
+       "python/sglang/srt/arg_groups/parallel_hook.py:156",
+       "python/sglang/srt/arg_groups/parallel_hook.py:270",
+       "python/sglang/srt/arg_groups/parallel_hook.py:517",
+       "python/sglang/srt/arg_groups/parallel_hook.py:601",
+       "python/sglang/srt/arg_groups/parallel_hook.py:744",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:184",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:216",
+       "python/sglang/srt/arg_groups/serving_hook.py:417",
+       "python/sglang/srt/arg_groups/serving_hook.py:766",
+       "python/sglang/srt/arg_groups/speculative_hook.py:330",
+       "python/sglang/srt/arg_groups/speculative_hook.py:731",
+       "python/sglang/srt/arg_groups/validation_hook.py:87",
+       "python/sglang/srt/arg_groups/validation_hook.py:335",
+       "python/sglang/srt/arg_groups/validation_hook.py:419",
+       "python/sglang/srt/arg_groups/validation_hook.py:962",
+       "python/sglang/srt/arg_groups/validation_hook.py:1058",
+       "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:92",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:107",
+       "python/sglang/srt/mem_cache/kv_weight_version_tracker.py:82"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -13442,42 +12887,51 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:80",
-       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:93",
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:99",
+       "python/sglang/srt/arg_groups/cp_tp_group_sharing_hook.py:117",
        "python/sglang/srt/arg_groups/cuda_graph_hook.py:150",
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:346",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:107",
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:390",
        "python/sglang/srt/arg_groups/dllm_hook.py:91",
-       "python/sglang/srt/arg_groups/kv_cache_hook.py:542",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:40",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:206",
-       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:64",
-       "python/sglang/srt/arg_groups/mega_moe_hook.py:188",
-       "python/sglang/srt/arg_groups/memory_hook.py:244",
-       "python/sglang/srt/arg_groups/model_hook.py:178",
-       "python/sglang/srt/arg_groups/model_hook.py:402",
-       "python/sglang/srt/arg_groups/model_hook.py:998",
+       "python/sglang/srt/arg_groups/hicache_hook.py:44",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:634",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:744",
+       "python/sglang/srt/arg_groups/kv_cache_hook.py:754",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:83",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:258",
+       "python/sglang/srt/arg_groups/layernorm_sp_hook.py:71",
+       "python/sglang/srt/arg_groups/mega_moe_hook.py:201",
+       "python/sglang/srt/arg_groups/memory_hook.py:257",
+       "python/sglang/srt/arg_groups/model_hook.py:184",
+       "python/sglang/srt/arg_groups/model_hook.py:405",
+       "python/sglang/srt/arg_groups/model_hook.py:927",
+       "python/sglang/srt/arg_groups/model_overrides/ernie55.py:100",
+       "python/sglang/srt/arg_groups/model_overrides/glm5_next.py:29",
        "python/sglang/srt/arg_groups/model_overrides/iquest_q1.py:39",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:73",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:80",
        "python/sglang/srt/arg_groups/model_overrides/qwen4_exp.py:31",
-       "python/sglang/srt/arg_groups/overrides.py:1625",
-       "python/sglang/srt/arg_groups/overrides.py:1878",
-       "python/sglang/srt/arg_groups/parallel_hook.py:178",
-       "python/sglang/srt/arg_groups/parallel_hook.py:454",
-       "python/sglang/srt/arg_groups/parallel_hook.py:538",
-       "python/sglang/srt/arg_groups/parallel_hook.py:681",
-       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:174",
-       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:206",
-       "python/sglang/srt/arg_groups/serving_hook.py:505",
-       "python/sglang/srt/arg_groups/serving_hook.py:894",
-       "python/sglang/srt/arg_groups/speculative_hook.py:319",
-       "python/sglang/srt/arg_groups/speculative_hook.py:713",
-       "python/sglang/srt/arg_groups/validation_hook.py:95",
-       "python/sglang/srt/arg_groups/validation_hook.py:196",
-       "python/sglang/srt/arg_groups/validation_hook.py:250",
-       "python/sglang/srt/arg_groups/validation_hook.py:649",
-       "python/sglang/srt/arg_groups/validation_hook.py:724",
-       "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:91",
-       "python/sglang/srt/layers/cp/bcg/__init__.py:49"
+       "python/sglang/srt/arg_groups/model_overrides/unlimited_ocr_v2.py:22",
+       "python/sglang/srt/arg_groups/overrides.py:1937",
+       "python/sglang/srt/arg_groups/overrides.py:2190",
+       "python/sglang/srt/arg_groups/parallel_hook.py:156",
+       "python/sglang/srt/arg_groups/parallel_hook.py:270",
+       "python/sglang/srt/arg_groups/parallel_hook.py:517",
+       "python/sglang/srt/arg_groups/parallel_hook.py:601",
+       "python/sglang/srt/arg_groups/parallel_hook.py:744",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:184",
+       "python/sglang/srt/arg_groups/pd_disaggregation_hook.py:216",
+       "python/sglang/srt/arg_groups/serving_hook.py:417",
+       "python/sglang/srt/arg_groups/serving_hook.py:766",
+       "python/sglang/srt/arg_groups/speculative_hook.py:330",
+       "python/sglang/srt/arg_groups/speculative_hook.py:731",
+       "python/sglang/srt/arg_groups/validation_hook.py:87",
+       "python/sglang/srt/arg_groups/validation_hook.py:335",
+       "python/sglang/srt/arg_groups/validation_hook.py:419",
+       "python/sglang/srt/arg_groups/validation_hook.py:962",
+       "python/sglang/srt/arg_groups/validation_hook.py:1058",
+       "python/sglang/srt/dllm/algorithm/gemma4_renoise.py:92",
+       "python/sglang/srt/layers/cp/bcg/interleave_bcg.py:107",
+       "python/sglang/srt/mem_cache/kv_weight_version_tracker.py:82"
       ],
       "covered_by": []
      }
@@ -13621,7 +13075,7 @@
     "kind": "enumerated",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/lora_hook.py:210",
+      "at": "python/sglang/srt/arg_groups/lora_hook.py:207",
       "op": "NotIn",
       "values": [
        null,
@@ -13631,7 +13085,7 @@
       "expr": "cfg.quantization not in (None, 'fp8', 'modelopt_fp4')"
      },
      {
-      "at": "python/sglang/srt/arg_groups/lora_hook.py:215",
+      "at": "python/sglang/srt/arg_groups/lora_hook.py:212",
       "op": "Eq",
       "values": [
        "modelopt_fp4"
@@ -13647,7 +13101,7 @@
       "expr": "cfg.quantization"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:28",
+      "at": "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:29",
       "op": "Is",
       "values": [
        null
@@ -13655,7 +13109,7 @@
       "expr": "quantization is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:35",
+      "at": "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:37",
       "op": "In",
       "values": [
        null,
@@ -13681,7 +13135,7 @@
       "expr": "cfg.quantization in {'fp8', 'modelopt_fp8'}"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:49",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:53",
       "op": "Is",
       "values": [
        null
@@ -13689,7 +13143,7 @@
       "expr": "quant_resolved is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:56",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:61",
       "op": "Eq",
       "values": [
        "minimax_m3_nvfp4"
@@ -13697,7 +13151,7 @@
       "expr": "quant_resolved == 'minimax_m3_nvfp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:127",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:148",
       "op": "Eq",
       "values": [
        "mxfp8"
@@ -13705,7 +13159,7 @@
       "expr": "quant_resolved == 'mxfp8'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:169",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:194",
       "op": "Eq",
       "values": [
        "mxfp8"
@@ -13713,7 +13167,7 @@
       "expr": "quant_resolved == 'mxfp8'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:171",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:196",
       "op": "Eq",
       "values": [
        "modelopt_mixed"
@@ -13721,7 +13175,7 @@
       "expr": "quant_resolved == 'modelopt_mixed'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:229",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:254",
       "op": "Is",
       "values": [
        null
@@ -13729,7 +13183,7 @@
       "expr": "quant_resolved is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:66",
+      "at": "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:67",
       "op": "Eq",
       "values": [
        "modelopt_mixed"
@@ -13737,7 +13191,15 @@
       "expr": "quantization == 'modelopt_mixed'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:110",
+      "at": "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:111",
+      "op": "Eq",
+      "values": [
+       "modelopt_fp8"
+      ],
+      "expr": "quantization == 'modelopt_fp8'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:121",
       "op": "Eq",
       "values": [
        "modelopt_fp4"
@@ -13745,7 +13207,7 @@
       "expr": "quantization == 'modelopt_fp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:45",
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:51",
       "op": "Is",
       "values": [
        null
@@ -13753,7 +13215,7 @@
       "expr": "quantization is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:52",
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:59",
       "op": "Eq",
       "values": [
        "modelopt_mixed"
@@ -13761,7 +13223,7 @@
       "expr": "quantization == 'modelopt_mixed'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:80",
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:87",
       "op": "In",
       "values": [
        "fp8",
@@ -13771,7 +13233,7 @@
       "expr": "quantization in ('fp8', 'modelopt_fp4', 'modelopt_mixed')"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:81",
+      "at": "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:88",
       "op": "Is",
       "values": [
        null
@@ -13779,7 +13241,7 @@
       "expr": "quantization is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:81",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:94",
       "op": "In",
       "values": [
        "modelopt_fp4",
@@ -13790,7 +13252,7 @@
       "expr": "view.quantization in ['modelopt_fp4', 'modelopt_fp8', 'modelopt_mixed', None]"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:97",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:110",
       "op": "In",
       "values": [
        "modelopt_fp4",
@@ -13800,7 +13262,7 @@
       "expr": "view.quantization in ['modelopt_fp4', 'modelopt_mixed', 'nvfp4_online']"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:115",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:129",
       "op": "Eq",
       "values": [
        "nvfp4_online"
@@ -13808,7 +13270,7 @@
       "expr": "view.quantization == 'nvfp4_online'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:124",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:138",
       "op": "In",
       "values": [
        "modelopt_fp4",
@@ -13823,7 +13285,7 @@
       "expr": "view.quantization in ['modelopt_fp4', 'nvfp4_online', 'fp8', 'mxfp8', 'modelopt_fp8', 'modelopt_mixed', 'compressed-tensors', None]"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:138",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:152",
       "op": "In",
       "values": [
        "fp8",
@@ -13837,7 +13299,7 @@
       "expr": "view.quantization in ['fp8', 'mxfp8', 'modelopt_fp4', 'modelopt_mixed', 'nvfp4_online', 'minimax_m3_nvfp4', None]"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:180",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:194",
       "op": "Eq",
       "values": [
        "modelopt_fp4"
@@ -13845,7 +13307,7 @@
       "expr": "cfg.quantization == 'modelopt_fp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:184",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:198",
       "op": "Eq",
       "values": [
        "mxfp8"
@@ -13853,7 +13315,7 @@
       "expr": "cfg.quantization == 'mxfp8'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:192",
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:206",
       "op": "NotEq",
       "values": [
        "mxfp8"
@@ -13861,7 +13323,7 @@
       "expr": "cfg.quantization != 'mxfp8'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/muse_spark_hook.py:60",
+      "at": "python/sglang/srt/arg_groups/muse_spark_hook.py:69",
       "op": "Eq",
       "values": [
        "modelopt_fp4"
@@ -13869,7 +13331,15 @@
       "expr": "cfg.quantization == 'modelopt_fp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:788",
+      "at": "python/sglang/srt/arg_groups/muse_spark_hook.py:85",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.quantization is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:967",
       "op": "Is",
       "values": [
        null
@@ -13877,7 +13347,7 @@
       "expr": "quantization is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:817",
+      "at": "python/sglang/srt/arg_groups/overrides.py:998",
       "op": "In",
       "values": [
        "fp8",
@@ -13888,7 +13358,7 @@
       "expr": "quantization in ['fp8', 'modelopt_fp8', 'modelopt_fp4', 'modelopt_mixed']"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:820",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1001",
       "op": "Is",
       "values": [
        null
@@ -13896,7 +13366,7 @@
       "expr": "quantization is None"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:835",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1016",
       "op": "In",
       "values": [
        "fp8",
@@ -13905,7 +13375,7 @@
       "expr": "quantization in ['fp8', 'modelopt_fp8']"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:857",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1038",
       "op": "Eq",
       "values": [
        "modelopt_fp4"
@@ -13913,7 +13383,7 @@
       "expr": "view.quantization == 'modelopt_fp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1452",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1766",
       "op": "Eq",
       "values": [
        "nvfp4_online"
@@ -13921,7 +13391,7 @@
       "expr": "view.quantization == 'nvfp4_online'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1484",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1798",
       "op": "Eq",
       "values": [
        "mxfp8"
@@ -13929,7 +13399,7 @@
       "expr": "view.quantization == 'mxfp8'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1515",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1829",
       "op": "Eq",
       "values": [
        "modelopt_fp4"
@@ -13937,7 +13407,7 @@
       "expr": "view.quantization == 'modelopt_fp4'"
      },
      {
-      "at": "python/sglang/srt/arg_groups/serving_hook.py:695",
+      "at": "python/sglang/srt/arg_groups/serving_hook.py:607",
       "op": "Eq",
       "values": [
        "unquant"
@@ -14677,13 +14147,13 @@
        "fp8"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/lora_hook.py:210",
+       "python/sglang/srt/arg_groups/lora_hook.py:207",
        "python/sglang/srt/arg_groups/model_overrides/llama4.py:39",
-       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:80",
-       "python/sglang/srt/arg_groups/moe_hook.py:124",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:87",
        "python/sglang/srt/arg_groups/moe_hook.py:138",
-       "python/sglang/srt/arg_groups/overrides.py:817",
-       "python/sglang/srt/arg_groups/overrides.py:835"
+       "python/sglang/srt/arg_groups/moe_hook.py:152",
+       "python/sglang/srt/arg_groups/overrides.py:998",
+       "python/sglang/srt/arg_groups/overrides.py:1016"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -14695,13 +14165,13 @@
        "mxfp8"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:127",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:169",
-       "python/sglang/srt/arg_groups/moe_hook.py:124",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:148",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:194",
        "python/sglang/srt/arg_groups/moe_hook.py:138",
-       "python/sglang/srt/arg_groups/moe_hook.py:184",
-       "python/sglang/srt/arg_groups/moe_hook.py:192",
-       "python/sglang/srt/arg_groups/overrides.py:1484"
+       "python/sglang/srt/arg_groups/moe_hook.py:152",
+       "python/sglang/srt/arg_groups/moe_hook.py:198",
+       "python/sglang/srt/arg_groups/moe_hook.py:206",
+       "python/sglang/srt/arg_groups/overrides.py:1798"
       ],
       "covered_by": []
      },
@@ -14711,10 +14181,11 @@
       ],
       "compared_at": [
        "python/sglang/srt/arg_groups/model_overrides/llama4.py:39",
-       "python/sglang/srt/arg_groups/moe_hook.py:81",
-       "python/sglang/srt/arg_groups/moe_hook.py:124",
-       "python/sglang/srt/arg_groups/overrides.py:817",
-       "python/sglang/srt/arg_groups/overrides.py:835"
+       "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:111",
+       "python/sglang/srt/arg_groups/moe_hook.py:94",
+       "python/sglang/srt/arg_groups/moe_hook.py:138",
+       "python/sglang/srt/arg_groups/overrides.py:998",
+       "python/sglang/srt/arg_groups/overrides.py:1016"
       ],
       "covered_by": []
      },
@@ -14723,20 +14194,20 @@
        "modelopt_fp4"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/lora_hook.py:210",
-       "python/sglang/srt/arg_groups/lora_hook.py:215",
-       "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:35",
-       "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:110",
-       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:80",
-       "python/sglang/srt/arg_groups/moe_hook.py:81",
-       "python/sglang/srt/arg_groups/moe_hook.py:97",
-       "python/sglang/srt/arg_groups/moe_hook.py:124",
+       "python/sglang/srt/arg_groups/lora_hook.py:207",
+       "python/sglang/srt/arg_groups/lora_hook.py:212",
+       "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:37",
+       "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:121",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:87",
+       "python/sglang/srt/arg_groups/moe_hook.py:94",
+       "python/sglang/srt/arg_groups/moe_hook.py:110",
        "python/sglang/srt/arg_groups/moe_hook.py:138",
-       "python/sglang/srt/arg_groups/moe_hook.py:180",
-       "python/sglang/srt/arg_groups/muse_spark_hook.py:60",
-       "python/sglang/srt/arg_groups/overrides.py:817",
-       "python/sglang/srt/arg_groups/overrides.py:857",
-       "python/sglang/srt/arg_groups/overrides.py:1515"
+       "python/sglang/srt/arg_groups/moe_hook.py:152",
+       "python/sglang/srt/arg_groups/moe_hook.py:194",
+       "python/sglang/srt/arg_groups/muse_spark_hook.py:69",
+       "python/sglang/srt/arg_groups/overrides.py:998",
+       "python/sglang/srt/arg_groups/overrides.py:1038",
+       "python/sglang/srt/arg_groups/overrides.py:1829"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -14748,11 +14219,11 @@
        "nvfp4_online"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/moe_hook.py:97",
-       "python/sglang/srt/arg_groups/moe_hook.py:115",
-       "python/sglang/srt/arg_groups/moe_hook.py:124",
+       "python/sglang/srt/arg_groups/moe_hook.py:110",
+       "python/sglang/srt/arg_groups/moe_hook.py:129",
        "python/sglang/srt/arg_groups/moe_hook.py:138",
-       "python/sglang/srt/arg_groups/overrides.py:1452"
+       "python/sglang/srt/arg_groups/moe_hook.py:152",
+       "python/sglang/srt/arg_groups/overrides.py:1766"
       ],
       "covered_by": []
      },
@@ -14761,15 +14232,15 @@
        "modelopt_mixed"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:171",
-       "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:66",
-       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:52",
-       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:80",
-       "python/sglang/srt/arg_groups/moe_hook.py:81",
-       "python/sglang/srt/arg_groups/moe_hook.py:97",
-       "python/sglang/srt/arg_groups/moe_hook.py:124",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:196",
+       "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:67",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:59",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:87",
+       "python/sglang/srt/arg_groups/moe_hook.py:94",
+       "python/sglang/srt/arg_groups/moe_hook.py:110",
        "python/sglang/srt/arg_groups/moe_hook.py:138",
-       "python/sglang/srt/arg_groups/overrides.py:817"
+       "python/sglang/srt/arg_groups/moe_hook.py:152",
+       "python/sglang/srt/arg_groups/overrides.py:998"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -14780,7 +14251,7 @@
        "compressed-tensors"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/moe_hook.py:124"
+       "python/sglang/srt/arg_groups/moe_hook.py:138"
       ],
       "covered_by": []
      },
@@ -14789,27 +14260,28 @@
        "unquant"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/serving_hook.py:695"
+       "python/sglang/srt/arg_groups/serving_hook.py:607"
       ],
       "covered_by": []
      },
      {
       "unset": true,
       "compared_at": [
-       "python/sglang/srt/arg_groups/lora_hook.py:210",
+       "python/sglang/srt/arg_groups/lora_hook.py:207",
        "python/sglang/srt/arg_groups/model_overrides/beam.py:33",
-       "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:28",
-       "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:35",
+       "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:29",
+       "python/sglang/srt/arg_groups/model_overrides/glm4_moe.py:37",
        "python/sglang/srt/arg_groups/model_overrides/gpt_oss.py:105",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:49",
-       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:229",
-       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:45",
-       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:81",
-       "python/sglang/srt/arg_groups/moe_hook.py:81",
-       "python/sglang/srt/arg_groups/moe_hook.py:124",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:53",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3.py:254",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:51",
+       "python/sglang/srt/arg_groups/model_overrides/qwen3_moe.py:88",
+       "python/sglang/srt/arg_groups/moe_hook.py:94",
        "python/sglang/srt/arg_groups/moe_hook.py:138",
-       "python/sglang/srt/arg_groups/overrides.py:788",
-       "python/sglang/srt/arg_groups/overrides.py:820"
+       "python/sglang/srt/arg_groups/moe_hook.py:152",
+       "python/sglang/srt/arg_groups/muse_spark_hook.py:85",
+       "python/sglang/srt/arg_groups/overrides.py:967",
+       "python/sglang/srt/arg_groups/overrides.py:1001"
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
@@ -14835,7 +14307,7 @@
     "kind": "enumerated",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:303",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:453",
       "op": "Eq",
       "values": [
        "priority"
@@ -14863,7 +14335,7 @@
        "priority"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/validation_hook.py:303"
+       "python/sglang/srt/arg_groups/validation_hook.py:453"
       ],
       "covered_by": [
        "core/sched/testdata/golden-sched/retract-priority-lof.trace.json",
@@ -14929,7 +14401,8 @@
      "priority",
      "routing-key",
      "hrrn",
-     "shortest-prefill-first"
+     "shortest-prefill-first",
+     "uniboost"
     ]
    },
    "basis": {
@@ -14937,13 +14410,21 @@
     "kind": "enumerated",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:282",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:425",
       "op": "In",
       "values": [
        "fcfs",
        "lof"
       ],
       "expr": "cfg.schedule_policy in ['fcfs', 'lof']"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:495",
+      "op": "NotEq",
+      "values": [
+       "shortest-prefill-first"
+      ],
+      "expr": "cfg.schedule_policy != 'shortest-prefill-first'"
      }
     ],
     "stated": [
@@ -14986,7 +14467,7 @@
        "fcfs"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/validation_hook.py:282"
+       "python/sglang/srt/arg_groups/validation_hook.py:425"
       ],
       "covered_by": [
        "core/sched/testdata/golden-sched/chunked-retract.trace.json"
@@ -14997,10 +14478,21 @@
        "lof"
       ],
       "compared_at": [
-       "python/sglang/srt/arg_groups/validation_hook.py:282"
+       "python/sglang/srt/arg_groups/validation_hook.py:425"
       ],
       "covered_by": [
        "core/sched/testdata/golden-sched/heavy-lof.trace.json"
+      ]
+     },
+     {
+      "values": [
+       "shortest-prefill-first"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/validation_hook.py:495"
+      ],
+      "covered_by": [
+       "core/sched/testdata/golden-sched/heavy-spf.trace.json"
       ]
      }
     ]
@@ -15088,7 +14580,7 @@
     "kind": "numeric",
     "sites": [
      {
-      "at": "python/sglang/srt/arg_groups/attention_hook.py:668",
+      "at": "python/sglang/srt/arg_groups/attention_hook.py:685",
       "op": "Gt",
       "values": [
        1
@@ -15096,7 +14588,7 @@
       "expr": "cfg.tp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:226",
+      "at": "python/sglang/srt/arg_groups/deepseek_v4_hook.py:270",
       "op": "LtE",
       "values": [
        8
@@ -15104,7 +14596,7 @@
       "expr": "cfg.tp_size <= 8"
      },
      {
-      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:259",
+      "at": "python/sglang/srt/arg_groups/kv_shard_hook.py:311",
       "op": "LtE",
       "values": [
        1
@@ -15112,7 +14604,7 @@
       "expr": "cfg.tp_size <= 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:114",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:116",
       "op": "Lt",
       "values": [
        4
@@ -15120,7 +14612,7 @@
       "expr": "cfg.tp_size < 4"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:128",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:132",
       "op": "Lt",
       "values": [
        4
@@ -15128,7 +14620,7 @@
       "expr": "cfg.tp_size < 4"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:142",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:146",
       "op": "Lt",
       "values": [
        4
@@ -15136,7 +14628,7 @@
       "expr": "cfg.tp_size < 4"
      },
      {
-      "at": "python/sglang/srt/arg_groups/memory_hook.py:156",
+      "at": "python/sglang/srt/arg_groups/memory_hook.py:160",
       "op": "Lt",
       "values": [
        4
@@ -15144,7 +14636,7 @@
       "expr": "cfg.tp_size < 4"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_hook.py:998",
+      "at": "python/sglang/srt/arg_groups/model_hook.py:927",
       "op": "NotEq",
       "values": [
        1
@@ -15152,7 +14644,7 @@
       "expr": "cfg.tp_size != 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:123",
+      "at": "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:155",
       "op": "LtE",
       "values": [
        8
@@ -15160,7 +14652,23 @@
       "expr": "cfg.tp_size <= 8"
      },
      {
-      "at": "python/sglang/srt/arg_groups/moe_hook.py:817",
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:42",
+      "op": "Gt",
+      "values": [
+       4
+      ],
+      "expr": "cfg.tp_size > 4"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:126",
+      "op": "NotEq",
+      "values": [
+       4
+      ],
+      "expr": "cfg.tp_size != 4"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/moe_hook.py:925",
       "op": "Gt",
       "values": [
        8
@@ -15168,7 +14676,7 @@
       "expr": "cfg.tp_size > 8"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:983",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1165",
       "op": "Eq",
       "values": [
        4
@@ -15176,7 +14684,7 @@
       "expr": "view.tp_size == 4"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:992",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1174",
       "op": "Gt",
       "values": [
        1
@@ -15184,7 +14692,7 @@
       "expr": "view.tp_size > 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/overrides.py:1081",
+      "at": "python/sglang/srt/arg_groups/overrides.py:1271",
       "op": "Gt",
       "values": [
        2
@@ -15192,7 +14700,7 @@
       "expr": "view.tp_size > 2"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:297",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:360",
       "op": "Eq",
       "values": [
        1
@@ -15200,7 +14708,7 @@
       "expr": "cfg.tp_size == 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:589",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:652",
       "op": "LtE",
       "values": [
        0
@@ -15208,7 +14716,7 @@
       "expr": "cfg.tp_size <= 0"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:607",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:670",
       "op": "Truth",
       "values": [
        null
@@ -15216,7 +14724,7 @@
       "expr": "cfg.tp_size"
      },
      {
-      "at": "python/sglang/srt/arg_groups/parallel_hook.py:654",
+      "at": "python/sglang/srt/arg_groups/parallel_hook.py:717",
       "op": "Eq",
       "values": [
        1
@@ -15224,7 +14732,7 @@
       "expr": "cfg.tp_size == 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:349",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:565",
       "op": "Eq",
       "values": [
        1
@@ -15232,7 +14740,7 @@
       "expr": "cfg.tp_size == 1"
      },
      {
-      "at": "python/sglang/srt/arg_groups/validation_hook.py:648",
+      "at": "python/sglang/srt/arg_groups/validation_hook.py:961",
       "op": "NotEq",
       "values": [
        1
@@ -15240,7 +14748,7 @@
       "expr": "getattr(cfg, 'tp_size', 1) != 1"
      },
      {
-      "at": "python/sglang/srt/hardware_backend/npu/utils.py:115",
+      "at": "python/sglang/srt/hardware_backend/npu/utils.py:141",
       "op": "Lt",
       "values": [
        4
@@ -15248,7 +14756,7 @@
       "expr": "cfg.tp_size < 4"
      },
      {
-      "at": "python/sglang/srt/hardware_backend/npu/utils.py:145",
+      "at": "python/sglang/srt/hardware_backend/npu/utils.py:171",
       "op": "Lt",
       "values": [
        4
@@ -17134,12 +16642,12 @@
       "lo_closed": false,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/model_hook.py:998",
-       "python/sglang/srt/arg_groups/parallel_hook.py:297",
-       "python/sglang/srt/arg_groups/parallel_hook.py:589",
-       "python/sglang/srt/arg_groups/parallel_hook.py:654",
-       "python/sglang/srt/arg_groups/validation_hook.py:349",
-       "python/sglang/srt/arg_groups/validation_hook.py:648"
+       "python/sglang/srt/arg_groups/model_hook.py:927",
+       "python/sglang/srt/arg_groups/parallel_hook.py:360",
+       "python/sglang/srt/arg_groups/parallel_hook.py:652",
+       "python/sglang/srt/arg_groups/parallel_hook.py:717",
+       "python/sglang/srt/arg_groups/validation_hook.py:565",
+       "python/sglang/srt/arg_groups/validation_hook.py:961"
       ],
       "covered_by": []
      },
@@ -17149,15 +16657,15 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:668",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:259",
-       "python/sglang/srt/arg_groups/model_hook.py:998",
-       "python/sglang/srt/arg_groups/overrides.py:992",
-       "python/sglang/srt/arg_groups/parallel_hook.py:297",
-       "python/sglang/srt/arg_groups/parallel_hook.py:589",
-       "python/sglang/srt/arg_groups/parallel_hook.py:654",
-       "python/sglang/srt/arg_groups/validation_hook.py:349",
-       "python/sglang/srt/arg_groups/validation_hook.py:648"
+       "python/sglang/srt/arg_groups/attention_hook.py:685",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:311",
+       "python/sglang/srt/arg_groups/model_hook.py:927",
+       "python/sglang/srt/arg_groups/overrides.py:1174",
+       "python/sglang/srt/arg_groups/parallel_hook.py:360",
+       "python/sglang/srt/arg_groups/parallel_hook.py:652",
+       "python/sglang/srt/arg_groups/parallel_hook.py:717",
+       "python/sglang/srt/arg_groups/validation_hook.py:565",
+       "python/sglang/srt/arg_groups/validation_hook.py:961"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -17170,15 +16678,15 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/attention_hook.py:668",
-       "python/sglang/srt/arg_groups/kv_shard_hook.py:259",
-       "python/sglang/srt/arg_groups/model_hook.py:998",
-       "python/sglang/srt/arg_groups/overrides.py:992",
-       "python/sglang/srt/arg_groups/overrides.py:1081",
-       "python/sglang/srt/arg_groups/parallel_hook.py:297",
-       "python/sglang/srt/arg_groups/parallel_hook.py:654",
-       "python/sglang/srt/arg_groups/validation_hook.py:349",
-       "python/sglang/srt/arg_groups/validation_hook.py:648"
+       "python/sglang/srt/arg_groups/attention_hook.py:685",
+       "python/sglang/srt/arg_groups/kv_shard_hook.py:311",
+       "python/sglang/srt/arg_groups/model_hook.py:927",
+       "python/sglang/srt/arg_groups/overrides.py:1174",
+       "python/sglang/srt/arg_groups/overrides.py:1271",
+       "python/sglang/srt/arg_groups/parallel_hook.py:360",
+       "python/sglang/srt/arg_groups/parallel_hook.py:717",
+       "python/sglang/srt/arg_groups/validation_hook.py:565",
+       "python/sglang/srt/arg_groups/validation_hook.py:961"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -17191,14 +16699,15 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/memory_hook.py:114",
-       "python/sglang/srt/arg_groups/memory_hook.py:128",
-       "python/sglang/srt/arg_groups/memory_hook.py:142",
-       "python/sglang/srt/arg_groups/memory_hook.py:156",
-       "python/sglang/srt/arg_groups/overrides.py:983",
-       "python/sglang/srt/arg_groups/overrides.py:1081",
-       "python/sglang/srt/hardware_backend/npu/utils.py:115",
-       "python/sglang/srt/hardware_backend/npu/utils.py:145"
+       "python/sglang/srt/arg_groups/memory_hook.py:116",
+       "python/sglang/srt/arg_groups/memory_hook.py:132",
+       "python/sglang/srt/arg_groups/memory_hook.py:146",
+       "python/sglang/srt/arg_groups/memory_hook.py:160",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:126",
+       "python/sglang/srt/arg_groups/overrides.py:1165",
+       "python/sglang/srt/arg_groups/overrides.py:1271",
+       "python/sglang/srt/hardware_backend/npu/utils.py:141",
+       "python/sglang/srt/hardware_backend/npu/utils.py:171"
       ],
       "covered_by": []
      },
@@ -17208,13 +16717,15 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/memory_hook.py:114",
-       "python/sglang/srt/arg_groups/memory_hook.py:128",
-       "python/sglang/srt/arg_groups/memory_hook.py:142",
-       "python/sglang/srt/arg_groups/memory_hook.py:156",
-       "python/sglang/srt/arg_groups/overrides.py:983",
-       "python/sglang/srt/hardware_backend/npu/utils.py:115",
-       "python/sglang/srt/hardware_backend/npu/utils.py:145"
+       "python/sglang/srt/arg_groups/memory_hook.py:116",
+       "python/sglang/srt/arg_groups/memory_hook.py:132",
+       "python/sglang/srt/arg_groups/memory_hook.py:146",
+       "python/sglang/srt/arg_groups/memory_hook.py:160",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:42",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:126",
+       "python/sglang/srt/arg_groups/overrides.py:1165",
+       "python/sglang/srt/hardware_backend/npu/utils.py:141",
+       "python/sglang/srt/hardware_backend/npu/utils.py:171"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -17227,10 +16738,12 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:226",
-       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:123",
-       "python/sglang/srt/arg_groups/moe_hook.py:817",
-       "python/sglang/srt/arg_groups/overrides.py:983"
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:270",
+       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:155",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:42",
+       "python/sglang/srt/arg_groups/model_overrides/minimax_m3_hip.py:126",
+       "python/sglang/srt/arg_groups/moe_hook.py:925",
+       "python/sglang/srt/arg_groups/overrides.py:1165"
       ],
       "covered_by": [
        "config/testdata/serverargs.json",
@@ -17243,9 +16756,9 @@
       "lo_closed": true,
       "hi_closed": false,
       "compared_at": [
-       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:226",
-       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:123",
-       "python/sglang/srt/arg_groups/moe_hook.py:817"
+       "python/sglang/srt/arg_groups/deepseek_v4_hook.py:270",
+       "python/sglang/srt/arg_groups/model_overrides/deepseek_v2.py:155",
+       "python/sglang/srt/arg_groups/moe_hook.py:925"
       ],
       "covered_by": []
      }

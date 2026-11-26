@@ -23,8 +23,8 @@ import json
 import re
 import sys
 
-COMMIT = "297e54fd105e974cdf401e5b4d20253a22c16f90"
-RELEASE = "v0.5.23"
+COMMIT = "c4af57ff93f301846fa1da4c31f8523c08c7510d"
+RELEASE = "v1.0.0+c4af57ff93f3"
 
 # Python declared type -> Go type. Optional scalars are pointers (nil is None); lists are slices
 # (nil is None, an empty slice is []). A type holding a dictionary, a union or a callable is a

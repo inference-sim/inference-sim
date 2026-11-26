@@ -90,33 +90,36 @@ def restore_cuda(chip: dict) -> None:
     torch.cuda.get_device_name = lambda device=None: chip["device_name"]
     # The CUDA toolkit of SGLang's own image (docker/Dockerfile:1 CUDA_VERSION=13.0.3).
     torch.version.cuda = CUDA_VERSION
-    import sglang.srt.utils.common as common
+    # The device probes live in sglang.srt.utils.device (utils/common.py and utils/__init__.py
+    # re-export some). Each probe is replaced where it is defined and in every loaded sglang module
+    # that bound the original by `from ... import`, so a hook imported earlier reads the chip's.
+    import sglang.srt.utils.device as dev
 
     mib = float(chip["nvidia_smi_memory_total_mib"])
-    common.get_device_memory_capacity = lambda device=None: mib
-    common.get_nvgpu_memory_capacity = lambda: mib
-    common.get_device = lambda device_id=None: "cuda"
-    common.is_cuda = lambda: True
-    common.is_sm90_supported = lambda device=None: sm == 90
-    common.is_sm100_supported = lambda device=None: maj == 10
-    common.get_device_capability = lambda device_id=0: (maj, mi)
-    common.get_device_sm = lambda: sm
-    # SGLang's CUDA image installs flashinfer (docker/Dockerfile); the CPU runner does not, and
-    # is_flashinfer_available (utils/common.py:388-395) looks the package up.
-    common.is_flashinfer_available = lambda: True
-    # sglang.srt.utils re-exports utils.common; a module that imports a probe from it binds the
-    # re-exported name, so each is restored there too.
-    import sglang.srt.utils as srt_utils
-
-    srt_utils.get_device_memory_capacity = common.get_device_memory_capacity
-    srt_utils.get_nvgpu_memory_capacity = common.get_nvgpu_memory_capacity
-    srt_utils.get_device = common.get_device
-    srt_utils.is_cuda = common.is_cuda
-    srt_utils.is_sm90_supported = common.is_sm90_supported
-    srt_utils.is_sm100_supported = common.is_sm100_supported
-    srt_utils.get_device_capability = common.get_device_capability
-    srt_utils.get_device_sm = common.get_device_sm
-    srt_utils.is_flashinfer_available = common.is_flashinfer_available
+    probes = {
+        "get_device_memory_capacity": lambda device=None: mib,
+        "get_nvgpu_memory_capacity": lambda: mib,
+        "get_device": lambda device_id=None: "cuda",
+        "is_cuda": lambda: True,
+        "is_mps": lambda: False,
+        "is_sm90_supported": lambda device=None: sm == 90,
+        "is_sm100_supported": lambda device=None: maj == 10,
+        "get_device_capability": lambda device_id=0: (maj, mi),
+        "get_device_sm": lambda: sm,
+        # SGLang's CUDA image installs flashinfer (docker/Dockerfile); the CPU runner does not, and
+        # is_flashinfer_available looks the package up.
+        "is_flashinfer_available": lambda: True,
+    }
+    originals = {name: getattr(dev, name) for name in probes if hasattr(dev, name)}
+    for name, fn in probes.items():
+        if name in originals:
+            setattr(dev, name, fn)
+    for mod in list(sys.modules.values()):
+        if mod is None or not getattr(mod, "__name__", "").startswith("sglang."):
+            continue
+        for name, orig in originals.items():
+            if getattr(mod, name, None) is orig:
+                setattr(mod, name, probes[name])
 
 
 def stub_cuda_packages() -> None:
@@ -140,7 +143,7 @@ def model_facts(sa) -> dict:
         uses_kda_attention,
     )
 
-    from sglang.srt.utils.common import has_fp8_weights_in_checkpoint
+    from sglang.srt.configs.quant_utils import has_fp8_weights_in_checkpoint
 
     mc = model_config_of(sa)
     hf = mc.hf_config

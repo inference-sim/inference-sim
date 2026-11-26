@@ -99,6 +99,8 @@ SRT = "python/sglang/srt"
 SERVER_ARGS = SRT + "/server_args.py"
 ENVIRON_PY = SRT + "/environ.py"
 FIELDS_PKG = "sglang.srt.arg_groups.fields."
+# Namespaces ServerArgs collects that live beside their feature, not under FIELDS_PKG.
+EXTRA_NAMESPACE_MODULES = ("sglang.srt.configs.unlimited_ocr_v2",)
 
 SCANNED_PY = (SRT, "python/sglang/kernels", "python/sglang/utils.py", "python/sglang/launch_server.py",
               "python/sglang/cli")
@@ -156,7 +158,7 @@ def input_namespaces(src):
         raise SystemExit("gen_fields: %s has no _INPUT_NAMESPACES list" % SERVER_ARGS)
     out = []
     for name in names:
-        if name not in imports or not imports[name][0].startswith(FIELDS_PKG):
+        if name not in imports or not (imports[name][0].startswith(FIELDS_PKG) or imports[name][0] in EXTRA_NAMESPACE_MODULES):
             raise SystemExit("gen_fields: %s: namespace %s is not imported from %s*" % (SERVER_ARGS, name, FIELDS_PKG))
         mod, cls = imports[name]
         p = module_path(src, mod)
@@ -305,6 +307,20 @@ def is_derived(value):
     return isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id == "Derived"
 
 
+def removed_flag_loop(fn, call):
+    """True when call is the add_argument of `for flag, ... in REMOVED_FLAGS.items():`, whose first
+    argument is the loop's flag (python/sglang/srt/server_args.py: REMOVED_FLAGS)."""
+    for node in ast.walk(fn):
+        if isinstance(node, ast.For) and isinstance(node.iter, ast.Call) \
+                and isinstance(node.iter.func, ast.Attribute) and node.iter.func.attr == "items" \
+                and isinstance(node.iter.func.value, ast.Name) and node.iter.func.value.id == "REMOVED_FLAGS" \
+                and call in list(ast.walk(node)) and call.args and isinstance(call.args[0], ast.Name) \
+                and isinstance(node.target, ast.Tuple) and isinstance(node.target.elts[0], ast.Name) \
+                and call.args[0].id == node.target.elts[0].id:
+            return True
+    return False
+
+
 def manual_flags(src):
     """{dest: [(flag, site, deprecated)]} for each add_argument call in ServerArgs.add_cli_args."""
     tree = parse(os.path.join(src, SERVER_ARGS))
@@ -318,6 +334,10 @@ def manual_flags(src):
             continue
         flags = [a.value for a in node.args if isinstance(a, ast.Constant) and isinstance(a.value, str)]
         if not flags:
+            # The one loop that registers every flag of REMOVED_FLAGS, each only to stop a launch
+            # with the message that names its replacement: no field, no configuration.
+            if removed_flag_loop(fn[0], node):
+                continue
             raise SystemExit("gen_fields: %s:%d: add_argument with no literal flag" % (SERVER_ARGS, node.lineno))
         dest = [k.value.value for k in node.keywords if k.arg == "dest" and isinstance(k.value, ast.Constant)]
         d = dest[0] if dest else flags[0].lstrip("-").replace("-", "_")

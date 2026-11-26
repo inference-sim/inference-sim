@@ -2,7 +2,7 @@
   "kind": "FieldList",
   "engine": {
     "kind": "sglang",
-    "version": "0.5.23"
+    "version": "1.0.0+c4af57ff93f3"
   },
   "fields": [
     {
@@ -17,7 +17,73 @@
       }
     },
     {
+      "name": "AITER_BF16_FP8_MOE_BOUND",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "AITER_CONFIG_FMOE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "AITER_CONFIG_GEMM_A8W8_BLOCKSCALE_BPRESHUFFLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "AITER_CONFIG_GEMM_A8W8_BPRESHUFFLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "AITER_CONFIG_GEMM_BF16",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "AITER_CONFIG_GROUPED_FMOE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "AITER_CUSTOM_AR_MAX_SIZE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -50,7 +116,40 @@
       }
     },
     {
+      "name": "AITER_FLYDSL_FORCE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "AITER_FORCE_A8W4",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "AITER_ONLINE_TUNE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "AITER_OPUS_STAGE2_FP8",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -73,6 +172,17 @@
     },
     {
       "name": "AITER_SITUV2_A8W4",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "ALLOW_JIT",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -149,6 +259,17 @@
       }
     },
     {
+      "name": "ASCEND_USE_PAGED_MTP",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "AWS_DEFAULT_BUCKET",
       "source": "env",
       "status": "not_modelled",
@@ -194,6 +315,17 @@
     },
     {
       "name": "CARGO_ENCODED_RUSTFLAGS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "CMAKE_BUILD_PARALLEL_LEVEL",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -297,6 +429,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "CUDA_MODULE_LOADING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -798,6 +941,17 @@
       }
     },
     {
+      "name": "EDITOR",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "ENABLE_ASCEND_TRANSFER_WITH_MOONCAKE",
       "source": "env",
       "status": "not_modelled",
@@ -880,17 +1034,6 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "FLASHINFER_MOE_EP_KNOB_CACHE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -1062,6 +1205,17 @@
       }
     },
     {
+      "name": "GITHUB_EVENT_NAME",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "GITHUB_REPOSITORY",
       "source": "env",
       "status": "not_modelled",
@@ -1140,6 +1294,17 @@
     },
     {
       "name": "HF_HUB_DISABLE_XET",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "HIP_FORCE_DEV_KERNARG",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -1271,6 +1436,17 @@
       }
     },
     {
+      "name": "LOCAL_WORLD_SIZE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "MASTER_ADDR",
       "source": "env",
       "status": "not_modelled",
@@ -1326,6 +1502,28 @@
       }
     },
     {
+      "name": "MC_MS_AUTO_DISC",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MC_TRANSFER_TIMEOUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "MEGA_USE_NCU",
       "source": "env",
       "status": "not_modelled",
@@ -1375,6 +1573,28 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2443"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MOONCAKE_EGM_NUMA_NODES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MOONCAKE_ENABLE_EGM_STORE_POOL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -1524,6 +1744,105 @@
       }
     },
     {
+      "name": "MUSE_AITER_DENSE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MUSE_FUSE_FFN_BOUNDARY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MUSE_FUSE_QK_NORM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MUSE_MOE_ALIGN",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MUSE_MOE_BACKEND",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MUSE_MOE_FP4_MODE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MUSE_MOE_SPLITK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MUSE_ROUTER_GEMV",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "MUSE_SPARK_NVFP4_NATIVE_FINALIZE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "NCCL_ALGO",
       "source": "env",
       "status": "not_modelled",
@@ -1650,6 +1969,28 @@
       }
     },
     {
+      "name": "NCCL_P2P_LEVEL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "NO_COLOR",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "NO_PROXY",
       "source": "env",
       "status": "not_modelled",
@@ -1695,6 +2036,17 @@
     },
     {
       "name": "NVSHMEM_REMOTE_TRANSPORT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "OMP_NUM_THREADS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -1760,6 +2112,28 @@
       }
     },
     {
+      "name": "PYTHONNOUSERSITE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "PYTHONUNBUFFERED",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "PYTORCH_ALLOC_CONF",
       "source": "env",
       "status": "not_modelled",
@@ -1772,6 +2146,17 @@
     },
     {
       "name": "PYTORCH_CUDA_ALLOC_CONF",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "PYTORCH_HIP_ALLOC_CONF",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -1881,6 +2266,17 @@
       }
     },
     {
+      "name": "ROCPROFILER_REGISTER_LIBRARY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "RUNAI_STREAMER_S3_ENDPOINT",
       "source": "env",
       "status": "not_modelled",
@@ -1914,6 +2310,28 @@
       }
     },
     {
+      "name": "RUSTUP_TOOLCHAIN",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ADMIN_API_KEY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_AITER_ASM_PREFILL_HD128",
       "source": "env",
       "status": "not_modelled",
@@ -1926,6 +2344,17 @@
     },
     {
       "name": "SGLANG_AITER_CAPTURE_COPY_IN",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_AITER_DECODE_PARTITION_BUCKETS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -2068,17 +2497,6 @@
       }
     },
     {
-      "name": "SGLANG_AITER_MLA_DCP_DECODE_BACKEND",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_AITER_MLA_DECODE_BACKEND",
       "source": "env",
       "status": "not_modelled",
@@ -2135,6 +2553,17 @@
     },
     {
       "name": "SGLANG_AITER_PAGED_PREFILL_ASM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_AITER_SYNC_FREE_VERIFY_LENS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -2222,11 +2651,11 @@
       }
     },
     {
-      "name": "SGLANG_AMD_USE_FLYDSL_MEGA_MOE",
+      "name": "SGLANG_AMD_MONO_K31_WIDE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2344"
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -2431,6 +2860,17 @@
       }
     },
     {
+      "name": "SGLANG_CPU_GRAPH_COMPILE_BACKEND",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_CPU_OMP_THREADS_BIND",
       "source": "env",
       "status": "not_modelled",
@@ -2574,11 +3014,11 @@
       }
     },
     {
-      "name": "SGLANG_DATA_PARALLEL_BUDGET_INTERVAL",
+      "name": "SGLANG_DCP_PUSH_COMBINE_MAX_ROWS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -2667,6 +3107,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_DECODE_STATE_FREE_RADIX",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
       },
       "estimation": {
         "rule": "none"
@@ -2783,17 +3234,6 @@
       }
     },
     {
-      "name": "SGLANG_DEEPGEMM_ON_H20",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_DEEPGEMM_PDL",
       "source": "env",
       "status": "not_modelled",
@@ -2817,6 +3257,17 @@
     },
     {
       "name": "SGLANG_DEEPGEMM_STANDARD_LAYOUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_DEEP_SELECT_MULTIWAVE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -2970,11 +3421,11 @@
       }
     },
     {
-      "name": "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",
+      "name": "SGLANG_DISABLE_DFLASH_COMPACT_SWA_WINDOW",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
+        "issue": "inference-sim/inference-sim#2456"
       },
       "estimation": {
         "rule": "none"
@@ -3015,6 +3466,17 @@
     },
     {
       "name": "SGLANG_DISABLE_FUSED_MAMBA_SLOT_OPS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_DISABLE_GFX115_KERNELS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3080,17 +3542,6 @@
       }
     },
     {
-      "name": "SGLANG_DISABLE_LFM_FUSED_CONV",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_DISABLE_M3_FP8_ATTN_GEMM",
       "source": "env",
       "status": "not_modelled",
@@ -3113,18 +3564,7 @@
       }
     },
     {
-      "name": "SGLANG_DISABLE_MSA_V1_Q8KV4",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_DISABLE_OUTLINES_DISK_CACHE",
+      "name": "SGLANG_DISABLE_OVERLAP_AFTER_PREFILL",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3147,6 +3587,17 @@
     },
     {
       "name": "SGLANG_DISABLE_STATIC_WATERFILL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_DISABLE_THP",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3278,18 +3729,18 @@
       }
     },
     {
-      "name": "SGLANG_DISAGGREGATION_QUEUE_SIZE",
+      "name": "SGLANG_DISAGGREGATION_PAGE_MOVE_WAIT_TIMEOUT",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2455"
+        "issue": "inference-sim/inference-sim#2453"
       },
       "estimation": {
         "rule": "none"
       }
     },
     {
-      "name": "SGLANG_DISAGGREGATION_SAMPLING_MASK_MAX_TOKENS",
+      "name": "SGLANG_DISAGGREGATION_QUEUE_SIZE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3344,11 +3795,44 @@
       }
     },
     {
+      "name": "SGLANG_DISAGG_CUSTOMIZED_INFO_MAX_BYTES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2453"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_DISAGG_PREFILL_EARLY_SEND_CACHED_PREFIX",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2455"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_DISAGG_PREFILL_POLL_HICACHE_WHILE_WAITING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_DISAGG_PREFILL_POLL_TRANSFERS_WHILE_WAITING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2453"
       },
       "estimation": {
         "rule": "none"
@@ -3378,17 +3862,6 @@
     },
     {
       "name": "SGLANG_DISTRIBUTED_INIT_METHOD_OVERRIDE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_DP_MASK_PAD_ROWS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3470,6 +3943,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_DSA_INDEXER_BF16_LOGITS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -3674,40 +4158,7 @@
       }
     },
     {
-      "name": "SGLANG_DSPARK_FAST_KERNEL",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2456"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_DSPARK_FAST_SAMPLING",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2456"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_DSPARK_FOLDED_PROPOSAL",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2456"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_DSPARK_FOLDED_SAMPLING",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3762,7 +4213,7 @@
       }
     },
     {
-      "name": "SGLANG_DSPARK_OPT_FUSED_GREEDY_MARKOV",
+      "name": "SGLANG_DSPARK_OPT_INT8_MARKOV_WALK",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -3839,22 +4290,11 @@
       }
     },
     {
-      "name": "SGLANG_DSV41_ENGRAM_HOST_TABLE_LAYOUT",
+      "name": "SGLANG_DSPARK_USE_ONLINE_ESTIMATOR",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2456"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_DSV41_FUSED_WO_A",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -4114,6 +4554,17 @@
       }
     },
     {
+      "name": "SGLANG_DUMP_FUSED_OPS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_DUMP_LOADER_DIR",
       "source": "env",
       "status": "not_modelled",
@@ -4191,7 +4642,18 @@
       }
     },
     {
-      "name": "SGLANG_ENABLE_BF16_SPLITK_GEMM",
+      "name": "SGLANG_ENABLE_BEAM_SHARED_CONTEXT_ATTENTION",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_BEAM_TRIE_SELECTION_GRAPH",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4203,17 +4665,6 @@
     },
     {
       "name": "SGLANG_ENABLE_COLOCATED_BATCH_GEN",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_ENABLE_CP_V2",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4246,6 +4697,17 @@
       }
     },
     {
+      "name": "SGLANG_ENABLE_DCP_PUSH_COMBINE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_ENABLE_DELAY_SAMPLE",
       "source": "env",
       "status": "not_modelled",
@@ -4262,6 +4724,28 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_DFLASH_DRAFT_KV_RING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_DISAGG_DECODE_DEFERRED_PUBLISH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2453"
       },
       "estimation": {
         "rule": "none"
@@ -4312,6 +4796,17 @@
       }
     },
     {
+      "name": "SGLANG_ENABLE_DSA_DCP_FUSED_TOPK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_ENABLE_DSA_Q8KV8_BORN_FP8_Q",
       "source": "env",
       "status": "not_modelled",
@@ -4345,18 +4840,7 @@
       }
     },
     {
-      "name": "SGLANG_ENABLE_DSA_Q8KV8_TOPK_LENGTH",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE",
+      "name": "SGLANG_ENABLE_EAGLE_POST_VERIFY_CUDA_GRAPH",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4411,7 +4895,7 @@
       }
     },
     {
-      "name": "SGLANG_ENABLE_FP8_GEMM_CONFIG_TUNE",
+      "name": "SGLANG_ENABLE_FP8_BLOCK_GEMV",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4422,7 +4906,29 @@
       }
     },
     {
+      "name": "SGLANG_ENABLE_FUSED_KDA_OUTPUT_QUANT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_ENABLE_GDN_DECODE_FUSED_PROJ_CONV",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_GDN_PREFILL_GRAPH_EXTEND",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4460,17 +4966,6 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_ENABLE_HICACHE_BUFFER_ANCHOR_LOCK",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2453"
       },
       "estimation": {
         "rule": "none"
@@ -4543,6 +5038,17 @@
       }
     },
     {
+      "name": "SGLANG_ENABLE_LORA_DUAL_GRAPH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_ENABLE_LORA_SHRINK_SPLIT_K",
       "source": "env",
       "status": "not_modelled",
@@ -4587,6 +5093,28 @@
       }
     },
     {
+      "name": "SGLANG_ENABLE_MINIMAX_M3_AMD_QUICK_REDUCE_INT4",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_MLP_SYNC_METADATA_FILL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_ENABLE_MOE_DEFERRED_FINALIZE",
       "source": "env",
       "status": "not_modelled",
@@ -4620,7 +5148,7 @@
       }
     },
     {
-      "name": "SGLANG_ENABLE_MUSE_SPARK_FINALIZE_AR",
+      "name": "SGLANG_ENABLE_NAN_LOGITS_CHECK",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4631,7 +5159,18 @@
       }
     },
     {
-      "name": "SGLANG_ENABLE_NAN_LOGITS_CHECK",
+      "name": "SGLANG_ENABLE_NIXL_KV_PACKING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_NVTX_FORWARD",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4658,6 +5197,39 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2451"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_NV_MEGA_PDDEC_RUNTIME_OPTIMIZATION",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_NV_MEGA_RUNTIME_K31_GB_OPTIMIZATION",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_NV_MEGA_RUNTIME_OPTIMIZATION",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -4708,11 +5280,33 @@
       }
     },
     {
+      "name": "SGLANG_ENABLE_PP_OUTPUT_RECV_AFTER_FORWARD",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_ENABLE_PP_SPEC",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_PREFILL_GRAPH_IDLE_RANK_EAGER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -4796,7 +5390,7 @@
       }
     },
     {
-      "name": "SGLANG_ENABLE_SINGLE_CG_DRAFT",
+      "name": "SGLANG_ENABLE_ROCM_K3_ROW_SHARDED_ROUTED_FRONT",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4807,7 +5401,29 @@
       }
     },
     {
-      "name": "SGLANG_ENABLE_SPLITKV_VERIFY",
+      "name": "SGLANG_ENABLE_ROCM_K3_ROW_SHARDED_STREAM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_RUNNING_REQS_CHECK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_SINGLE_CG_DRAFT",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -4878,6 +5494,50 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_UOCR_ASYNC_SHM_MATERIALIZATION",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_UOCR_CROP_PREFETCH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_UOCR_DOC_PREFETCH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ENABLE_UOCR_SHM_WRAP_MODEL_DATA",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -5115,28 +5775,6 @@
       }
     },
     {
-      "name": "SGLANG_EPLB_ROCM_P2P_BATCH_CHUNK_SIZE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_EXACT_CHUNK_FILL",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_EXA_INCLUDE_HIGHLIGHTS",
       "source": "env",
       "status": "not_modelled",
@@ -5160,17 +5798,6 @@
     },
     {
       "name": "SGLANG_EXA_SEARCH_TYPE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_EXPERIMENTAL_DSA_KPOOL_METADATA_FUSION",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -5335,17 +5962,6 @@
       }
     },
     {
-      "name": "SGLANG_FA4_TMEM_LOAD_RED_MAX",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_FAILED_SESSION_IDLE_TIMEOUT_S",
       "source": "env",
       "status": "not_modelled",
@@ -5434,6 +6050,17 @@
       }
     },
     {
+      "name": "SGLANG_FLASHINFER_MEGAMOE_DECODE_MAX_TOKENS_PER_RANK",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_FLASHINFER_MEGAMOE_IN_KERNEL_FC2_REDUCE",
       "source": "env",
       "status": "not_modelled",
@@ -5446,28 +6073,6 @@
     },
     {
       "name": "SGLANG_FLASHINFER_MEGAMOE_MAX_TOKENS_PER_RANK",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_FLASHINFER_MNNVL_CUTEDSL_AR_FUSION",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_FLASHINFER_MNNVL_CUTEDSL_AR_FUSION_MAX_INSTANCES",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -5742,6 +6347,28 @@
       }
     },
     {
+      "name": "SGLANG_FUSED_ROPE_KV_TILED",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_GATED_TRANSFER_WATCHDOG_MS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_GDN_CHUNK_H_BV",
       "source": "env",
       "status": "not_modelled",
@@ -5797,7 +6424,51 @@
       }
     },
     {
+      "name": "SGLANG_GDN_PREFILL_GRAPH_MAX_SEQS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_GDN_QKVZ_BA_ALT_STREAM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_GDN_REPLAYSSM_VERIFY_NUM_STAGES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_GEMMA4_AR_FUSION",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_GEMMA4_AR_FUSION_MAX_TOKENS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -5830,7 +6501,7 @@
       }
     },
     {
-      "name": "SGLANG_GFX1250_W4A8_KERNEL_GATHER",
+      "name": "SGLANG_GFX1250_W4A8_BYPASS_TOPK",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -5841,11 +6512,44 @@
       }
     },
     {
-      "name": "SGLANG_GFX1250_W4A8_MOE",
+      "name": "SGLANG_GFX1250_W4A8_FLYDSL",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2344"
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_GFX1250_W4A8_FLYDSL_MIN_TOKENS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_GFX1250_W4A8_FUSED_GATHER_QUANT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_GFX1250_W4A8_KERNEL_GATHER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -6149,6 +6853,17 @@
       }
     },
     {
+      "name": "SGLANG_HICACHE_MAMBA_HOST_RATIO",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_HICACHE_MEMCACHE_CONFIG_PATH",
       "source": "env",
       "status": "not_modelled",
@@ -6237,17 +6952,6 @@
       }
     },
     {
-      "name": "SGLANG_HICACHE_TMA_TRANSFER",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2453"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_HIP_DSPARK_DRAFT_RAW_METADATA",
       "source": "env",
       "status": "not_modelled",
@@ -6270,28 +6974,6 @@
       }
     },
     {
-      "name": "SGLANG_HIP_DSV4_C4_INDEXER_ROWGROUP",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_HIP_FFN_NORM_MXFP8",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_HIP_FP4_INDEXER_ROWGROUP",
       "source": "env",
       "status": "not_modelled",
@@ -6303,29 +6985,7 @@
       }
     },
     {
-      "name": "SGLANG_HIP_MHC_BOUNDARY_WIDE_TILE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_HIP_SHARED_ACT_MXFP8",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_HIP_WO_A_MXFP8",
+      "name": "SGLANG_HIP_VMM_HANDLE_TYPE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -6348,6 +7008,17 @@
     },
     {
       "name": "SGLANG_HTTP_SERVER_APP_PATH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_HUGEPAGE_MODE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -6545,6 +7216,17 @@
       }
     },
     {
+      "name": "SGLANG_JIT_BENCHMARK_CASE_FILTER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_JIT_BENCHMARK_DISABLE_LOG_BANDWIDTH",
       "source": "env",
       "status": "not_modelled",
@@ -6557,6 +7239,39 @@
     },
     {
       "name": "SGLANG_JIT_BENCHMARK_DISABLE_LOG_FLOPS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_JIT_BENCHMARK_FORCE_FULL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_JIT_BENCHMARK_OUTPUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_JIT_BENCHMARK_RUN_KIND",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -6600,6 +7315,28 @@
       }
     },
     {
+      "name": "SGLANG_JIT_CUDA_ARCH_POLICY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_JIT_DEBUG_TRACE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_JIT_DEEPGEMM_FAST_WARMUP",
       "source": "env",
       "status": "not_modelled",
@@ -6612,6 +7349,17 @@
     },
     {
       "name": "SGLANG_JIT_DEEPGEMM_PRECOMPILE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_JIT_ENABLE_LINEINFO",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -6677,17 +7425,6 @@
       }
     },
     {
-      "name": "SGLANG_K3_FLYDSL_SOURCE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_K3_FUSED_FRONT",
       "source": "env",
       "status": "not_modelled",
@@ -6704,6 +7441,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_K3_SHARDED_MOE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -6842,6 +7590,17 @@
       }
     },
     {
+      "name": "SGLANG_KV_CANARY_ENABLE_INFO",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_KV_CANARY_ENABLE_MHA_V",
       "source": "env",
       "status": "not_modelled",
@@ -6876,6 +7635,17 @@
     },
     {
       "name": "SGLANG_KV_CANARY_ENABLE_WRITE_INPUT_ASSERT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_KV_CANARY_PERTURB_DETOKENIZER_SWAP_AT_OUTPUT",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -7381,6 +8151,17 @@
       }
     },
     {
+      "name": "SGLANG_MINIMAX_M3_AMD_KV_FORMAT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_MINIMAX_M3_FUSED_MOE_COMBINE",
       "source": "env",
       "status": "not_modelled",
@@ -7634,6 +8415,17 @@
       }
     },
     {
+      "name": "SGLANG_MM_RS_THREADS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_MM_SKIP_COMPUTE_HASH",
       "source": "env",
       "status": "not_modelled",
@@ -7700,17 +8492,6 @@
       }
     },
     {
-      "name": "SGLANG_MOE_SHUFFLE_GFX1250",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2344"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_MOONCAKE_CUSTOM_MEM_POOL",
       "source": "env",
       "status": "not_modelled",
@@ -7749,6 +8530,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2443"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_MOONCAKE_TRANSFER_ENGINE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -7942,6 +8734,17 @@
       }
     },
     {
+      "name": "SGLANG_MUSA_GIT_PROXY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_MUSA_SKIP_THIRD_PARTY",
       "source": "env",
       "status": "not_modelled",
@@ -8019,17 +8822,6 @@
       }
     },
     {
-      "name": "SGLANG_NGRAM_FORCE_GREEDY_VERIFY",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2456"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_NIXL_EP_BF16_DISPATCH",
       "source": "env",
       "status": "not_modelled",
@@ -8046,6 +8838,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2455"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_NIXL_KV_PACK_BUFFER_SIZE_MB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -8074,6 +8877,28 @@
       }
     },
     {
+      "name": "SGLANG_NPU_DCP_EXTEND_GATHER_PIECE_ROWS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_NPU_DCP_EXTEND_QUERY_GATHER_MAX_TOKENS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_NPU_DISABLE_ACL_FORMAT_WEIGHT",
       "source": "env",
       "status": "not_modelled",
@@ -8086,6 +8911,17 @@
     },
     {
       "name": "SGLANG_NPU_ENABLE_SPARSE_KV_OFFLOAD",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_NPU_ENABLE_STATIC_KERNEL",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -8163,6 +8999,17 @@
     },
     {
       "name": "SGLANG_NPU_USE_FIAS_V2_BSND",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_NPU_USE_FLASH_MLA",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -8272,6 +9119,17 @@
       }
     },
     {
+      "name": "SGLANG_NVIDIA_MEGAKERNEL_SLOTS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_OLLAMA_CHAT_ROUTE",
       "source": "env",
       "status": "not_modelled",
@@ -8360,11 +9218,33 @@
       }
     },
     {
+      "name": "SGLANG_OPT_COSMOS3_SM120_GEMM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_OPT_CUDA_GRAPH_FILL_FAST_PATH",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_CUTEDSL_EP_DEFERRED_FINALIZE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -8393,7 +9273,7 @@
       }
     },
     {
-      "name": "SGLANG_OPT_DEEPGEMM_MEGA_MOE_FUSE_SHARED_EXPERTS",
+      "name": "SGLANG_OPT_DEEPGEMM_MEGA_MOE_LOCALIZE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -8420,6 +9300,94 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DFLASH_AUX_GRAPH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DFLASH_AUX_OVERLAP",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DFLASH_BATCHED_SMALL_COPY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DFLASH_COMMIT_METADATA",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DFLASH_DEFER_PLAIN_GATHER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DFLASH_DRAFT_L2_PREFETCH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DFLASH_FUSED_CANDIDATE_AG",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DFLASH_TP_AUX_FC",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
       },
       "estimation": {
         "rule": "none"
@@ -8558,11 +9526,11 @@
       }
     },
     {
-      "name": "SGLANG_OPT_DSV41_ENGRAM_PEER_SHARDS",
+      "name": "SGLANG_OPT_DSV41_LARGE_PREFILL_SCORE_BUDGET",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2456"
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -8602,6 +9570,17 @@
       }
     },
     {
+      "name": "SGLANG_OPT_DSV41_SM90_DEEPGEMM_PREFILL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_OPT_DSV41_TARGET_METADATA_EARLY",
       "source": "env",
       "status": "not_modelled",
@@ -8618,6 +9597,39 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DSV41_TRITON_PREFILL_SELECTION",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DSV41_VERIFY_INDEXER_BF16_K_REUSE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_DSV4_INDEXER_TP_SHARD",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -8651,6 +9663,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_ERNIE5_5_FUSE_INEXACT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -8822,17 +9845,6 @@
       }
     },
     {
-      "name": "SGLANG_OPT_HIP_FLYDSL_MXFP8",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_OPT_HIP_OPUS_SPARSE_PREFILL",
       "source": "env",
       "status": "not_modelled",
@@ -8845,6 +9857,61 @@
     },
     {
       "name": "SGLANG_OPT_HOPPER_BLOCK_FP8_BF16",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_INKLING2_ATTN_PUSH_ALL_REDUCE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_INKLING2_EP_PARTIAL_COMBINE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_INKLING2_MEGA_MOE_LOCAL_INPUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_INKLING2_MEGA_MOE_MIN_TOKENS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_INKLING2_VERIFY_REL_BIAS_KERNEL",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -9031,6 +10098,17 @@
       }
     },
     {
+      "name": "SGLANG_OPT_MAMBA_HOST_ONLY_CHECKPOINT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_OPT_MAMBA_SKIP_DECODE_LOCK",
       "source": "env",
       "status": "not_modelled",
@@ -9119,6 +10197,39 @@
       }
     },
     {
+      "name": "SGLANG_OPT_SCHEDULER_SHM_SYNC",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_SCHEDULER_SHM_SYNC_LEADER_TCP",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_SCHEDULER_SHM_SYNC_MULTIHOST",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_OPT_SKIP_GLUED_REPLAY_VIEW",
       "source": "env",
       "status": "not_modelled",
@@ -9141,17 +10252,6 @@
       }
     },
     {
-      "name": "SGLANG_OPT_SM120_MTP_ROUTER_TOP22",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2456"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_OPT_SM120_NVFP4_PHASE_LAYOUT",
       "source": "env",
       "status": "not_modelled",
@@ -9163,7 +10263,84 @@
       }
     },
     {
-      "name": "SGLANG_OPT_SWA_RELEASE_LEAF_LOCK_AFTER_WINDOW",
+      "name": "SGLANG_OPT_SMALL_FIELD_COPY_VECTORIZED",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_SPEC_COMPACT_VERIFY_SAMPLING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_SPEC_DECODE_HEADROOM_PAGES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_SPEC_PACKED_VERIFY_BCAST",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_SPEC_POST_VERIFY_ONE_LAUNCH_LOAD",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_SPEC_RELAY_IN_PLACE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_SPEC_VERIFY_REUSE_STAGED_INPUTS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_TRTLLM_MHA_CHAIN_VERIFY",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -9175,28 +10352,6 @@
     },
     {
       "name": "SGLANG_OPT_UNIFIED_CACHE_FREE_OUT_OF_WINDOW_SLOTS",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_OPT_USE_AITER_BATCHED_GEMM",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_OPT_USE_AITER_INDEXER",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -9251,6 +10406,17 @@
       }
     },
     {
+      "name": "SGLANG_OPT_USE_FUSED_DRAFT_SAMPLE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_OPT_USE_FUSED_GATE_TOPK",
       "source": "env",
       "status": "not_modelled",
@@ -9263,17 +10429,6 @@
     },
     {
       "name": "SGLANG_OPT_USE_FUSED_HASH_TOPK",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_OPT_USE_FUSED_QK_NORM_ROPE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -9482,17 +10637,6 @@
       }
     },
     {
-      "name": "SGLANG_OPT_USE_MINIMAX_FP8_Q_EPILOGUE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_OPT_USE_MINIMAX_FUSED_KV_INDEX_STORE",
       "source": "env",
       "status": "not_modelled",
@@ -9538,6 +10682,17 @@
     },
     {
       "name": "SGLANG_OPT_USE_ONLINE_COMPRESS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_OPT_USE_PREFILL_LITE_TOPK",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -9680,6 +10835,39 @@
       }
     },
     {
+      "name": "SGLANG_PLB_SCATTER_CTAS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_PLB_SCATTER_DEFER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_PLB_STREAM_PRIORITY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_PLUGINS",
       "source": "env",
       "status": "not_modelled",
@@ -9779,29 +10967,7 @@
       }
     },
     {
-      "name": "SGLANG_PREFILL_DELAYER_MAX_DELAY_PASSES",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2451"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_PREFILL_DELAYER_MAX_PREFILL_BS_WINDOW_SIZE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2451"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_PREFILL_DELAYER_TOKEN_USAGE_LOW_WATERMARK",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -9912,17 +11078,6 @@
     },
     {
       "name": "SGLANG_QUANT_ALLOW_DOWNCASTING",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_QWEN35_NATIVE_FINAL_NORM",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -10120,6 +11275,17 @@
       }
     },
     {
+      "name": "SGLANG_ROCM_DISABLE_AITER_TOPK_GATING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_ROCM_DISABLE_LINEARQUANT",
       "source": "env",
       "status": "not_modelled",
@@ -10131,11 +11297,44 @@
       }
     },
     {
+      "name": "SGLANG_ROCM_DSPARK_SPLIT_ACCEPT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_ENABLE_DFLASH_SWA_DRAFT_KV",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_ROCM_FUSED_DECODE_MLA",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_GDN_ONLINE_MXFP4",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -10164,7 +11363,7 @@
       }
     },
     {
-      "name": "SGLANG_ROCM_K3_KDA_FUSED_BACKEND",
+      "name": "SGLANG_ROCM_KEEP_INHERITED_ROCPROFILER_REGISTER",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -10175,7 +11374,513 @@
       }
     },
     {
-      "name": "SGLANG_ROCM_KDA_HIP_PREFILL",
+      "name": "SGLANG_ROCM_MUSE_A4W4_MOE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_COMPACT_A4_VERIFY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_DENSE_FP8",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_DENSE_TILED",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_DENSE_TUNED",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_DFLASH_DENSE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_DFLASH_FUSED_CANDIDATES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_DFLASH_FUSED_CONV",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_DFLASH_SPLITKV",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_EXPERT_PLACEMENT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_EXTEND_FLYDSL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_EXTEND_FP8_Q",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_EXTEND_GLUON",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_EXTEND_SWA_GLUON",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_FINALIZE_AR_PUSH",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_FUSED_QKV_CACHE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_FUSED_UNPOOL_BOUNDARY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_GFX1250_A8W4",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_GFX1250_EXTEND",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_GFX1250_EXTEND_FLY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_GFX1250_LMHEAD",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_GFX1250_SP_MX_GATHER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_GFX1250_TRY_GFX95",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_JOINT_ROUTER_MAX_ROWS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_JOINT_ROUTER_POOLER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_PREFILL_DENSE_FP8",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_PREFILL_SP",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_PREFILL_ULYSSES",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_QK_ROPE_CACHE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_QK_ROPE_CACHE_MAX_ROWS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_REUSE_EXTEND_METADATA",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_REUSE_VERIFY_LENGTHS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_SHARDED_GREEDY_LOGITS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_SHARED_ROUTER_POOLER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_SYNC_FREE_VERIFY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_ULYSSES_LOCAL_GATE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_ULYSSES_PIPELINE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_BALANCED",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_FLYDSL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_FP8",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_FULL_GQA",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_FULL_V2",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_REDUCE_NORM_GATE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_SP",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_SWA_FLYDSL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_SWA_GQA",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_MUSE_VERIFY_SWA_SPLITKV",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -10197,11 +11902,33 @@
       }
     },
     {
-      "name": "SGLANG_ROCM_OPT_DSPARK_FP8_LM_HEAD",
+      "name": "SGLANG_ROCM_QUICK_ALL_REDUCE_JIT",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2456"
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_QUICK_REDUCE_INT8_BELOW_MB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_ROCM_RUNTIME_RESERVE_GB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -10219,33 +11946,11 @@
       }
     },
     {
-      "name": "SGLANG_ROCM_SMALLM_FP8_PROJ",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_ROCM_SMALLM_MOE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2344"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_ROCM_SMALLM_ROUTER",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -10373,6 +12078,17 @@
       }
     },
     {
+      "name": "SGLANG_RUST_REQUEST_LOG_FULL_BUFFER",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_RUST_SERVER",
       "source": "env",
       "status": "not_modelled",
@@ -10400,17 +12116,6 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_SCHEDULER_DECREASE_PREFILL_IDLE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2451"
       },
       "estimation": {
         "rule": "none"
@@ -10582,17 +12287,6 @@
       }
     },
     {
-      "name": "SGLANG_SKIP_RUST_TESTS",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_SKIP_SGL_KERNEL_VERSION_CHECK",
       "source": "env",
       "status": "not_modelled",
@@ -10747,6 +12441,17 @@
       }
     },
     {
+      "name": "SGLANG_TENT_CONFIG_OVERRIDE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_TEST_CRASH_AFTER_STREAM_OUTPUTS",
       "source": "env",
       "status": "not_modelled",
@@ -10824,11 +12529,11 @@
       }
     },
     {
-      "name": "SGLANG_TEST_MAMBA_LAZY_ALLOC_FAIL",
+      "name": "SGLANG_TEST_MAMBA_LAZY_POOL_FULL",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
+        "issue": "inference-sim/inference-sim#2449"
       },
       "estimation": {
         "rule": "none"
@@ -10873,6 +12578,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2455"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_TEST_PD_ROUTER_BINARY",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2453"
       },
       "estimation": {
         "rule": "none"
@@ -11077,6 +12793,17 @@
       }
     },
     {
+      "name": "SGLANG_TOPK_V2_MODE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_TORCH_COMPILE_MODE",
       "source": "env",
       "status": "not_modelled",
@@ -11165,17 +12892,6 @@
       }
     },
     {
-      "name": "SGLANG_TRACE_QWEN35_FINAL_NORM",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_TRACE_QWEN_MOE_DEEPEP_E2E",
       "source": "env",
       "status": "not_modelled",
@@ -11231,17 +12947,6 @@
       }
     },
     {
-      "name": "SGLANG_TRITON_DENSE_PREFILL_ATTN",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_TRITON_FP8_PREFILL_ATTN",
       "source": "env",
       "status": "not_modelled",
@@ -11254,17 +12959,6 @@
     },
     {
       "name": "SGLANG_TRITON_LOAD_WARNING_THRESHOLD_GB",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_TRITON_PREFILL_TRUNCATION_ALIGN_SIZE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -11297,6 +12991,39 @@
       }
     },
     {
+      "name": "SGLANG_TRTLLM_MHA_FULL_ATTN_KV_SPLITS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_TRTLLM_MHA_FULL_ATTN_KV_SPLITS_MIN_BS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_TRTLLM_MLA_WORKSPACE_MB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_TRTLLM_MOE_PDL_MAX_TOKENS",
       "source": "env",
       "status": "not_modelled",
@@ -11319,11 +13046,66 @@
       }
     },
     {
+      "name": "SGLANG_UNIBOOST_ALPHA_US_PER_TOKEN",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_UOCR_ASYNC_SHM_MAX_MB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_UOCR_CROP_PREFETCH_MAX_MB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_UOCR_DOC_PREFETCH_MAX_MB",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_USAGE_HEADER_PREFIX",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -11429,17 +13211,6 @@
       }
     },
     {
-      "name": "SGLANG_USE_BREAKABLE_CUDA_GRAPH",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2344"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "SGLANG_USE_CPU_ENGINE",
       "source": "env",
       "status": "not_modelled",
@@ -11451,11 +13222,11 @@
       }
     },
     {
-      "name": "SGLANG_USE_CUDA_IPC_TRANSPORT",
+      "name": "SGLANG_USE_CUDA_MXFP4_DECODE_MOE",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -11511,6 +13282,28 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_USE_HIP_K3_FLYDSL_SOURCE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_USE_HIP_K3_KDA_FUSED_BACKEND",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -11616,7 +13409,29 @@
       }
     },
     {
-      "name": "SGLANG_USE_TRITON_ROUTER_SUM",
+      "name": "SGLANG_USE_TLX_BOUNDARY_NORM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_USE_TLX_GEMM",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_USE_TLX_ROUTER_GEMM",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -11682,6 +13497,17 @@
       }
     },
     {
+      "name": "SGLANG_WAITING_PREFIX_REFRESH_BOOTSTRAP_MAX",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "SGLANG_WAIT_PORT_TIMEOUT",
       "source": "env",
       "status": "not_modelled",
@@ -11694,6 +13520,17 @@
     },
     {
       "name": "SGLANG_WAIT_WEIGHTS_READY_TIMEOUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "SGLANG_WARMUP_BF16_GEMM_MAX_M",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -11727,17 +13564,6 @@
     },
     {
       "name": "SGLANG_WEIGHT_CACHE_SOCKET_TEMPLATE",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGLANG_XPU_LN_MOD_NUM_WARPS",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -11782,17 +13608,6 @@
     },
     {
       "name": "SGLANG_ZMQ_SOURCE_IP",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SGL_FORCE_SHUTDOWN",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -11902,28 +13717,6 @@
       }
     },
     {
-      "name": "SGL_MM_RS_THREADS",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "SYNC_TOKEN_IDS_ACROSS_TP",
-      "source": "env",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "TENSOR_DUMP_LAYERS_MODULE_NAME",
       "source": "env",
       "status": "not_modelled",
@@ -11979,6 +13772,83 @@
       }
     },
     {
+      "name": "TLX_GFX950_TILE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TLX_TMP_RAGGED_MAIN_MAPPING",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TLX_TMP_RAGGED_MAIN_XCDS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TLX_TMP_RAGGED_TAIL_TILE",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TLX_TMP_RAGGED_TAIL_WARP_GRID",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TLX_TMP_STREAMK_GROUP_M",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TLX_TMP_STREAMK_NUM_XCDS",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "TMPDIR",
       "source": "env",
       "status": "not_modelled",
@@ -12012,6 +13882,28 @@
       }
     },
     {
+      "name": "TORCH_BLAS_PREFER_HIPBLASLT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TORCH_DISTRIBUTED_DEFAULT_TIMEOUT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "TORCH_EXTENSIONS_DIR",
       "source": "env",
       "status": "not_modelled",
@@ -12023,7 +13915,40 @@
       }
     },
     {
+      "name": "TORCH_SYMM_MEM_DISABLE_MULTICAST",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "TRITON_CACHE_DIR",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TRITON_COMPILE_IQ_COLLECT",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "TRITON_DUMP_TLX_BENCHMARK",
       "source": "env",
       "status": "not_modelled",
       "evidence": {
@@ -12298,6 +14223,17 @@
       }
     },
     {
+      "name": "VISUAL",
+      "source": "env",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "WAVE_DUMP_MLIR",
       "source": "env",
       "status": "not_modelled",
@@ -12384,13 +14320,6 @@
           "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "boolean",
-        "covered": [
-          "false",
-          "true"
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -12417,15 +14346,19 @@
           "core/sched/testdata/golden-sched/truncate-loose.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "boolean",
-        "covered": [
-          "false",
-          "true"
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "allow_local_media_files",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -12480,46 +14413,6 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
-        ]
-      },
-      "value_classes": {
-        "type": "enumerated",
-        "values": [
-          "triton",
-          "torch_native",
-          "flex_attention",
-          "dsa",
-          "nsa",
-          "qsa",
-          "dsv4",
-          "compressed",
-          "fa3",
-          "fa4",
-          "flashinfer",
-          "llada2_cfg_flashinfer",
-          "flashmla",
-          "trtllm_mla",
-          "cutedsl_mla",
-          "tokenspeed_mla",
-          "trtllm_mha",
-          "hpc_ops",
-          "minicpm_flashattn",
-          "minicpm_flashinfer",
-          "aiter",
-          "wave",
-          "intel_amx",
-          "ascend",
-          "intel_xpu"
-        ],
-        "covered": [
-          "dsa",
-          "dsv4",
-          "fa3",
-          "flashinfer",
-          "nsa",
-          "triton",
-          "trtllm_mha",
-          "trtllm_mla"
         ]
       },
       "estimation": {
@@ -12679,29 +14572,6 @@
           "core/sched/testdata/golden-sched/chunked-retract.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "numeric",
-        "thresholds": [
-          {
-            "value": -1,
-            "closed": "above"
-          },
-          {
-            "value": 0,
-            "closed": "above"
-          },
-          {
-            "value": 1,
-            "closed": "above"
-          }
-        ],
-        "covered_classes": [
-          0,
-          1,
-          2,
-          3
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -12771,14 +14641,19 @@
           "lower/testdata/sglang_lower.json"
         ]
       },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "cp_kv_layout",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -12879,12 +14754,6 @@
           "lower/testdata/sglang_lower.json"
         ]
       },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -12906,6 +14775,28 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "cuda_graph_persistence",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "cuda_graph_persistence_config",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
       },
       "estimation": {
         "rule": "none"
@@ -13041,14 +14932,19 @@
           "core/metrics/testdata/golden-metrics/k-chunked-retract.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
+      }
+    },
+    {
+      "name": "decode_state_free_radix_default",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2366"
+      },
+      "estimation": {
+        "rule": "none"
       }
     },
     {
@@ -13305,17 +15201,6 @@
       }
     },
     {
-      "name": "disable_fast_image_processor",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "disable_flashinfer_autotune",
       "source": "config",
       "status": "not_modelled",
@@ -13349,7 +15234,18 @@
       }
     },
     {
-      "name": "disable_outlines_disk_cache",
+      "name": "disable_multimodal",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "disable_normalize_embedding",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
@@ -13391,12 +15287,6 @@
           "oracle/scenarios-sched/priority-fcfs-no-preempt.json"
         ]
       },
-      "value_classes": {
-        "type": "boolean",
-        "covered": [
-          "true"
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -13410,13 +15300,6 @@
           "config/testdata/serverargs.json",
           "oracle/scenarios-sched/chunked-retract.json",
           "oracle/scenarios-sched/nocache-fcfs.json"
-        ]
-      },
-      "value_classes": {
-        "type": "boolean",
-        "covered": [
-          "false",
-          "true"
         ]
       },
       "estimation": {
@@ -13556,6 +15439,17 @@
       }
     },
     {
+      "name": "disaggregation_max_top_logprobs_num",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "disaggregation_mode",
       "source": "config",
       "status": "not_modelled",
@@ -13651,23 +15545,6 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
-        ]
-      },
-      "value_classes": {
-        "type": "numeric",
-        "thresholds": [
-          {
-            "value": 1,
-            "closed": "above"
-          },
-          {
-            "value": 2,
-            "closed": "above"
-          }
-        ],
-        "covered_classes": [
-          1,
-          2
         ]
       },
       "estimation": {
@@ -14025,17 +15902,6 @@
       }
     },
     {
-      "name": "enable_dp_attention",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2356"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "enable_dp_attention_local_control_broadcast",
       "source": "config",
       "status": "not_modelled",
@@ -14074,6 +15940,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "enable_dsa_fp4_indexer",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -14146,24 +16023,14 @@
       }
     },
     {
-      "name": "enable_flashinfer_allreduce_fusion",
+      "name": "enable_flashmla_prefill_token_packing",
       "source": "config",
-      "status": "modelled",
+      "status": "not_modelled",
       "evidence": {
-        "traces": [
-          "config/testdata/serverargs.json",
-          "lower/testdata/sglang_lower.json"
-        ]
-      },
-      "value_classes": {
-        "type": "boolean",
-        "covered": [
-          "false",
-          "true"
-        ]
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
-        "rule": "leave_unset"
+        "rule": "none"
       }
     },
     {
@@ -14194,6 +16061,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "enable_fp4_indexer",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -14585,17 +16463,6 @@
       }
     },
     {
-      "name": "enable_pdmux",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2455"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
       "name": "enable_precise_embedding_interpolation",
       "source": "config",
       "status": "not_modelled",
@@ -14629,6 +16496,17 @@
       }
     },
     {
+      "name": "enable_prefill_weight_versions",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "enable_prefix_mm_cache",
       "source": "config",
       "status": "not_modelled",
@@ -14647,13 +16525,6 @@
         "traces": [
           "core/sched/testdata/golden-sched/chunked-retract.trace.json",
           "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
-        ]
-      },
-      "value_classes": {
-        "type": "boolean",
-        "covered": [
-          "false",
-          "true"
         ]
       },
       "estimation": {
@@ -14866,6 +16737,17 @@
       }
     },
     {
+      "name": "enable_token_space_processor",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "enable_tokenizer_batch_encode",
       "source": "config",
       "status": "not_modelled",
@@ -14937,6 +16819,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2357"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "enable_uniboost_gamma_ada",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2451"
       },
       "estimation": {
         "rule": "none"
@@ -15091,6 +16984,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "engram_config",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
       },
       "estimation": {
         "rule": "none"
@@ -15474,6 +17378,17 @@
       }
     },
     {
+      "name": "gc_freeze_on_idle_secs",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "gc_threshold",
       "source": "config",
       "status": "not_modelled",
@@ -15672,6 +17587,39 @@
       }
     },
     {
+      "name": "hicache_storage_head_partition",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "hicache_storage_key_scheme",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "hicache_storage_layer_partition",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "hicache_storage_prefetch_policy",
       "source": "config",
       "status": "not_modelled",
@@ -15760,6 +17708,17 @@
       }
     },
     {
+      "name": "hybrid_cache_checkpoints_level",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2366"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "image_processor_backend",
       "source": "config",
       "status": "not_modelled",
@@ -15776,6 +17735,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "indexer_kv_cache_dtype",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -15816,6 +17786,17 @@
     },
     {
       "name": "json_model_override_args",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "kda_dwdp_size",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
@@ -15901,26 +17882,6 @@
           "lower/testdata/sglang_lower.json"
         ]
       },
-      "value_classes": {
-        "type": "enumerated",
-        "values": [
-          "auto",
-          "fp8_e5m2",
-          "fp8_e4m3",
-          "mxfp8",
-          "bf16",
-          "bfloat16",
-          "nvfp4",
-          "fp4_mx_block16"
-        ],
-        "covered": [
-          "auto",
-          "bf16",
-          "bfloat16",
-          "fp8_e4m3",
-          "fp8_e5m2"
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -15986,6 +17947,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2455"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "layernorm_sp_min_tokens",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -16179,6 +18151,17 @@
       }
     },
     {
+      "name": "log_schedule_decisions",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2451"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "lora_backend",
       "source": "config",
       "status": "not_modelled",
@@ -16320,19 +18303,6 @@
           "lower/testdata/sglang_lower.json"
         ]
       },
-      "value_classes": {
-        "type": "enumerated",
-        "values": [
-          "float32",
-          "bfloat16",
-          "float16"
-        ],
-        "covered": [
-          "bfloat16",
-          "float16",
-          "float32"
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -16425,12 +18395,6 @@
           "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -16446,12 +18410,6 @@
           "core/sched/testdata/golden-sched/queue-limit-heavy.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -16464,28 +18422,6 @@
         "traces": [
           "config/testdata/serverargs.json",
           "core/sched/testdata/golden-sched/chunked-retract.trace.json"
-        ]
-      },
-      "value_classes": {
-        "type": "numeric",
-        "thresholds": [
-          {
-            "value": 1,
-            "closed": "above"
-          },
-          {
-            "value": 400,
-            "closed": "above"
-          },
-          {
-            "value": 513,
-            "closed": "above"
-          }
-        ],
-        "covered_classes": [
-          0,
-          1,
-          2
         ]
       },
       "estimation": {
@@ -16515,18 +18451,23 @@
       }
     },
     {
+      "name": "media_url_timeout",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "mem_fraction_static",
       "source": "config",
       "status": "modelled",
       "evidence": {
         "traces": [
           "config/testdata/serverargs.json"
-        ]
-      },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
         ]
       },
       "estimation": {
@@ -16707,12 +18648,6 @@
           "config/testdata/serverargs.json"
         ]
       },
-      "value_classes": {
-        "type": "enumerated",
-        "covered": [
-          "<model>"
-        ]
-      },
       "estimation": {
         "rule": "none"
       }
@@ -16778,6 +18713,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2357"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "moe_ascend_ops_config",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -17022,22 +18968,33 @@
       }
     },
     {
-      "name": "paged_experts_num_resident",
+      "name": "paged_experts_enable_disk",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2344"
+        "issue": "inference-sim/inference-sim#2449"
       },
       "estimation": {
         "rule": "none"
       }
     },
     {
-      "name": "pdmux_config_path",
+      "name": "paged_experts_host_memory_gb",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2455"
+        "issue": "inference-sim/inference-sim#2449"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "paged_experts_num_resident",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2344"
       },
       "estimation": {
         "rule": "none"
@@ -17117,22 +19074,6 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
-        ]
-      },
-      "value_classes": {
-        "type": "numeric",
-        "thresholds": [
-          {
-            "value": 1,
-            "closed": "above"
-          },
-          {
-            "value": 2,
-            "closed": "above"
-          }
-        ],
-        "covered_classes": [
-          1
         ]
       },
       "estimation": {
@@ -17282,12 +19223,6 @@
           "core/sched/testdata/golden-sched/prefill-max-nocache.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -17313,12 +19248,6 @@
           "core/sched/testdata/golden-sched/priority-fcfs.trace.json",
           "core/sched/testdata/golden-sched/priority-heavy.trace.json",
           "core/sched/testdata/golden-sched/priority-threshold.trace.json"
-        ]
-      },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
         ]
       },
       "estimation": {
@@ -17355,47 +19284,6 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
-        ]
-      },
-      "value_classes": {
-        "type": "enumerated",
-        "values": [
-          "awq",
-          "fp8",
-          "mxfp8",
-          "gptq",
-          "gptq_marlin",
-          "awq_marlin",
-          "bitsandbytes",
-          "gguf",
-          "modelopt",
-          "modelopt_fp8",
-          "modelopt_fp4",
-          "nvfp4_online",
-          "modelopt_mixed",
-          "petit_nvfp4",
-          "w8a8_int8",
-          "w8a8_fp8",
-          "moe_wna16",
-          "w4afp8",
-          "mxfp4",
-          "auto-round",
-          "auto-round-int8",
-          "compressed-tensors",
-          "modelslim",
-          "mxfp_w4a8",
-          "quark",
-          "quark_int4fp8_moe",
-          "quark_mxfp4",
-          "mlx_q4",
-          "mlx_q8",
-          "unquant",
-          "humming"
-        ],
-        "covered": [
-          "fp8",
-          "modelopt_fp4",
-          "modelopt_mixed"
         ]
       },
       "estimation": {
@@ -17545,17 +19433,6 @@
           "core/sched/testdata/golden-sched/retract-priority-lof.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "enumerated",
-        "values": [
-          "length",
-          "priority"
-        ],
-        "covered": [
-          "length",
-          "priority"
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -17703,13 +19580,6 @@
           "core/sched/testdata/golden-sched/priority-low-first.trace.json"
         ]
       },
-      "value_classes": {
-        "type": "boolean",
-        "covered": [
-          "false",
-          "true"
-        ]
-      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -17728,30 +19598,6 @@
           "core/sched/testdata/golden-sched/heavy-spf.trace.json",
           "core/sched/testdata/golden-sched/random-a.trace.json",
           "core/sched/testdata/golden-sched/routing-a.trace.json"
-        ]
-      },
-      "value_classes": {
-        "type": "enumerated",
-        "values": [
-          "lpm",
-          "random",
-          "fcfs",
-          "dfs-weight",
-          "lof",
-          "priority",
-          "routing-key",
-          "hrrn",
-          "shortest-prefill-first"
-        ],
-        "covered": [
-          "dfs-weight",
-          "fcfs",
-          "hrrn",
-          "lof",
-          "lpm",
-          "random",
-          "routing-key",
-          "shortest-prefill-first"
         ]
       },
       "estimation": {
@@ -17792,11 +19638,55 @@
       }
     },
     {
-      "name": "show_time_cost",
+      "name": "shortest_prefill_aging_factor",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
+        "issue": "inference-sim/inference-sim#2451"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "shortest_prefill_boundary_decay_start_chunks",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2451"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "shortest_prefill_boundary_halving_chunks",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2451"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "shortest_prefill_budget_doubling_chunks",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2451"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "shortest_prefill_budget_min_ratio",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2451"
       },
       "estimation": {
         "rule": "none"
@@ -17852,39 +19742,6 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2344"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "sm_group_num",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2455"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "smg_grpc_mode",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "smg_http_sidecar_port",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -17995,6 +19852,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2355"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_dflash_draft_kv_ring",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
       },
       "estimation": {
         "rule": "none"
@@ -18134,6 +20002,17 @@
     },
     {
       "name": "speculative_dspark_confidence_sts_path",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2454"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "speculative_dspark_lm_head_dtype",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
@@ -18414,12 +20293,6 @@
       "evidence": {
         "proof": "oracle/inertness/stream_interval.json"
       },
-      "value_classes": {
-        "type": "numeric",
-        "covered_classes": [
-          0
-        ]
-      },
       "estimation": {
         "rule": "none"
       }
@@ -18588,41 +20461,6 @@
           "lower/testdata/sglang_lower.json"
         ]
       },
-      "value_classes": {
-        "type": "numeric",
-        "thresholds": [
-          {
-            "value": 1,
-            "closed": "above"
-          },
-          {
-            "value": 2,
-            "closed": "above"
-          },
-          {
-            "value": 3,
-            "closed": "above"
-          },
-          {
-            "value": 4,
-            "closed": "above"
-          },
-          {
-            "value": 5,
-            "closed": "above"
-          },
-          {
-            "value": 9,
-            "closed": "above"
-          }
-        ],
-        "covered_classes": [
-          1,
-          2,
-          4,
-          5
-        ]
-      },
       "estimation": {
         "rule": "none"
       }
@@ -18640,17 +20478,6 @@
     },
     {
       "name": "triton_attention_num_kv_splits",
-      "source": "config",
-      "status": "not_modelled",
-      "evidence": {
-        "issue": "inference-sim/inference-sim#2344"
-      },
-      "estimation": {
-        "rule": "none"
-      }
-    },
-    {
-      "name": "triton_attention_reduce_in_fp32",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
@@ -18705,6 +20532,17 @@
       }
     },
     {
+      "name": "uniboost_gamma",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2451"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "unified_cache_external_linker_backend",
       "source": "config",
       "status": "not_modelled",
@@ -18732,6 +20570,39 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "uocr_doc_page_window",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "uocr_doc_split",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "uocr_max_page_tokens",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
       },
       "estimation": {
         "rule": "none"
@@ -18793,7 +20664,29 @@
       }
     },
     {
+      "name": "watermark_algorithm",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "watermark_config",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "watermark_context_history_size",
       "source": "config",
       "status": "not_modelled",
       "evidence": {
@@ -18859,6 +20752,17 @@
       }
     },
     {
+      "name": "watermark_keys",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
       "name": "watermark_max_probability",
       "source": "config",
       "status": "not_modelled",
@@ -18875,6 +20779,39 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "watermark_ngram_len",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "watermark_num_candidates",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2460"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "watermark_skip_first_ngram_calls",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2456"
       },
       "estimation": {
         "rule": "none"
@@ -18908,6 +20845,17 @@
       "status": "not_modelled",
       "evidence": {
         "issue": "inference-sim/inference-sim#2344"
+      },
+      "estimation": {
+        "rule": "none"
+      }
+    },
+    {
+      "name": "weight_cache_transport",
+      "source": "config",
+      "status": "not_modelled",
+      "evidence": {
+        "issue": "inference-sim/inference-sim#2449"
       },
       "estimation": {
         "rule": "none"
