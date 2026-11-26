@@ -1787,6 +1787,10 @@ MOE_FAMILIES: dict[str, dict[str, Any]] = {
     # HYV3MoE (hy_v3.py@0fda86a35419): a ReplicatedLinear gate in float32, one gated-SiLU shared
     # expert of the routed expert's width (num_shared_experts 1).
     "HYV3ForCausalLM": {"router": "fp32", "shared": "gated"},
+    # Glm4MoE (vllm/model_executor/models/glm4_moe.py@v0.33.0:141-147, 165-181): a GateLinear with
+    # params_dtype and out_dtype float32, and n_shared_experts Glm4MoeMLPs of width
+    # moe_intermediate_size (a gated SiLU MLP, folded into one MLP of n_shared x that width).
+    "Glm4MoeForCausalLM": {"router": "fp32", "shared": "gated"},
     # MiMoV2MoE (mimo_v2.py@0fda86a35419): a ReplicatedLinear gate at moe_router_dtype (handler_mimo_v2
     # states it), and no shared expert (n_shared_experts is null).
     "MiMoV2ForCausalLM": {"router": "base", "shared": "gated"},
@@ -1979,12 +1983,14 @@ DENSE_DRAFT_KIND_ID = "mtp_dense"
 
 # The architectures whose MTP layer is DeepSeekMultiTokenPredictorLayer's, with an enorm, an hnorm
 # and an eh_proj ahead of its decoder block (see handler_moe's declare_draft).
-DEEPSEEK_MTP_ARCHS = frozenset({"DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM", "HYV3ForCausalLM"})
+DEEPSEEK_MTP_ARCHS = frozenset({"DeepseekV3ForCausalLM", "GlmMoeDsaForCausalLM", "HYV3ForCausalLM",
+                                "Glm4MoeForCausalLM"})
 
 # The MTP layers that end in a norm of their own before the head: HYV3MultiTokenPredictorLayer's
 # final_layernorm, applied to the decoder block's output (vllm/model_executor/models/hy_v3_mtp.py
-# @0fda86a35419:111-138).
-MTP_FINAL_NORM_ARCHS = frozenset({"HYV3ForCausalLM"})
+# @0fda86a35419:111-138), and Glm4MoeMultiTokenPredictorLayer's shared_head.norm
+# (vllm/model_executor/models/glm4_moe_mtp.py@v0.33.0:60-80, 117-124).
+MTP_FINAL_NORM_ARCHS = frozenset({"HYV3ForCausalLM", "Glm4MoeForCausalLM"})
 
 
 # Architectures whose head width this deriver reads from the fp8 exclusion list. Keyed
@@ -2026,6 +2032,9 @@ HEAD_AT_BASE_ARCHS = frozenset({
 NODE_BIAS_ROLES = {
     "GptOssForCausalLM": {"qkv_proj": "attention_bias", "o_proj": "attention_bias",
                           "router": None, "experts": None},
+    # GLM-4.6: Glm4MoeAttention builds qkv_proj with bias=config.attention_bias and o_proj with
+    # bias=False (glm4_moe.py@v0.33.0:263-277).
+    "Glm4MoeForCausalLM": {"qkv_proj": "attention_bias"},
 }
 
 
@@ -8911,6 +8920,11 @@ HANDLERS = {
     # norm, a dense first layer (first_k_dense_replace) and sparse layers with one shared expert;
     # the same layout handler_moe prices, with MOE_FAMILIES stating its fp32 router.
     "HYV3ForCausalLM": handler_moe,
+    # Glm4MoeDecoderLayer (vllm/model_executor/models/glm4_moe.py@v0.33.0:321-400): GQA with a
+    # per-head q/k norm and a qkv bias, a dense MLP on the first first_k_dense_replace layers,
+    # and Glm4MoE (one shared expert, fp32 router) after; the MTP layer is a Glm4MoeDecoderLayer
+    # at index num_hidden_layers behind enorm, hnorm and eh_proj (glm4_moe_mtp.py).
+    "Glm4MoeForCausalLM": handler_moe,
     "MiMoV2ForCausalLM": handler_mimo_v2,
 }
 
@@ -10004,6 +10018,7 @@ MTP_ARCHS = frozenset({
     "MiniMaxM3SparseForCausalLM",
     "HYV3ForCausalLM",
     "MiMoV2ForCausalLM",
+    "Glm4MoeForCausalLM",
 })
 
 

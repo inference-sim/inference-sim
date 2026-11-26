@@ -1,0 +1,12 @@
+name: glm-4.6
+source:
+  provider: huggingface
+  repo: zai-org/GLM-4.6
+  revision: be72194883d968d7923a07e2f61681ea9a2826d1
+  retrieved: 2026-11-26
+licence:
+  id: MIT
+  evidence: https://huggingface.co/zai-org/GLM-4.6/raw/be72194883d968d7923a07e2f61681ea9a2826d1/README.md
+config:
+  sha256: f713924a536ac1965d8af2a3144d3a0ce0acae94f0fbfd7407240cbafcb08c53
+drafters: [speculator]

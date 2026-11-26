@@ -11024,3 +11024,82 @@ def test_nemotron_h_one_layer_storing_its_experts_at_two_widths_is_refused(tmp_p
 
     with pytest.raises(deriver().DeriveError, match="fuses shards|cannot price both"):
         _derive_raw(_nemotron_ragged_raw(edit), tmp_path, "nemotron-ragged-test")
+# --- Glm4MoeForCausalLM (zai-org/GLM-4.6) ------------------------------------------------------
+
+def _glm4_moe_cfg(**over) -> dict:
+    """A small Glm4MoeForCausalLM config with GLM-4.6's structure: GQA with a qkv bias and a per-head
+    q/k norm, 2 dense layers then routed layers with one shared expert, one MTP layer."""
+    cfg = {
+        "architectures": ["Glm4MoeForCausalLM"], "model_type": "glm4_moe", "torch_dtype": "bfloat16",
+        "attention_bias": True, "use_qk_norm": True, "partial_rotary_factor": 0.5,
+        "head_dim": 64, "hidden_size": 512, "intermediate_size": 1536, "moe_intermediate_size": 256,
+        "num_attention_heads": 12, "num_key_value_heads": 4, "num_hidden_layers": 6,
+        "first_k_dense_replace": 2, "n_routed_experts": 16, "n_shared_experts": 1,
+        "num_experts_per_tok": 4, "num_nextn_predict_layers": 1, "vocab_size": 1000,
+        "tie_word_embeddings": False, "hidden_act": "silu", "n_group": 1, "topk_group": 1,
+    }
+    cfg.update(over)
+    return cfg
+
+
+def test_glm4_moe_stack_is_a_dense_prologue_then_routed_layers(tmp_path):
+    g = _derive_raw(_glm4_moe_cfg(), tmp_path, "glm4-test")
+    assert layer_sequence(g["stack"]) == ["attn_dense"] * 2 + ["attn_moe"] * 4
+    dense, moe = _kind(g, "attn_dense"), _kind(g, "attn_moe")
+    gu, dn = _node(dense, "mlp_gate_up"), _node(dense, "mlp_down")
+    assert (gu["n"], gu["k"], dn["n"], dn["k"]) == (2 * 1536, 512, 512, 1536)
+    ex, r = _node(moe, "experts"), _node(moe, "router")
+    assert (ex["n"], ex["k"], ex["experts"], ex["top_k"]) == (256, 512, 16, 4)
+    assert (r["n"], r["k"], r["weight_dtype"], r["tp"]) == (16, 512, "fp32", "replicated")
+    # One shared expert of the routed width (Glm4MoE: moe_intermediate_size x n_shared_experts).
+    assert (_node(moe, "shared_gate_up")["n"], _node(moe, "shared_down")["k"]) == (2 * 256, 256)
+
+
+def test_glm4_moe_qkv_carries_a_bias_and_o_proj_does_not(tmp_path):
+    g = _derive_raw(_glm4_moe_cfg(), tmp_path, "glm4-test")
+    for kid in ("attn_dense", "attn_moe"):
+        k = _kind(g, kid)
+        qkv, o = _node(k, "qkv_proj"), _node(k, "o_proj")
+        assert (qkv["n"], qkv["k"], qkv["bias_dtype"]) == ((12 + 2 * 4) * 64, 512, "bf16")
+        assert (o["n"], o["k"]) == (512, 12 * 64) and "bias_dtype" not in o
+    g = _derive_raw(_glm4_moe_cfg(attention_bias=False), tmp_path, "glm4-test")
+    assert "bias_dtype" not in _node(_kind(g, "attn_moe"), "qkv_proj")
+
+
+def test_glm4_moe_mtp_layer_is_a_routed_layer_behind_the_deepseek_input_stage(tmp_path):
+    """Glm4MoeMultiTokenPredictorLayer: enorm, hnorm, a bf16 eh_proj over 2 x hidden, a
+    Glm4MoeDecoderLayer at index num_hidden_layers (routed, as 6 >= first_k_dense_replace), then the
+    shared head's norm."""
+    g = _derive_raw(_glm4_moe_cfg(), tmp_path, "glm4-test")
+    s = g["speculator"]
+    assert (s["method"], s["num_spec_tokens"]) == ("mtp", 1)
+    assert layer_sequence(s["stack"]) == ["mtp_moe"]
+    k = _kind(g, "mtp_moe")
+    roles = _roles(k)
+    assert roles[:3] == ["mtp_enorm", "mtp_hnorm", "mtp_eh_proj"]
+    assert roles[-1] == "mtp_final_norm" and "experts" in roles
+    eh = _node(k, "mtp_eh_proj")
+    assert (eh["n"], eh["k"], eh["weight_dtype"], eh["tp"]) == (512, 1024, "bf16", "replicated")
+
+
+def test_glm4_moe_refuses_a_config_that_names_no_routed_experts(tmp_path):
+    sys.path.insert(0, str(DERIVER.parent))
+    import derive_graph
+    raw = _glm4_moe_cfg()
+    del raw["n_routed_experts"]
+    with pytest.raises(derive_graph.DeriveError):
+        _derive_raw(raw, tmp_path, "glm4-test")
+
+
+def test_glm_4_6_committed_graph_is_the_checkpoints():
+    """The committed graph of zai-org/GLM-4.6 (config pinned by hash): 92 layers, 3 dense then 89
+    routed, 96 query and 8 key/value heads of 128, 160 routed experts of 1536 top 8 and one shared
+    expert; widths agree with the checkpoint's safetensors headers (q_proj [12288, 5120], k_proj
+    [1024, 5120], o_proj [5120, 12288], mlp.gate [160, 5120], eh_proj [5120, 10240])."""
+    g = graph_of(MODELS / "glm-4.6")
+    assert g["global"]["weight_dtype"] == "bf16" and g["global"]["vocab_size"] == 151552
+    assert layer_sequence(g["stack"]) == ["attn_dense"] * 3 + ["attn_moe"] * 89
+    k = _kind(g, "attn_moe")
+    assert (_node(k, "qkv_proj")["n"], _node(k, "o_proj")["k"]) == (14336, 12288)
+    assert (_node(k, "router")["n"], _node(k, "experts")["experts"]) == (160, 160)
+    assert _node(_kind(g, "mtp_moe"), "mtp_eh_proj")["k"] == 10240
