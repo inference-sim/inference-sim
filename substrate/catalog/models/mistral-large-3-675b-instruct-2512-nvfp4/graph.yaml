@@ -10,7 +10,7 @@ global:
   vocab_size: 131072
   tie_word_embeddings: false
   weight_dtype: nvfp4
-  architecture: PixtralForConditionalGeneration
+  architecture: MistralLarge3ForCausalLM
   context_window: 294912
 layer_kinds:
 - id: attn_dense

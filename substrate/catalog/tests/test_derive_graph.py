@@ -339,7 +339,8 @@ def test_attention_shape_matches_config(d: Path):
             assert n["n_q"] == heads
             assert n["d_h"] == dim
             continue
-        assert n["n_q"] == t["num_attention_heads"]
+        if not (n["kind"] == "swa" and config_of(d).get("architectures") == ["InklingForConditionalGeneration"]):
+            assert n["n_q"] == t["num_attention_heads"]
         if n["kind"] in ("mla", "sparse_mla"):
             # A latent cache holds one vector per token whatever the config's KV head
             # count says, so the engine pins it to one.
@@ -349,6 +350,10 @@ def test_attention_shape_matches_config(d: Path):
             # Gemma 4's full-attention layers take num_global_key_value_heads where
             # attention_k_eq_v is set (transformers' per_layer_config, which vLLM reads).
             assert n["n_kv"] == t["num_global_key_value_heads"]
+        elif n["kind"] == "swa" and config_of(d).get("architectures") == ["InklingForConditionalGeneration"]:
+            # Inkling's window layers state their own head counts (transformers'
+            # modeling_inkling.py: swa_num_key_value_heads where a layer is sliding).
+            assert (n["n_q"], n["n_kv"]) == (t["swa_num_attention_heads"], t["swa_num_key_value_heads"])
         elif n["kind"] == "swa" and config_of(d).get("architectures") == ["MiMoV2ForCausalLM"]:
             # MiMo-V2's window layers state their own key/value head count (swa_num_key_value_heads);
             # num_key_value_heads is the full-attention layers' (mimo_v2.py MiMoV2DecoderLayer).
@@ -1688,6 +1693,12 @@ EXPECTED_IDENTICAL = {
     # signature reads.
     frozenset({"llama-2-70b-hf", "llama-3.1-70b-instruct"}):
         "identical compute shapes; they differ in vocab, context length and rope theta",
+    frozenset({"gemma-4-31b-it", "gemma-4-31b-it-fp8-dynamic"}):
+        "one architecture and one set of shapes at two stored widths. RedHatAI's FP8-dynamic "
+        "release quantizes every language-model linear (its compressed-tensors ignore list names "
+        "the vision tower, lm_head and the embeddings), which the graph states as the global "
+        "width, and this signature reads node widths only. "
+        "test_gemma_4_31b_fp8_dynamic_stores_the_linears_at_fp8 states the difference",
 }
 
 
@@ -6189,6 +6200,7 @@ BOUNDARY_BYTES = {
     "deepseek-v4.1-flash": 4 * 5120 * 2 + 4 * 4,
     # hidden_states alone (inkling/nvidia/model.py:294-296, 354-359@v0.32.0).
     "inkling": 6144 * 2,
+    "inkling-nvfp4": 6144 * 2,
 }
 
 
@@ -7240,7 +7252,8 @@ def test_the_graphs_that_state_a_scale_are_the_block_scaled_ones():
     block = {"elements": 16384, "bytes": 4}
     assert {n for n, sc in scaled.items() if sc == block} == {
         "deepseek-r1-0528", "deepseek-v3", "glm-5", "glm-5.1-fp8", "glm-5.2-fp8", "glm-5.3", "glm-5.3-flash",
-        "mimo-v2-flash", "minimax-m2.5", "minimax-m2.7", "mistral-large-4-1t-a52b", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
+        "longcat-flash-lite-fp8", "mimo-v2-flash", "minimax-m2.5", "minimax-m2.7",
+        "mistral-large-3-675b-instruct-2512", "mistral-large-4-1t-a52b", "qwen3.5-397b-a17b-fp8", "qwen3.8-flash-next-fp8"}
     assert {n for n, sc in scaled.items() if sc != block} == {
         "minimax-m3-mxfp8", "minimax-m3-nvfp4", "minimax-m3.1-flash", "minimax-m3.1-flash-dspark",
         "deepseek-v4.1-flash"}
@@ -11506,3 +11519,105 @@ def test_opt_350m_graph_is_the_checkpoints_shape():
     head = {n["role"]: n for n in g["head"]}
     assert (head["lm_head"]["n"], head["lm_head"]["k"]) == (50272, 512)
     assert g["global"]["weight_dtype"] == "fp16" and g["global"]["tie_word_embeddings"] is True
+
+
+def test_gemma_4_31b_fp8_dynamic_stores_the_linears_at_fp8():
+    """The FP8-dynamic release of Gemma-4-31B-it has the original's shapes, with the language
+    model's linears stored FP8 (per-channel scales) where the original stores bf16."""
+    bf16, fp8 = graph_of(MODELS / "gemma-4-31b-it"), graph_of(MODELS / "gemma-4-31b-it-fp8-dynamic")
+    assert (bf16["global"]["weight_dtype"], fp8["global"]["weight_dtype"]) == ("bf16", "fp8")
+    shapes = lambda g: [[(n["op"], n.get("n"), n.get("k")) for n in k["nodes"]] for k in g["layer_kinds"]]
+    assert shapes(bf16) == shapes(fp8)
+    # The head aliases the embedding table (a graph may not give an alias a width of its own), and
+    # the ignore list leaves the table bf16: its rows are hidden x 2 bytes.
+    table = next(n for n in fp8["embedding"] if n["role"] == "embed_tokens")
+    assert table["row_bytes"] == fp8["global"]["hidden_size"] * 2
+    assert next(n for n in fp8["head"] if n["role"] == "lm_head")["aliases"] == "embedding.embed_tokens"
+
+
+# --- Inkling: dense leading layers, sliding-window head geometry, and stored expert widths ---------
+# thinkingmachines/Inkling and Inkling-NVFP4 share one config.json. Its first dense_mlp_idx layers
+# have a dense MLP of dense_intermediate_size, a sliding-window layer reads swa_num_attention_heads
+# and swa_num_key_value_heads, and the NVFP4 checkpoint's ModelOpt block is in hf_quant_config.json,
+# not config.json, so only the shard headers say which layers store their experts at four bits.
+
+INKLING = MODELS / "inkling"
+INKLING_NVFP4 = MODELS / "inkling-nvfp4"
+
+
+def _inkling_nodes(g: dict, layer: int) -> dict:
+    kind = _kind_of(g, layer)
+    return {(n.get("role") or n["op"]): n for n in kind["nodes"]}
+
+
+def test_inkling_dense_layers_sliding_window_geometry_and_the_experts_are_priced_from_the_config():
+    g, t = graph_of(INKLING), text_config(config_of(INKLING))
+    dense = t["dense_mlp_idx"]
+    local = set(t["local_layer_ids"])
+    for layer in range(t["num_hidden_layers"]):
+        nodes = _inkling_nodes(g, layer)
+        if layer < dense:
+            assert "experts" not in nodes
+            assert nodes["mlp_gate_up"]["n"] == 2 * t["dense_intermediate_size"]
+            assert nodes["mlp_down"]["k"] == t["dense_intermediate_size"]
+        else:
+            assert nodes["experts"]["n"] == t["intermediate_size"] and "mlp_gate_up" not in nodes
+        attn = nodes["Attention"]
+        if layer in local:
+            assert (attn["n_q"], attn["n_kv"], attn["kind"]) == (
+                t["swa_num_attention_heads"], t["swa_num_key_value_heads"], "swa")
+        else:
+            assert (attn["n_q"], attn["n_kv"], attn["kind"]) == (
+                t["num_attention_heads"], t["num_key_value_heads"], "gqa")
+
+
+def test_inkling_nvfp4_experts_are_stored_at_the_width_the_headers_state(tmp_path):
+    """Headers that store layer 2's experts BF16 and every other sparse layer's U8 with an
+    F8_E4M3 scale per 16 values give that layer bf16 experts and the rest nvfp4, as the published
+    checkpoint is; a layer stored any other way, or a shape the config does not give, is refused."""
+    d = deriver()
+    t = text_config(config_of(INKLING_NVFP4))
+    E, hid, inner, layers, dense = (t["n_routed_experts"], t["hidden_size"], t["intermediate_size"],
+                                    t["num_hidden_layers"], t["dense_mlp_idx"])
+
+    def headers(bf16_layers=(2,), skew=None):
+        h = {}
+        for i in range(dense, layers):
+            pre = f"model.llm.layers.{i}.mlp.experts."
+            if i in bf16_layers:
+                h[pre + "w13_weight"] = {"dtype": "BF16", "shape": [E, hid, 2 * inner]}
+                h[pre + "w2_weight"] = {"dtype": "BF16", "shape": [E, hid, inner]}
+            else:
+                h[pre + "w13_weight"] = {"dtype": "U8", "shape": [E, hid, inner]}
+                h[pre + "w2_weight"] = {"dtype": "U8", "shape": [E, hid, inner // 2]}
+                h[pre + "w13_weight.scale"] = {"dtype": "F8_E4M3", "shape": [E, hid, 2 * inner // 16]}
+                h[pre + "w2_weight.scale"] = {"dtype": "F8_E4M3", "shape": [E, hid, inner // 16]}
+        if skew:
+            skew(h)
+        return h
+
+    def derived(h):
+        path = tmp_path / "config.json"
+        path.write_text(json.dumps(config_of(INKLING_NVFP4)))
+        return d.derive(path, "inkling-test", headers=h)
+
+    g = derived(headers())
+    widths = {layer: _inkling_nodes(g, layer)["experts"].get("weight_dtype", "bf16")
+              for layer in range(dense, layers)}
+    assert widths[2] == "bf16" and {w for i, w in widths.items() if i != 2} == {"nvfp4"}
+    assert [_inkling_nodes(g, i).get("experts") for i in range(dense)] == [None] * dense
+
+    def bad_layout(h):
+        h["model.llm.layers.5.mlp.experts.w13_weight"]["dtype"] = "F8_E4M3"
+    with pytest.raises(d.DeriveError, match="neither NVFP4 nor BF16"):
+        derived(headers(skew=bad_layout))
+
+    def bad_shape(h):
+        h["model.llm.layers.5.mlp.experts.w2_weight"]["shape"] = [E, hid, 1]
+    with pytest.raises(d.DeriveError, match="w2 is"):
+        derived(headers(skew=bad_shape))
+
+    def fp8_attention(h):
+        h["model.llm.layers.5.attn.wq_du.weight"] = {"dtype": "F8_E4M3", "shape": [1, 1]}
+    with pytest.raises(d.DeriveError, match="outside the routed experts"):
+        derived(headers(skew=fp8_attention))

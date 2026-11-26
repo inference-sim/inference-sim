@@ -8,35 +8,35 @@ Each cell is one model on one chip, over one fabric, in one serving mode, on one
 
 | | cells |
 |---|---|
-| cells | 3936 |
-| simulate | 2072 |
+| cells | 4512 |
+| simulate | 2372 |
 | refused, a limit (capacity or upstream) | 96 |
-| refused, a defect | 1768 |
+| refused, a defect | 2044 |
 
 ## By engine and chip
 
 | engine | chip | simulate | limit | defect |
 |---|---|---|---|---|
-| sglang | b200 | 34 | 16 | 278 |
-| sglang | b300 | 34 | 16 | 278 |
-| sglang | gb200-nvl72 | 34 | 16 | 278 |
-| sglang | gb300 | 34 | 16 | 278 |
-| sglang | h100 | 22 | 16 | 290 |
-| sglang | h200 | 22 | 12 | 294 |
-| vllm | b200 | 316 | 0 | 12 |
-| vllm | b300 | 316 | 0 | 12 |
-| vllm | gb200-nvl72 | 316 | 0 | 12 |
-| vllm | gb300 | 316 | 0 | 12 |
-| vllm | h100 | 312 | 4 | 12 |
-| vllm | h200 | 316 | 0 | 12 |
+| sglang | b200 | 36 | 16 | 324 |
+| sglang | b300 | 36 | 16 | 324 |
+| sglang | gb200-nvl72 | 36 | 16 | 324 |
+| sglang | gb300 | 36 | 16 | 324 |
+| sglang | h100 | 24 | 16 | 336 |
+| sglang | h200 | 24 | 12 | 340 |
+| vllm | b200 | 364 | 0 | 12 |
+| vllm | b300 | 364 | 0 | 12 |
+| vllm | gb200-nvl72 | 364 | 0 | 12 |
+| vllm | gb300 | 364 | 0 | 12 |
+| vllm | h100 | 360 | 4 | 12 |
+| vllm | h200 | 364 | 0 | 12 |
 
 ## Defects, by issue
 
 | issue | cause | cells | models |
 |---|---|---|---|
-| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1276 | 60 |
+| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1540 | 71 |
 | inference-sim/inference-sim#2346 | the SGLang engine does not lower this architecture, chip or setting | 24 | 2 |
-| inference-sim/inference-sim#2351 | the SGLang engine does not model prefill/decode disaggregation | 204 | 19 |
+| inference-sim/inference-sim#2351 | the SGLang engine does not model prefill/decode disaggregation | 216 | 20 |
 | inference-sim/inference-sim#2366 | the SGLang engine does not lower this architecture, chip or setting | 120 | 5 |
 | inference-sim/inference-sim#2489 | sparse MLA attention beside recurrent layers is not mapped | 48 | 2 |
 | inference-sim/inference-sim#2650 | the SGLang engine does not lower this architecture, chip or setting | 96 | 8 |
@@ -49,9 +49,9 @@ The share of the prices a cell's pools hold that each method supplies, summed ov
 
 | chip | measured | calibrated | transferred | literature | vendor_spec | roofline | assumed | not_charged |
 |---|---|---|---|---|---|---|---|---|
-| h100 | 65.0% | 0.0% | 0.3% | 0.3% | 8.0% | 0.0% | 25.9% | 0.6% |
-| h200 | 64.1% | 0.0% | 1.5% | 0.3% | 8.1% | 0.0% | 25.3% | 0.6% |
-| b200 | 62.3% | 0.0% | 2.3% | 0.3% | 7.9% | 0.0% | 26.7% | 0.6% |
-| b300 | 63.8% | 0.0% | 0.0% | 0.0% | 8.1% | 0.0% | 27.5% | 0.6% |
-| gb200-nvl72 | 73.9% | 0.0% | 3.5% | 0.3% | 8.1% | 0.0% | 13.6% | 0.6% |
-| gb300 | 55.4% | 0.0% | 0.0% | 0.0% | 8.3% | 0.0% | 35.6% | 0.6% |
+| h100 | 65.0% | 0.0% | 0.3% | 0.3% | 8.0% | 0.0% | 25.8% | 0.6% |
+| h200 | 64.2% | 0.0% | 1.5% | 0.3% | 8.2% | 0.0% | 25.2% | 0.6% |
+| b200 | 62.3% | 0.0% | 2.3% | 0.3% | 7.9% | 0.0% | 26.6% | 0.6% |
+| b300 | 63.8% | 0.0% | 0.0% | 0.0% | 8.1% | 0.0% | 27.4% | 0.6% |
+| gb200-nvl72 | 74.0% | 0.0% | 3.5% | 0.3% | 8.2% | 0.0% | 13.5% | 0.6% |
+| gb300 | 55.5% | 0.0% | 0.0% | 0.0% | 8.3% | 0.0% | 35.6% | 0.6% |

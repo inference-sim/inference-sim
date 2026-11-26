@@ -2851,6 +2851,95 @@ def handler_dense_placed(cfg, raw, model):
     return modelopt_placed(handler_dense(cfg, raw, model), raw, model)
 
 
+def inkling_expert_widths(cfg: dict[str, Any], model: str, layers: int, first_sparse: int) -> list[str | None]:
+    """The stored width of every sparse layer's routed experts (None for a dense layer), read
+    from the pinned headers when the entry pins them (SUB-15), else the base width.
+
+    Inkling-NVFP4's config.json states no quantization (its ModelOpt block is in
+    hf_quant_config.json, which the engine reads and this deriver does not), so the tensors say.
+    An NVFP4 expert weight is U8, two values a byte, with an F8_E4M3 `.scale` of one column per
+    16 values; a BF16 one is the layer ModelOpt's exclusion list leaves out (layer 2 of the
+    published checkpoint). Every other weight the headers hold must be BF16, the width the nodes
+    outside the experts are priced at; another layout is refused, never guessed."""
+    if _HEADERS is None:
+        return [None if i < first_sparse else "base" for i in range(layers)]
+    hidden = int(require(cfg, "hidden_size", model))
+    experts = int(require(cfg, "num_experts", model))
+    inner = int(pick(cfg, "moe_ffn_size") or require(cfg, "ffn_size", model))
+    out: list[str | None] = []
+    for i in range(layers):
+        if i < first_sparse:
+            out.append(None)
+            continue
+        pre = f"model.llm.layers.{i}.mlp.experts."
+        w13, w2, s13, s2 = (_HEADERS.get(pre + k) for k in
+                            ("w13_weight", "w2_weight", "w13_weight.scale", "w2_weight.scale"))
+        if not (w13 and w2):
+            raise DeriveError(f"{model}: the pinned headers hold no expert weights for layer {i}")
+        if w13["dtype"] == "BF16" and w2["dtype"] == "BF16" and not (s13 or s2):
+            width, packed, group = "base", 1, None
+        elif (w13["dtype"], w2["dtype"]) == ("U8", "U8") and s13 and s2 \
+                and (s13["dtype"], s2["dtype"]) == ("F8_E4M3", "F8_E4M3"):
+            width, packed, group = "nvfp4", 2, 16
+        else:
+            raise DeriveError(f"{model}: layer {i} stores its experts as {w13['dtype']}/{w2['dtype']}"
+                              f"{' with scales' if s13 else ''}, neither NVFP4 nor BF16")
+        want = {"w13": (w13["shape"], [experts, hidden, 2 * inner // packed]),
+                "w2": (w2["shape"], [experts, hidden, inner // packed])}
+        if group:
+            want["w13 scale"] = (s13["shape"], [experts, hidden, 2 * inner // group])
+            want["w2 scale"] = (s2["shape"], [experts, hidden, inner // group])
+        for what, (got, expect) in want.items():
+            if got != expect:
+                raise DeriveError(f"{model}: layer {i} {what} is {got}, not {expect}")
+        out.append(width)
+    # Outside the routed experts every weight is BF16 (the attention, the router, the shared
+    # experts, the dense MLPs, the embeddings and the head): the nodes there take the base width.
+    for name, t in _HEADERS.items():
+        if t["dtype"] in ("BF16", "F32", "I64"):
+            continue
+        if not (".mlp.experts." in name and name.rsplit(".mlp.experts.", 1)[1].split(".")[0] in ("w13_weight", "w2_weight")):
+            raise DeriveError(f"{model}: {name} is stored {t['dtype']}, outside the routed experts "
+                              f"where every weight is BF16")
+    return out
+
+
+def inkling_layers(cfg, raw, model, layers, local, window, sparse_nodes, dense_nodes):
+    """Inkling's layer kinds and sequence: attention (sliding-window or full) then a dense or a
+    sparse MLP, the sparse one at the width its experts are stored.
+
+    The first `dense_mlp_idx` layers have a dense MLP of `dense_intermediate_size`, the rest a
+    routed one (transformers' InklingConfig, configuration_inkling.py:169-173 reads
+    dense_mlp_idx into mlp_layer_types and dense_intermediate_size into intermediate_size). A
+    sliding-window layer has its own head geometry, swa_num_attention_heads and
+    swa_num_key_value_heads (modeling_inkling.py:195@transformers main), where a full layer
+    reads num_attention_heads and num_key_value_heads."""
+    dense_n = int(cfg.get("dense_mlp_idx") or 0)
+    dense_ffn = cfg.get("dense_intermediate_size")
+    if dense_n and not dense_ffn:
+        raise DeriveError(f"{model}: dense_mlp_idx {dense_n} and no dense_intermediate_size")
+    swa = {"num_attention_heads": cfg.get("swa_num_attention_heads", cfg.get("num_attention_heads")),
+           "num_key_value_heads": cfg.get("swa_num_key_value_heads", cfg.get("num_key_value_heads")),
+           "head_dim": cfg.get("swa_head_dim", cfg.get("head_dim"))}
+    widths = inkling_expert_widths(cfg, model, layers, dense_n)
+    made, kinds, sequence = {}, [], []
+    for i in range(layers):
+        is_local = i in local
+        mlp = "dense" if i < dense_n else "moe"
+        width = widths[i] if widths[i] not in (None, "base") else None
+        kid = f"{'swa' if is_local else 'full'}_{mlp}" + (f"_{width}" if width else "")
+        if kid not in made:
+            over = swa if is_local else None
+            if mlp == "dense":
+                nodes = dense_nodes(win=window if is_local else None, over=over, ffn=int(dense_ffn))
+            else:
+                nodes = sparse_nodes(win=window if is_local else None, over=over, routed=width)
+            made[kid] = {"id": kid, "nodes": nodes, "edges": chain(nodes)}
+            kinds.append(made[kid])
+        sequence.append(kid)
+    return kinds, sequence
+
+
 def handler_moe(cfg, raw, model):
     """Mixtral, Qwen3-MoE, Llama-4, Granite-MoE, Inkling, DeepSeek-V2, GLM: attention
     plus a routed expert layer.
@@ -2903,9 +2992,9 @@ def handler_moe(cfg, raw, model):
     # needs the distinction carried in the kind id.
     split_index = indexed_any and not indexed_all
 
-    def attn_nodes(win=None, index=None):
+    def attn_nodes(win=None, index=None, over=None):
         use = indexed_any if index is None else index
-        n = attention_block(cfg, model, hidden, raw=raw, window=win, indexed=use)
+        n = attention_block(dict(cfg, **over) if over else cfg, model, hidden, raw=raw, window=win, indexed=use)
         n = lightning_indexer(cfg, model, hidden, n, raw) if use else n
         if indexed_any:
             # A DSA model's layers that skip the indexer still build the same fused A-projection,
@@ -2914,17 +3003,17 @@ def handler_moe(cfg, raw, model):
             n = [dict(x, tp="replicated") if x.get("role") == "qkv_a_proj" else x for x in n]
         return n
 
-    def sparse_nodes(win=None, index=None):
-        n = attn_nodes(win, index)
+    def sparse_nodes(win=None, index=None, over=None, routed=None):
+        n = attn_nodes(win, index, over)
         n += [norm("post_attn_norm"),
-              *moe_block(cfg, model, hidden, raw, family=architecture_of(raw, model)),
+              *moe_block(cfg, model, hidden, raw, family=architecture_of(raw, model), routed_width=routed),
               collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
               collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
         return n
 
-    def dense_nodes(win=None, index=None):
-        n = attn_nodes(win, index)
-        n += [norm("post_attn_norm")] + dense_mlp(cfg, model, hidden)
+    def dense_nodes(win=None, index=None, over=None, ffn=None):
+        n = attn_nodes(win, index, over)
+        n += [norm("post_attn_norm")] + dense_mlp(dict(cfg, intermediate_size=ffn) if ffn else cfg, model, hidden)
         n += [collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE)]
         return n
 
@@ -3011,16 +3100,17 @@ def handler_moe(cfg, raw, model):
                 f"{model}: a declared local-layer list AND a partial indexer pattern "
                 f"would make the layer kind a three-way product; no committed config "
                 f"does both, so this handler refuses rather than dropping one")
-        swa = sparse_nodes(win=window)
-        full = sparse_nodes(win=None)
-        kinds = [
-            {"id": "swa_moe", "nodes": swa, "edges": chain(swa)},
-            {"id": "full_moe", "nodes": full, "edges": chain(full)},
-        ]
         local = set(int(i) for i in local_ids)
-        sequence = ["swa_moe" if i in local else "full_moe" for i in range(layers)]
         if raw.get("architectures", [None])[0] != "InklingForConditionalGeneration":
-            return kinds, compress(sequence)
+            swa = sparse_nodes(win=window)
+            full = sparse_nodes(win=None)
+            kinds = [
+                {"id": "swa_moe", "nodes": swa, "edges": chain(swa)},
+                {"id": "full_moe", "nodes": full, "edges": chain(full)},
+            ]
+            return kinds, compress(["swa_moe" if i in local else "full_moe" for i in range(layers)])
+        kinds, sequence = inkling_layers(cfg, raw, model, layers, local, window,
+                                         sparse_nodes, dense_nodes)
         # Inkling's stage boundary carries hidden_states alone at the model dtype, not
         # vLLM's standard hidden_states + residual pair: the pending short-conv residual
         # add is applied before the send (make_empty_intermediate_tensors_factory(
@@ -9102,7 +9192,13 @@ def handler_mistral_large3(cfg, raw, model):
     vocab = int(require(cfg, "vocab_size", model))
     hidden = int(require(cfg, "hidden_size", model))
     head = [norm("final_norm"), dict(gemm("lm_head", vocab, hidden), weight_dtype=base)]
-    extras = {"global": {"architecture": raw["architectures"][0],
+    # The graph names the text model, MistralLarge3ForCausalLM, not the Pixtral wrapper the file's
+    # vision encoder puts around it. The engine's per-architecture hooks are keyed by that name, and
+    # the Pixtral hook that turns an unstated cache dtype into fp8_ds_mla is Mistral-Large-4's
+    # (MistralLarge4ForCausalLM.verify_and_update_config, models/config.py:147-178@0fda86a3, reached
+    # for a mistral_large_4 text model only); a Large-3 checkpoint, which has no sparse indexer, is
+    # not served that cache.
+    extras = {"global": {"architecture": "MistralLarge3ForCausalLM",
                          "context_window": int(require_key(cfg, "max_position_embeddings", model))},
               "head": head}
     return placed, stack, extras
