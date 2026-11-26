@@ -82,7 +82,6 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	if err != nil {
 		return sglangengine.Pool{}, err
 	}
-	sglangKernels.put(s.Pool, k)
 	pin := sglanglower.PoolInput{Deployment: in.Deployment, PoolIndex: in.PoolIndex, Model: in.Model, Chip: in.Chip}
 	args, err := sglanglower.Args(pin)
 	if err != nil {
@@ -109,7 +108,7 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	if ctx <= 0 {
 		return sglangengine.Pool{}, fmt.Errorf("sglang engine: the model graph states no context window and the engine block no context_length")
 	}
-	return sglangengine.Pool{
+	pool := sglangengine.Pool{
 		Kernel: k, Chip: chip, Model: facts, Args: args,
 		PreModelLoadGiB: in.Chip.MemoryGiB - overhead,
 		ContextLen:      ctx, VocabSize: in.Model.Global.VocabSize,
@@ -117,7 +116,9 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 		// it at the script's end (engine.Request.Output), so the end-of-sequence id is one no script
 		// holds: the first id past the vocabulary.
 		EOSTokenIDs: []int64{int64(in.Model.Global.VocabSize)},
-	}, nil
+	}
+	sglangKernels.put(s.Pool, k, pool)
+	return pool, nil
 }
 
 // newSGLangEngine builds one SGLang engine from spec over the run's opened data.
@@ -279,24 +280,29 @@ func recordSGLangSpeculation(blk map[string]any) {
 // sglangKernels are the kernels the SGLang engines of the run opened, by pool index. The Result's
 // resolutions and kernel provenance are read from them, so they state what SGLang's rules resolved
 // and what its kernel priced, not what the host's vLLM-form twin resolved.
-var sglangKernels = &sglangKernelSet{byPool: map[int]*latencykernel.Kernel{}}
+var sglangKernels = &sglangKernelSet{byPool: map[int]*latencykernel.Kernel{}, opened: map[int]sglangengine.Pool{}}
 
 type sglangKernelSet struct {
 	mu     sync.Mutex
 	byPool map[int]*latencykernel.Kernel
+	// opened are the host's pools by index: what sized each kernel, kept so a report of the
+	// pool's memory reads the pool the engine was built from instead of opening it again.
+	opened map[int]sglangengine.Pool
 }
 
-func (s *sglangKernelSet) put(pool int, k *latencykernel.Kernel) {
+func (s *sglangKernelSet) put(pool int, k *latencykernel.Kernel, opened sglangengine.Pool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.byPool[pool] = k
+	s.opened[pool] = opened
 }
 
-// reset forgets the kernels of an earlier run in this process.
+// reset forgets the kernels and pools of an earlier run in this process.
 func (s *sglangKernelSet) reset() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.byPool = map[int]*latencykernel.Kernel{}
+	s.opened = map[int]sglangengine.Pool{}
 }
 
 // pools are the opened pool indices, ascending.
@@ -315,6 +321,70 @@ func (s *sglangKernelSet) get(pool int) *latencykernel.Kernel {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.byPool[pool]
+}
+
+// pool is the host's opened pool at index, the one whose kernel sized it.
+func (s *sglangKernelSet) pool(pool int) (sglangengine.Pool, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.opened[pool]
+	return p, ok
+}
+
+// sglangMemorySpec is the engine.Spec that selects one of the scenario's SGLang pools: the engine
+// this build runs at the scenario's version, opening the pool from the scenario file the run
+// reads. A memory report uses it to open or re-resolve the pool exactly as a run's factory does.
+func sglangMemorySpec(pool int) engine.Spec {
+	return engine.Spec{Kind: engineKindSGLang, UpstreamVersion: scenarioEngine.Version,
+		Roots: contractRoots(engineScenarioPath()), Pool: pool, Seed: seed}
+}
+
+// poolMemoryOfSGLang is a SGLang pool's memory in the record a Result carries. The pool is
+// SGLang's own sizing, per rank; the engine refuses P/D disaggregation, so every SGLang pool is
+// the colocated one.
+func poolMemoryOfSGLang(m sglangengine.PoolMemory) poolMemory {
+	return poolMemory{
+		Role:             deployment.RoleColocated,
+		Engine:           engineKindSGLang,
+		DeviceBytes:      m.DeviceBytes,
+		BudgetBytes:      m.BudgetBytes,
+		Fixed:            fixedMemoryOf(m.Fixed),
+		AllocatableBytes: m.AllocatableBytes,
+		KV: kvPoolMemory{
+			BlockTokens:     m.BlockTokens,
+			BlockBytes:      m.BlockBytes,
+			PerTokenBytes:   m.PerTokenBytes,
+			BlocksPerRank:   m.BlocksPerRank,
+			TokensPerRank:   m.TokensPerRank,
+			BytesPerRank:    m.BytesPerRank,
+			DataParallel:    m.DataParallel,
+			AggregateBlocks: m.AggregateBlocks,
+			AggregateTokens: m.AggregateTokens,
+			AggregateBytes:  m.AggregateBytes,
+		},
+	}
+}
+
+// sglangMemoryRecords is each open SGLang pool's memory, from the pool the host opened and the
+// kernel that sized it. It opens no pool: the report states the pool the run built its engines
+// from.
+func sglangMemoryRecords() ([]poolMemory, error) {
+	var out []poolMemory
+	for _, i := range sglangKernels.pools() {
+		opened, ok := sglangKernels.pool(i)
+		if !ok {
+			return nil, fmt.Errorf("sglang memory: pool %d has a kernel but no opened pool", i)
+		}
+		m, err := sglangengine.MemoryOfPool(opened, sglangMemorySpec(i))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, poolMemoryOfSGLang(m))
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("sglang memory: no pool is open from the scenario")
+	}
+	return out, nil
 }
 
 // sglangTwinSubstitutions are the named gaps between an SGLang run and its scenario that remain

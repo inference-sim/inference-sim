@@ -110,6 +110,29 @@ func TestTheFactoryBuildsAnEngineFromADocumentBlock(t *testing.T) {
 	}
 }
 
+// refusingOpenHost records whether the host was asked to open a pool at all.
+type refusingOpenHost struct{ opened bool }
+
+func (h *refusingOpenHost) Open(engine.Spec) (Pool, error) {
+	h.opened = true
+	return Pool{}, fmt.Errorf("the host opened a pool")
+}
+
+// A release this build does not model is refused before the host opens anything: the refusal
+// must not size (and record) a pool the run can never use.
+func TestTheFactoryRefusesAnotherReleaseBeforeOpeningAPool(t *testing.T) {
+	h := &refusingOpenHost{}
+	s := specOf(t, "model_path: m\n")
+	s.UpstreamVersion = "0.4.0"
+	_, err := FactoryFor(h).New(s)
+	if err == nil || !strings.Contains(err.Error(), "0.4.0") {
+		t.Fatalf("got %v, want a refusal naming the release", err)
+	}
+	if h.opened {
+		t.Error("the host opened a pool before the release was refused")
+	}
+}
+
 func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.T) {
 	h := newHost()
 	s := specOf(t, "model_path: m\n")

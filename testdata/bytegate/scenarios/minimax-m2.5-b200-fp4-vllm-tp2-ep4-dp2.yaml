@@ -1,0 +1,35 @@
+# minimax-m2.5 on one 8-GPU B200 node, fp4 under vLLM, tp=2 with attention DP=2 and EP=4.
+#
+# WHY THIS FILE EXISTS. The byte gate's other MoE cases are all dp=1, so the per-rank and
+# instance-aggregate KV figures are equal in every golden and nothing pins the DP>1 aggregate
+# (`aggregate_* == data_parallel x per-rank` for a model with experts). This is a fixed copy of
+# testdata/kernel/aisimulate/minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2.yaml, which records the
+# deployment NVIDIA's AISimulate end-to-end artifact states, so the gate covers that shape
+# without moving with that corpus.
+kind: Scenario
+name: minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2
+engine:
+  kind: vllm
+
+model: minimax-m2.5
+coefficients: [cost-model-primitives, cost-model-collectives, cost-model-host-overheads, cost-model-attention, cost-model-recurrent, cost-model-memory]
+
+cluster:
+  hardware: b200
+  nodes: 1
+  gpus_per_node: 8
+---
+kind: Deployment
+name: minimax-m2.5-b200-fp4-vllm-tp2-ep4-dp2
+
+pools:
+  - role: colocated
+    nodes: 1
+    parallel:
+      tp: 2
+      pp: 1
+      dp: 2
+      enable_expert_parallel: true
+    engine:
+      quantization: nvfp4
+      max_model_len: 32768
