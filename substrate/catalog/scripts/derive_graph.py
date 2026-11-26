@@ -58,7 +58,7 @@ ALIASES: dict[str, tuple[str, ...]] = {
     "num_experts": ("num_local_experts", "n_routed_experts", "num_experts"),
     # top_k_experts is Gemma 4's spelling (vLLM passes it as top_k, gemma4.py:646-648).
     "top_k": ("num_experts_per_tok", "num_experts_per_token", "moe_topk", "top_k_experts"),
-    "moe_ffn_size": ("moe_intermediate_size", "expert_intermediate_size"),
+    "moe_ffn_size": ("moe_intermediate_size", "expert_intermediate_size", "expert_ffn_hidden_size"),
     "num_shared_experts": ("n_shared_experts", "num_shared_experts"),
     "shared_ffn_size": (
         "shared_expert_intermediate_size",
@@ -1816,6 +1816,10 @@ MOE_FAMILIES: dict[str, dict[str, Any]] = {
     # the un-projected hidden states (:681-689).
     "KimiK3ForConditionalGeneration": {"router": "base", "shared": "gated"},
     "KimiK31ForConditionalGeneration": {"router": "base", "shared": "gated"},
+    # LongcatMoe (longcat_flash.py:155-242@4ba787ec): a GateLinear in float32 over the routed and
+    # the zero-computation experts together (LongcatRouter, :124-152), and no shared expert.
+    "LongcatFlashNgramForCausalLM": {"router": "fp32", "shared": "gated",
+                                     "router_counts_zero_experts": True},
     # MixtralMoE and GraniteMoeMoE pass the model's params_dtype (mixtral.py:111-116,
     # granitemoe.py:99-104); neither has a shared expert.
     "MixtralForCausalLM": {"router": "base", "shared": "gated"},
@@ -1913,6 +1917,9 @@ def moe_block(cfg: dict[str, Any], model: str, hidden: int, raw: dict[str, Any],
     router_width = {"base": base, "fp32": lambda: "fp32",
                     "global": lambda: weight_dtype(cfg, raw, model)}[family["router"]]()
     rows = node["experts"] + (shape[0] if shape and family.get("router_counts_shared") else 0)
+    if family.get("router_counts_zero_experts"):
+        # The zero-computation experts have a router logit and no weights.
+        rows += int(require_key(cfg, "zero_expert_num", model))
     # Stated even where it equals the global width: the router is a class of its own, never
     # quantized with the linears in these families, so its width does not follow a global one.
     router = dict(gemm("router", rows, hidden), tp="replicated", weight_dtype=router_width)
@@ -2029,6 +2036,7 @@ HEAD_AT_BASE_ARCHS = frozenset({
     "HYV3ForCausalLM",                    # hy3-fp8 (fp8, lm_head ignored)
     "MiMoV2ForCausalLM",                  # mimo-v2-flash (fp8, the head is not quantized)
     "Qwen3_5MoeForConditionalGeneration",  # qwen3.5-397b-a17b-fp8
+    "LongcatFlashNgramForCausalLM",       # longcat-flash-lite-fp8 (fp8, lm_head ignored)
 })
 
 
@@ -2276,6 +2284,9 @@ MLA_LAYOUTS = {
     # MistralLarge3ForCausalLM subclasses DeepseekV3ForCausalLM and adds only a weight-name
     # mapper (models/mistral_large_3.py@4ba787ec9959), so it builds DeepseekV2MLAAttention.
     "MistralLarge3ForCausalLM": {"fused_a": True, "fused_norm": False, "replicated_a": True},
+    # LongCat-Flash builds both of each layer's attentions as DeepseekV2MLAAttention
+    # (vllm/model_executor/models/longcat_flash.py:240-258@4ba787ec).
+    "LongcatFlashNgramForCausalLM": {"fused_a": True, "fused_norm": False, "replicated_a": True},
     # fused_index_norm: deepseek_v32 calls fused_norm_rope ONCE per layer,
     # unconditionally on the shared code path, passing the q norm, the kv norm, the rope
     # cache AND the indexer's k-norm weight/bias/eps into that single launch
@@ -3068,6 +3079,150 @@ def handler_moe(cfg, raw, model):
         }
     declare_draft(kinds)
     return kinds, {"pattern": ["attn_moe"], "repeat": layers}
+
+
+def ngram_table_rows(cfg: dict[str, Any], model: str) -> tuple[list[int], int]:
+    """Row counts of the n-gram embedding's tables, and the width of one row, as
+    NgramEmbedding builds them (modeling_longcat_ngram.py:60-95 at the pinned revision of the
+    checkpoint, vllm/model_executor/models/longcat_flash_ngram.py:58-116@4ba787ec).
+
+    There are k x (n - 1) tables, k = emb_split_num and n = emb_neighbor_num. Table i has
+    int(m + 2i + 1) rows, m = ngram_vocab_size_ratio x vocab_size, so every table has a different
+    prime-sized modulus; each is hidden_size / (k x (n - 1)) wide. The shard headers of
+    LongCat-Flash-Lite-FP8 agree: embedders.0 is [10223617, 256], embedders.11 [10223639, 256]."""
+    k = int(require_key(cfg, "emb_split_num", model))
+    n = int(require_key(cfg, "emb_neighbor_num", model))
+    ratio = require_key(cfg, "ngram_vocab_size_ratio", model)
+    hidden = int(require(cfg, "hidden_size", model))
+    vocab = int(require(cfg, "vocab_size", model))
+    if k < 1 or n < 2:
+        raise DeriveError(f"{model}: emb_split_num {k} and emb_neighbor_num {n} describe no n-gram "
+                          f"tables (the model builds k x (n - 1) of them)")
+    tables = k * (n - 1)
+    if hidden % tables:
+        raise DeriveError(f"{model}: hidden_size {hidden} is not a multiple of the {tables} n-gram "
+                          f"tables, so their rows have no whole width")
+    m = ratio * vocab
+    return [int(m + 2 * i + 1) for i in range(tables)], hidden // tables
+
+
+def handler_longcat_flash_ngram(cfg, raw, model):
+    """LongCat-Flash-Lite (LongcatFlashNgramForCausalLM), as vLLM v0.33.0 builds it
+    (vllm/model_executor/models/longcat_flash_ngram.py and longcat_flash.py, @4ba787ec).
+
+    A layer is FlashDecoderLayer (longcat_flash.py:240-336): two MLA attentions and two dense
+    MLPs, and one routed MoE that runs beside the first MLP on the first attention's output and
+    joins the second MLP's output at the end of the layer (the shortcut connection):
+
+        norm0, attn0, norm0', MoE(x) ----------------------------+
+                           `-> mlp0, norm1, attn1, norm1', mlp1 --+-> add
+
+    Both attentions are DeepseekV2MLAAttention, so each holds its own latent KV cache: a layer
+    owns two, which the graph states (a layer states one cache for one attention otherwise).
+    The MoE routes over n_routed_experts plus zero_expert_num zero-computation experts. A token
+    that picks a zero-computation expert gets its hidden state back scaled by the router weight
+    (zero_expert_type identity) and runs no expert for that slot, but vLLM remaps the slot to
+    expert 0 with weight 0 and runs it through the grouped GEMM all the same
+    (router/zero_expert_router.py:70-100@4ba787ec), so the GEMM prices all moe_topk slots; the
+    identity output is its own elementwise pass.
+
+    The input embedding is the token embedding averaged with k x (n - 1) hashed n-gram
+    embeddings, each projected from hidden_size / (k x (n - 1)) up to hidden_size by its own
+    matrix (NgramEmbedding.embed_batched). vLLM packs the tables into one row-sharded lookup
+    and the projections into one batched matmul; the graph states the same two nodes. The
+    checkpoint's quantization block (fp8, 128 x 128 blocks) lists the embedding, every n-gram
+    table and projection, the norms, the router and lm_head in ignored_layers, so those are
+    stored at the base width, as the shard headers show (BF16 tables and projections, an FP32
+    router [384, 3072]); the attention, dense MLP and expert linears are F8_E4M3.
+
+    The checkpoint also ships a one-layer MTP module (model.mtp.*), which its config does not
+    enable (no num_nextn_predict_layers), so it is not priced."""
+    hidden = int(require(cfg, "hidden_size", model))
+    layers = int(require(cfg, "num_layers", model))
+    vocab = int(require(cfg, "vocab_size", model))
+    nq = int(require(cfg, "num_q_heads", model))
+    act = DTYPE_WIDTHS[base_dtype(cfg, raw, model)]
+    base = base_dtype(cfg, raw, model)
+    if cfg.get("zero_expert_type") != "identity":
+        raise DeriveError(f"{model}: zero_expert_type {cfg.get('zero_expert_type')!r}; this handler "
+                          f"prices the identity zero-computation expert only")
+    if int(cfg.get("zero_expert_num") or 0) < 1:
+        raise DeriveError(f"{model}: no zero_expert_num, which the router's logits and the "
+                          f"identity pass are sized from")
+    if cfg.get("hidden_act", "silu") != "silu":
+        raise DeriveError(f"{model}: hidden_act {cfg.get('hidden_act')!r}; FlashMLP supports silu only")
+    if cfg.get("attention_bias"):
+        raise DeriveError(f"{model}: attention_bias is set, which the MLA projections do not carry")
+    if "fp8" not in str(raw_quant(cfg, model).get("quant_method", "")).lower():
+        raise DeriveError(f"{model}: this handler places widths for the fp8 checkpoint, whose "
+                          f"ignored_layers keep the embeddings, router and head at the base width")
+    if cfg.get("disable_quant_module"):
+        raise DeriveError(f"{model}: disable_quant_module {cfg.get('disable_quant_module')!r} builds "
+                          f"the named modules unquantized, which this handler does not place")
+    # LongcatFlashConfig defaults the key/value head count to the query head count
+    # (configuration_longcat_flash.py:187-188, transformers v4.57.6); MLA pins n_kv to one anyway.
+    layer_cfg = dict(cfg, num_key_value_heads=cfg.get("num_key_value_heads") or nq)
+
+    latent = int(require(cfg, "kv_lora_rank", model)) + int(require(cfg, "qk_rope_head_dim", model))
+    entry = latent * act
+
+    def tagged(nodes: list[dict[str, Any]], i: int) -> list[dict[str, Any]]:
+        # The second attention and MLP repeat the first's roles, so each takes its index.
+        return [dict(n, role=f"{n['role']}_{i}") if n.get("role") else n for n in nodes]
+
+    def attn(i: int) -> list[dict[str, Any]]:
+        nodes = attention_block(layer_cfg, model, hidden, raw=raw)
+        for n in nodes:
+            if n["op"] == "Attention":
+                n["caches"] = [{"name": f"kv{i}", "kind": "kv", "owned": True,
+                                "bytes_per_entry": entry,
+                                "bytes_by_cache_dtype": {"fp8": entry // 2, "fp8_e4m3": entry // 2}}]
+        return tagged(nodes, i)
+
+    def mlp(i: int) -> list[dict[str, Any]]:
+        return tagged([*dense_mlp(layer_cfg, model, hidden),
+                       collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL)], i)
+
+    moe_nodes = [*moe_block(layer_cfg, model, hidden, raw, family="LongcatFlashNgramForCausalLM"),
+                 collective("All2All", "moe_dispatch_combine", EMIT_EXPERT_PARALLEL),
+                 collective("AllReduce", "mlp_out", EMIT_TENSOR_PARALLEL_UNLESS_SP_MOE),
+                 # The identity experts' output: read the hidden state, write one hidden-width
+                 # tensor, then add it to the experts' result (read two, write one).
+                 dict(norm("zero_expert_identity"), bytes_per_token=5 * hidden * act)]
+    nodes = [*attn(0), norm("post_attn_norm_0"), *moe_nodes, *mlp(0),
+             *attn(1), norm("post_attn_norm_1"), *mlp(1),
+             # The shortcut: the second MLP's output plus the MoE's, read two and write one.
+             dict(norm("moe_shortcut_add"), bytes_per_token=3 * hidden * act)]
+    kinds = [{"id": "flash_moe", "nodes": nodes, "edges": chain(nodes)}]
+
+    # The input embedding: the word table, then the n-gram lookups, their projections and the
+    # mean over the 1 + k x (n - 1) embeddings (all_h.mean(dim=0)).
+    rows, width = ngram_table_rows(cfg, model)
+    tables = len(rows)
+    embedding = [
+        {"op": "Gather", "role": "embed_tokens", "rows": vocab, "row_bytes": hidden * act,
+         "rows_per_token": 1, "out_bytes_per_token": hidden * act, "shard": "rows"},
+        collective("AllReduce", "embed_out", EMIT_TENSOR_PARALLEL),
+        {"op": "Gather", "role": "ngram_embedders", "rows": sum(rows), "row_bytes": width * act,
+         "rows_per_token": tables, "out_bytes_per_token": tables * width * act, "shard": "rows"},
+        dict(collective("AllReduce", "ngram_embed_out", EMIT_TENSOR_PARALLEL),
+             bytes_per_token=tables * width * act),
+        # torch.bmm over the stacked projections: table i's [width, hidden] matrix on table i's
+        # rows alone, which is a block-diagonal GEMM of tables x hidden outputs over one row.
+        dict(gemm("ngram_post_projs", tables * hidden, width), tp="replicated", weight_dtype=base),
+        dict(norm("ngram_mean"), bytes_per_token=(tables + 2) * hidden * act),
+    ]
+    extras = {
+        "global": {
+            "architecture": raw["architectures"][0],
+            # vLLM derives max_model_len from max_position_embeddings and applies no further
+            # factor for rope_type yarn (config/model.py:2589-2610@4ba787ec); the tokenizer's
+            # model_max_length is read for pooling models only (:2147-2160).
+            "context_window": int(require_key(cfg, "max_position_embeddings", model)),
+        },
+        "embedding": embedding,
+    }
+    return kinds, {"pattern": ["flash_moe"], "repeat": layers}, extras
 
 
 def handler_minimax_m2(cfg, raw, model):
@@ -9163,6 +9318,9 @@ HANDLERS = {
     # see handler_laguna.
     "LagunaForCausalLM": handler_laguna,
     "MiMoV2ForCausalLM": handler_mimo_v2,
+    # LongCat-Flash-Lite: LongCat-Flash's two-attention layer with an n-gram embedding in front
+    # (vllm/model_executor/models/longcat_flash_ngram.py@4ba787ec); see handler_longcat_flash_ngram.
+    "LongcatFlashNgramForCausalLM": handler_longcat_flash_ngram,
 }
 
 

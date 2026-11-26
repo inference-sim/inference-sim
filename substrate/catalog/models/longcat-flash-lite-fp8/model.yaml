@@ -1,0 +1,12 @@
+name: longcat-flash-lite-fp8
+# LongCat-Flash-Lite-FP8: block-FP8 (128x128) linears and routed experts; embeddings, n-gram tables, norms and lm_head stay BF16, the router FP32.
+source:
+  provider: huggingface
+  repo: meituan-longcat/LongCat-Flash-Lite-FP8
+  revision: aa89b99cf8f1fc6b5c97446b8acb343a89b4ef95
+  retrieved: 2026-11-26
+licence:
+  id: MIT
+  evidence: https://huggingface.co/meituan-longcat/LongCat-Flash-Lite-FP8/raw/aa89b99cf8f1fc6b5c97446b8acb343a89b4ef95/LICENSE
+config:
+  sha256: dcbad85b67303e07faba9bacf18be12a215e63637ca9a908c594a8789b018a68

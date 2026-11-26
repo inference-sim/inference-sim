@@ -11251,3 +11251,135 @@ def test_laguna_committed_graphs_are_the_checkpoints():
     assert _node(k, "qkv_proj")["n"] == (64 + 16) * 128
     assert (_node(k, "experts")["n"], _node(k, "experts")["top_k"], _node(k, "shared_down")["weight_dtype"]) == \
         (512, 8, "nvfp4")
+# --- LongcatFlashNgramForCausalLM (LongCat-Flash-Lite) ---------------------------------------------------
+
+LONGCAT = MODELS / "longcat-flash-lite-fp8"
+
+
+def _longcat_raw(**edit) -> dict:
+    """A small LongCat-Flash-Lite-shaped config: the real one's keys at toy widths, so a test
+    can state every number it expects from them. Four n-gram tables (2 splits x 2 neighbours),
+    each 12 wide at hidden 48; 6 routed and 2 zero-computation experts."""
+    raw = {
+        "architectures": ["LongcatFlashNgramForCausalLM"],
+        "hidden_size": 48, "num_layers": 3, "num_attention_heads": 4, "vocab_size": 100,
+        "ffn_hidden_size": 64, "expert_ffn_hidden_size": 32, "n_routed_experts": 6,
+        "zero_expert_num": 2, "zero_expert_type": "identity", "moe_topk": 3,
+        "q_lora_rank": 16, "kv_lora_rank": 8, "qk_nope_head_dim": 8, "qk_rope_head_dim": 4,
+        "v_head_dim": 8, "hidden_act": "silu", "attention_bias": False,
+        "max_position_embeddings": 4096, "rope_scaling": {"rope_type": "yarn", "factor": 4},
+        "emb_neighbor_num": 3, "emb_split_num": 2, "ngram_vocab_size_ratio": 5,
+        "torch_dtype": "bfloat16", "tie_word_embeddings": False,
+        "quantization_config": {"quant_method": "fp8", "weight_block_size": [128, 128],
+                                "ignored_layers": ["lm_head", "model.embed_tokens"]},
+    }
+    raw.update(edit)
+    return raw
+
+
+def _longcat(tmp_path, **edit) -> dict:
+    return _derive_cfg(tmp_path, _longcat_raw(**edit), "longcat-probe")
+
+
+def test_longcat_layer_is_two_attentions_two_mlps_and_one_moe(tmp_path):
+    g = _longcat(tmp_path)
+    assert layer_sequence(g["stack"]) == ["flash_moe"] * 3
+    layer = _kind(g, "flash_moe")
+    attentions = [n for n in layer["nodes"] if n["op"] == "Attention"]
+    assert len(attentions) == 2
+    assert all((a["kind"], a["n_q"], a["n_kv"], a["d_h"], a["holds_engine_kv"])
+               == ("mla", 4, 1, 12, True) for a in attentions)
+    # Each attention holds its own latent cache, one (8 + 4)-wide bf16 entry a token: a layer
+    # that stated one would size half the model's KV.
+    caches = [c for a in attentions for c in a["caches"]]
+    assert sorted(c["name"] for c in caches) == ["kv0", "kv1"]
+    assert {c["bytes_per_entry"] for c in caches} == {24}
+    for suffix in ("0", "1"):
+        assert _node(layer, f"qkv_a_proj_{suffix}")["n"] == 16 + 8 + 4
+        assert (_node(layer, f"q_b_proj_{suffix}")["n"], _node(layer, f"kv_b_proj_{suffix}")["n"]) \
+            == (4 * (8 + 4), 4 * (8 + 8))
+        assert (_node(layer, f"mlp_gate_up_{suffix}")["n"], _node(layer, f"mlp_down_{suffix}")["k"]) \
+            == (2 * 64, 64)
+    assert [n["role"] for n in layer["nodes"] if n["op"] == "GroupedGEMM"] == ["experts"]
+
+
+def test_longcat_router_scores_zero_experts_and_the_grouped_gemm_runs_every_slot(tmp_path):
+    layer = _kind(_longcat(tmp_path), "flash_moe")
+    router, experts = _node(layer, "router"), _node(layer, "experts")
+    # 6 routed + 2 zero-computation logits, fp32 and whole on every rank.
+    assert (router["n"], router["k"], router["weight_dtype"], router["tp"]) == (8, 48, "fp32", "replicated")
+    # The slots routed to a zero-computation expert are remapped to expert 0 at weight 0 and
+    # still run, so the GEMM prices moe_topk slots over the 6 routed experts alone.
+    assert (experts["experts"], experts["top_k"], experts["n"], experts["k"]) == (6, 3, 32, 48)
+    assert "weight_dtype" not in experts
+    assert not [r for r in _roles(layer) if r.startswith("shared_")]
+
+
+def test_longcat_embedding_is_the_word_table_and_the_hashed_ngram_tables(tmp_path):
+    g = _longcat(tmp_path)
+    emb = {n["role"]: n for n in g["embedding"]}
+    assert (emb["embed_tokens"]["rows"], emb["embed_tokens"]["row_bytes"]) == (100, 48 * 2)
+    tables = emb["ngram_embedders"]
+    # Table i has int(m + 2i + 1) rows with m = 5 x 100: four tables of 501, 503, 505, 507.
+    assert tables["rows"] == 501 + 503 + 505 + 507
+    assert (tables["row_bytes"], tables["rows_per_token"], tables["out_bytes_per_token"]) \
+        == (12 * 2, 4, 4 * 12 * 2)
+    proj = emb["ngram_post_projs"]
+    assert (proj["n"], proj["k"], proj["weight_dtype"], proj["tp"]) == (4 * 48, 12, "bf16", "replicated")
+
+
+def test_longcat_embedding_head_and_router_stay_at_the_base_width_beside_fp8_linears(tmp_path):
+    g = _longcat(tmp_path)
+    assert g["global"]["weight_dtype"] == "fp8"
+    assert g["global"]["weight_scale"] == {"elements": 16384, "bytes": 4}
+    assert g["global"]["context_window"] == 4096
+    lm = _node({"nodes": g["head"]}, "lm_head")
+    assert (lm["n"], lm["k"], lm["weight_dtype"]) == (100, 48, "bf16")
+    assert {n["role"] for n in g["embedding"] if n["op"] == "GEMM"} == {"ngram_post_projs"}
+
+
+def test_longcat_ngram_table_count_follows_the_config(tmp_path):
+    g = _longcat(tmp_path, emb_neighbor_num=4, emb_split_num=1)
+    tables = {n["role"]: n for n in g["embedding"]}["ngram_embedders"]
+    assert tables["rows_per_token"] == 3 and tables["row_bytes"] == 16 * 2
+
+
+@pytest.mark.parametrize("edit,why", [
+    ({"zero_expert_type": "zero"}, "identity zero-computation expert only"),
+    ({"zero_expert_num": 0}, "no zero_expert_num"),
+    ({"hidden_size": 50}, "not a multiple of the 4 n-gram tables"),
+    ({"ngram_vocab_size_ratio": None}, "ngram_vocab_size_ratio"),
+    ({"emb_neighbor_num": 1}, "describe no n-gram tables"),
+    ({"hidden_act": "gelu"}, "silu only"),
+    ({"disable_quant_module": ["mlps"]}, "builds the named modules unquantized"),
+    ({"quantization_config": None}, "fp8 checkpoint"),
+])
+def test_longcat_refuses_a_config_it_would_misprice(tmp_path, edit, why):
+    raw = _longcat_raw(**edit)
+    raw = {k: v for k, v in raw.items() if v is not None}
+    with pytest.raises(deriver().DeriveError, match=why):
+        _derive_cfg(tmp_path, raw, "longcat-probe")
+
+
+def test_longcat_flash_lite_fp8_graph_is_the_checkpoints_tensors():
+    """Shapes read from the pinned shard headers (revision aa89b99c): the router is
+    [384, 3072] FP32, embedders.0 [10223617, 256] and embedders.11 [10223639, 256], post_projs
+    [3072, 256] BF16, mlps [6144, 3072], experts [1024, 3072], kv_a_proj_with_mqa [576, 3072],
+    q_a_proj [1536, 3072], q_b_proj [6144, 1536], kv_b_proj [8192, 512], o_proj [3072, 4096]."""
+    g = graph_of(LONGCAT)
+    assert g["global"]["architecture"] == "LongcatFlashNgramForCausalLM"
+    assert len(layer_sequence(g["stack"])) == 14
+    layer = _kind(g, "flash_moe")
+    router = _node(layer, "router")
+    assert (router["n"], router["k"], router["weight_dtype"]) == (384, 3072, "fp32")
+    for i in ("0", "1"):
+        assert _node(layer, f"qkv_a_proj_{i}")["n"] == 1536 + 576
+        assert (_node(layer, f"q_b_proj_{i}")["n"], _node(layer, f"q_b_proj_{i}")["k"]) == (6144, 1536)
+        assert (_node(layer, f"kv_b_proj_{i}")["n"], _node(layer, f"kv_b_proj_{i}")["k"]) == (8192, 512)
+        assert (_node(layer, f"o_proj_{i}")["n"], _node(layer, f"o_proj_{i}")["k"]) == (3072, 4096)
+        assert (_node(layer, f"mlp_gate_up_{i}")["n"], _node(layer, f"mlp_down_{i}")["k"]) == (2 * 6144, 6144)
+    experts = _node(layer, "experts")
+    assert (experts["experts"], experts["top_k"], experts["n"], experts["k"]) == (256, 12, 1024, 3072)
+    emb = {n["role"]: n for n in g["embedding"]}
+    assert emb["ngram_embedders"]["rows"] == sum(10223616 + 2 * i + 1 for i in range(12))
+    assert (emb["ngram_post_projs"]["n"], emb["ngram_post_projs"]["k"]) == (12 * 3072, 256)
