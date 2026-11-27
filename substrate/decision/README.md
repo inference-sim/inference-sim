@@ -54,7 +54,7 @@ of the simulator alone (DEC-5, VAL-6).
 ## Tests
 
 - `combined_test.go`: parity of the combined probabilities, memberships and front against the training
-  pipeline's own computation on real points (`testdata/combined/parity.json`, tolerance 1e-6); DEC-3 for
+  pipeline's own computation on real points (`substrate/decision/testdata/combined/parity.json`, tolerance 1e-6); DEC-3 for
   points the simulator refused; DEC-4 for the combined rule; the loader's refusals.
 - `stage_test.go`, `artifact_test.go`, `xgboost_test.go`: the simulator model alone, the evaluator and
-  schema version 1, on `testdata/`.
+  schema version 1, on `substrate/decision/testdata/`.
