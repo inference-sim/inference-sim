@@ -61,10 +61,10 @@ def run_tree_cache(case: dict, index: int) -> dict:
     cls = classes[case["cache_class"]]()
 
     def build(ctx):
-        from sglang.srt.mem_cache.unified_cache.components import ComponentType
+        from sglang.srt.mem_cache.kv.plan import TREE_TOKEN, TreeSlot
 
         params = CacheInitParams(disable=False, req_to_token_pool=None, token_to_kv_pool_allocator=None, page_size=1,
-                                 tree_components=(ComponentType.FULL,) if case["cache_class"] == "UnifiedRadixCache" else None)
+                                 tree_slots=(TreeSlot(component="FULL", family=TREE_TOKEN),) if case["cache_class"] == "UnifiedRadixCache" else None)
         return cls(params)
 
     name = "oracle-refusals-%d" % index

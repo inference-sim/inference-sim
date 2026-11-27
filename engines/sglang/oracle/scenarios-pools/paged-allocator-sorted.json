@@ -301,7 +301,9 @@
     "max_new_tokens": 30,
     "token_capacity": 32,
     "sliding_window_size": null,
-    "chunk_size": 64
+    "chunk_size": 64,
+    "prefill_retire_lag": 0,
+    "eviction_interval": 1
    }
   },
   {

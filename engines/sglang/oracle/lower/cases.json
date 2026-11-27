@@ -1,7 +1,7 @@
 {
  "description": "Cases only the lowering oracle runs, on the chips and models of oracle/serverargs/cases.json, each for a lowering rule the ServerArgs cases leave unexercised.",
  "cases": [
-  {"name": "dsv3-h200-tp8-dp4-attn-deepep", "model": "deepseek-v3", "chip": "H200", "args": {"tp_size": 8, "dp_size": 4, "enable_dp_attention": true, "ep_size": 8, "moe_a2a_backend": "deepep"},
-   "why": "attention DP narrower than TP with an all-to-all backend: require_attn_tp_gather is num_dp_ranks < tp_size (python/sglang/srt/utils/common.py:4148-4151)"}
+  {"name": "dsv3-h200-tp8-dp4-attn-deepep", "model": "deepseek-v3", "chip": "H200", "args": {"tp_size": 8, "attn_dp_size": 4, "ep_size": 8, "moe_a2a_backend": "deepep"},
+   "why": "attention DP narrower than TP with an all-to-all backend: require_attn_tp_gather is num_dp_ranks < tp_size (python/sglang/srt/layers/dp_attention.py:1370-1393@c4af57ff)"}
  ]
 }

@@ -78,6 +78,6 @@
  ],
  "provenance": {
   "cases_sha256": "1f9fbca52e329adcb1fbe2ea8167a9a074b5a55fd9bcb975a162963e067f98b8",
-  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90"
+  "sglang_commit": "c4af57ff93f301846fa1da4c31f8523c08c7510d"
  }
 }

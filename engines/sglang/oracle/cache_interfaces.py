@@ -62,6 +62,10 @@ IMPLEMENTATIONS = (
     "sglang.srt.mem_cache.allocator.token",
     "sglang.srt.mem_cache.allocator.paged",
 )
+# Classes of the unified-memory path (--enable-unified-memory, which the engine refuses: surface.json).
+# ChainAllocator names one function for six allocator methods, so a code object cannot say which
+# interface method ran; no scenario builds it.
+NOT_DRIVEN = ("ChainAllocator",)
 CO_GENERATOR = 0x20
 # A field holding memory addresses, by its name (k_data_ptrs, data_ptr).
 POINTER_FIELD = re.compile(r"(^|_)ptrs?$")
@@ -116,6 +120,8 @@ class Monitor:
             base = getattr(importlib.import_module(mod), cls_name)
             methods = interface_methods(base) | set(extra)
             for cls in subclasses(base):
+                if cls.__name__ in NOT_DRIVEN:
+                    continue
                 for name in methods:
                     code = code_of(cls.__dict__.get(name))
                     if code is not None:
