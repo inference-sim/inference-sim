@@ -51,10 +51,6 @@
     },
     {
       "on": "controller",
-      "m": "has_inflight_device_transfers"
-    },
-    {
-      "on": "controller",
       "m": "start_writing"
     },
     {
@@ -114,10 +110,6 @@
     {
       "on": "controller",
       "m": "start_loading"
-    },
-    {
-      "on": "controller",
-      "m": "has_inflight_device_transfers"
     },
     {
       "boundary": true
@@ -182,10 +174,6 @@
     {
       "on": "controller",
       "m": "start_loading"
-    },
-    {
-      "on": "controller",
-      "m": "has_inflight_device_transfers"
     },
     {
       "boundary": true

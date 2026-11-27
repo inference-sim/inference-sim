@@ -96,12 +96,16 @@ class StepThread:
         self.target, self.args, self.kwargs = target, tuple(args), dict(kwargs or {})
         self.name = name or getattr(target, "__name__", "thread")
         self.daemon = daemon
+        # threading.Thread.ident: None until started, then a number (the controller counts a worker
+        # as started by it, cache_controller.py:603@c4af57ff).
+        self.ident = None
 
     def start(self) -> None:
         if self.name in REFUSED:
             raise NotImplementedError(f"step_runner: {self.name} is not modelled: {REFUSED[self.name]}")
         if self in RUNNER.threads:
             raise RuntimeError("step_runner: thread started twice")
+        self.ident = len(RUNNER.threads) + 1
         RUNNER.threads.append(self)
 
     def join(self, timeout=None) -> None:
