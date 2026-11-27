@@ -14462,7 +14462,6 @@
           "dsv4",
           "fa3",
           "flashinfer",
-          "nsa",
           "triton",
           "trtllm_mha",
           "trtllm_mla"
@@ -18029,8 +18028,7 @@
           "auto",
           "bf16",
           "bfloat16",
-          "fp8_e4m3",
-          "fp8_e5m2"
+          "fp8_e4m3"
         ]
       },
       "estimation": {

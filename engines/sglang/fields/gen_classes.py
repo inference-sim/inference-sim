@@ -320,6 +320,9 @@ def stated_values(repo, field, evidence):
         while todo:
             d = todo.pop()
             if isinstance(d, dict):
+                if d.get("refused"):
+                    # A case SGLang refuses ran nothing: the values it states are not covered.
+                    continue
                 for k, v in d.items():
                     if k in OUTPUT_KEYS:
                         continue

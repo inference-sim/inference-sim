@@ -727,7 +727,18 @@ def tree_attachments(src):
 
 
 def tree_components(src):
-    return [item("tree_component", n, COMPONENTS, line) for n, _, line in enum_members(src, COMPONENTS, "ComponentType")]
+    """The ids ComponentType registers at the end of component_type.py, each as
+    `ComponentType.NAME = ComponentType._create(value, "NAME")` (c4af57ff; before that, class members)."""
+    out = []
+    for s in parse(src, COMPONENTS).body:
+        if (isinstance(s, ast.Assign) and len(s.targets) == 1 and isinstance(s.targets[0], ast.Attribute)
+                and isinstance(s.targets[0].value, ast.Name) and s.targets[0].value.id == "ComponentType"
+                and isinstance(s.value, ast.Call) and isinstance(s.value.func, ast.Attribute)
+                and s.value.func.attr == "_create"):
+            out.append(item("tree_component", s.targets[0].attr, COMPONENTS, s.lineno))
+    if not out:
+        raise GenError("%s: ComponentType registers no ids" % COMPONENTS)
+    return out
 
 
 def tree_cores(src):

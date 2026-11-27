@@ -315,16 +315,18 @@ func TestInertFieldsChangeNoDecision(t *testing.T) {
 	}
 }
 
-// attention_backend nsa is SGLang's deprecated alias of dsa (layers/attention/attention_registry.py
-// :166-176@297e54fd), which a GLM-5 pool defaults to: a pool that states nsa, or dsa, lowers to the
-// plan of a pool that states neither, and a Note says which DSA kernels SGLang resolved and that
+// attention_backend nsa was removed in SGLang 1.0 (it is refused, naming dsa), and dsa is what a GLM-5
+// pool defaults to: a pool that states dsa lowers to the plan of a pool that states neither, and a Note says which DSA kernels SGLang resolved and that
 // the cost model's attention lane is a transfer to them.
-func TestPoolLowersNSAAndDSAAsTheDefaultDSABackend(t *testing.T) {
+func TestPoolRefusesNSAAndLowersDSAAsTheDefaultDSABackend(t *testing.T) {
 	base, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, backend := range []string{"nsa", "dsa"} {
+	if _, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\nattention_backend: nsa\n"); err == nil || !strings.Contains(err.Error(), "use dsa") {
+		t.Errorf("attention_backend nsa: got %v, want SGLang's refusal naming dsa", err)
+	}
+	for _, backend := range []string{"dsa"} {
 		got, err := lowerPool(t, "glm-5", 8, "mem_fraction_static: 0.85\nattention_backend: "+backend+"\n")
 		if err != nil {
 			t.Fatalf("attention_backend %s: %v", backend, err)

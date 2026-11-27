@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
 	"github.com/inference-sim/inference-sim/substrate/contracts/enginefacts"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
@@ -25,10 +26,11 @@ func block(t *testing.T, s string) deployment.EngineBlock {
 // Only the release this build models has rules; a scenario naming another is refused by the
 // kernel's opener because Lookup answers nil.
 func TestLookupAnswersForTheModelledReleaseOnly(t *testing.T) {
-	if Lookup("0.5.23") == nil || Lookup("0.5.22") != nil || Lookup("") != nil {
-		t.Errorf("Lookup answers for 0.5.23 only; got %v %v %v", Lookup("0.5.23"), Lookup("0.5.22"), Lookup(""))
+	v := blissglang.Upstream.Version
+	if Lookup(v) == nil || Lookup("0.5.23") != nil || Lookup("") != nil {
+		t.Errorf("Lookup answers for %s only; got %v %v %v", v, Lookup(v), Lookup("0.5.23"), Lookup(""))
 	}
-	if got := V0_5_23.EngineVersion(); got != "0.5.23" {
+	if got := V0_5_23.EngineVersion(); got != v {
 		t.Errorf("EngineVersion %q", got)
 	}
 }
