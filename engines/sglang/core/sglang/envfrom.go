@@ -50,8 +50,8 @@ func EnvFrom(base Env, raw map[string]any) (Env, error) {
 			out.RetractDecodeSteps, err = envInt(name, text)
 		case "SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION":
 			out.ClipMaxNewTokens, err = envInt(name, text)
-		case "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP":
-			out.DisableConsecutivePrefillOverlap, err = envBool(name, text)
+		case "SGLANG_DISABLE_OVERLAP_AFTER_PREFILL":
+			out.DisableOverlapAfterPrefill, err = envBool(name, text)
 		case "SGLANG_ENABLE_JIT_DEEPGEMM":
 			var on bool
 			if on, err = envBool(name, text); err == nil && !on {

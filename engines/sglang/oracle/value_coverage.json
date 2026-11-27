@@ -168,7 +168,7 @@
    "kind": "fixed",
    "reason": "The oracle's base platform is the CPU device (oracle/mocks.json, \"the base platform\")."
   },
-  "sglang_env.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
+  "sglang_env.SGLANG_DISABLE_OVERLAP_AFTER_PREFILL": {
    "kind": "gap",
    "reason": "Every scheduler scenario runs one configuration and one model (or one ending of this kind); a scenario that moves it is added with the others (inference-sim/inference-sim#2340)."
   },

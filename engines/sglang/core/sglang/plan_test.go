@@ -109,8 +109,8 @@ func TestSchedConfigEqualsWhatSGLangsSchedulerResolved(t *testing.T) {
 				VocabSize:          int(want["vocab_size"].(float64)),
 			}
 			env := DefaultEnv()
-			if e, ok := rec["sglang_env"].(map[string]any); ok && e["SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP"] != nil {
-				env.DisableConsecutivePrefillOverlap = true
+			if e, ok := rec["sglang_env"].(map[string]any); ok && e["SGLANG_DISABLE_OVERLAP_AFTER_PREFILL"] != nil {
+				env.DisableOverlapAfterPrefill = true
 			}
 			got, err := SchedConfig(scenarioArgs(t, sc), rt, env)
 			if err != nil {

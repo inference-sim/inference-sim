@@ -103,7 +103,7 @@ func TestEnginePassesEqualSGLangs(t *testing.T) {
 		name := strings.TrimSuffix(filepath.Base(f), ".trace.json")
 		tr, sc := load(t, name)
 		skip := tr.Config.Policy == "random" || tr.Config.EnablePriorityScheduling || tr.Config.MaxQueuedRequests != nil ||
-			tr.Config.PrefillMaxRequests != nil || tr.Config.DisableConsecutivePrefillOverlap || sc.SampledToken != 13
+			tr.Config.PrefillMaxRequests != nil || tr.Config.DisableOverlapAfterPrefill || sc.SampledToken != 13
 		for _, r := range sc.Requests {
 			skip = skip || r.RoutingKey != "" || r.Priority != nil
 		}
@@ -220,7 +220,7 @@ func TestWhatThePortDoesNotModelIsRefusedByName(t *testing.T) {
 		t.Fatalf("a refused request left %d waiting", e.Snapshot().Waiting)
 	}
 	cfg := tr.Config
-	cfg.DisableConsecutivePrefillOverlap = true
+	cfg.DisableOverlapAfterPrefill = true
 	if _, err := New(cfg, flat{}, emptyList()); err == nil || !strings.Contains(err.Error(), "inference-sim/inference-sim#2451") {
 		t.Fatalf("got %v, want the consecutive-prefill option refused naming inference-sim/inference-sim#2451", err)
 	}

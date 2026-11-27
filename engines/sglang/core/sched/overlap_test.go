@@ -88,17 +88,18 @@ func TestOverlapWastesNoStepOnALengthStop(t *testing.T) {
 	}
 }
 
-// With SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP, an extend batch that follows an extend batch is
-// launched only after the first's result is processed. The radix cache is off, so a finished
-// request's KV is freed at once and the tokens free at the second launch show whether the first
-// result was processed before it.
-func TestConsecutivePrefillOverlapCanBeDisabled(t *testing.T) {
+// With SGLANG_DISABLE_OVERLAP_AFTER_PREFILL, the result of a prefill is processed before the next
+// batch is formed, so the next batch sees what that result freed. The radix cache is off, so a
+// finished request's KV is freed at once. Request a ends with its first token (one new token), so
+// its three prompt tokens come back when its prefill result is processed; b, which arrives a step
+// later, is launched with them free only when that result went first.
+func TestOverlapAfterPrefillProcessesTheResultBeforeScheduling(t *testing.T) {
 	cfg := baseConfig(t)
 	eos := cfg.EOSTokenIDs[0]
 	freeAtSecondLaunch := func(disable bool) int {
 		cfg := cfg
 		cfg.EnableOverlap = true
-		cfg.DisableConsecutivePrefillOverlap = disable
+		cfg.DisableOverlapAfterPrefill = disable
 		cfg.IsMixedChunk = false
 		cfg.Disable = true
 		s, err := build(cfg, eos)

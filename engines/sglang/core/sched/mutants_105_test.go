@@ -211,41 +211,35 @@ func TestKVEventsLeaveWithAReportOrOnIdle(t *testing.T) {
 
 // ---- overlap.go -----------------------------------------------------------------------------
 
-// Two extend batches in a row, a mixed batch being one, do not overlap when the environment says
-// so; a decode batch on either side does.
-func TestDisabledConsecutivePrefillOverlapAppliesToExtendAndMixedOnly(t *testing.T) {
-	cfg := baseConfig(t)
-	cfg.EnableOverlap = true
-	cfg.DisableConsecutivePrefillOverlap = true
-	s, err := build(cfg, 13)
-	if err != nil {
-		t.Fatal(err)
-	}
-	b := func(m Mode) *Batch { return &Batch{Mode: m} }
-	for _, c := range []struct {
-		batch, last *Batch
-		want        bool
-	}{
-		{b(Extend), b(Extend), true},
-		{b(Mixed), b(Mixed), true},
-		{b(Extend), b(Mixed), true},
-		{b(Mixed), b(Extend), true},
-		{b(Decode), b(Extend), false},
-		{b(Decode), b(Mixed), false},
-		{b(Extend), b(Decode), false},
-		{b(Mixed), b(Decode), false},
-		{b(Decode), b(Decode), false},
-		{nil, b(Extend), false},
-		{b(Extend), nil, false},
-	} {
-		if got := s.isDisableOverlapForBatch(c.batch, c.last); got != c.want {
-			name := func(x *Batch) Mode {
-				if x == nil {
-					return "none"
+// With the switch on, the result of an extend batch, a mixed batch being one, is processed before the
+// next batch is formed; a decode batch or none leaves it to overlap, and with the switch off no
+// batch is processed early.
+func TestOverlapAfterPrefillSwitchAppliesToExtendAndMixedOnly(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		cfg := baseConfig(t)
+		cfg.EnableOverlap = true
+		cfg.DisableOverlapAfterPrefill = on
+		s, err := build(cfg, 13)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b := func(m Mode) *Batch { return &Batch{Mode: m} }
+		for _, c := range []struct {
+			last *Batch
+			want bool
+		}{
+			{b(Extend), on},
+			{b(Mixed), on},
+			{b(Decode), false},
+			{nil, false},
+		} {
+			if got := s.shouldProcessLastBatchEarly(c.last); got != c.want {
+				name := Mode("none")
+				if c.last != nil {
+					name = c.last.Mode
 				}
-				return x.Mode
+				t.Errorf("switch %v, last batch %s: processed early = %v, want %v", on, name, got, c.want)
 			}
-			t.Errorf("batch %s after %s: overlap disabled = %v, want %v", name(c.batch), name(c.last), got, c.want)
 		}
 	}
 }

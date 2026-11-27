@@ -57,9 +57,10 @@ type Config struct {
 	TreeCache                          string `json:"tree_cache"`
 	DisaggregationMode                 string `json:"disaggregation_mode"`
 	EnableOverlap                      bool   `json:"enable_overlap"`
-	// DisableConsecutivePrefillOverlap is SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP
-	// (environ.py:693@297e54fd, default off): two extend batches in a row do not overlap.
-	DisableConsecutivePrefillOverlap bool `json:"disable_consecutive_prefill_overlap"`
+	// DisableOverlapAfterPrefill is SGLANG_DISABLE_OVERLAP_AFTER_PREFILL
+	// (environ.py:770@c4af57ff, default off; it replaces SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP):
+	// the result of an extend batch is processed before the next batch is formed.
+	DisableOverlapAfterPrefill bool `json:"disable_overlap_after_prefill"`
 	// EnableMetrics and DecodeLogInterval are --enable-metrics and --decode-log-interval: the
 	// scheduler makes its Reports only when metrics are on (SchedulerMetricsReporter.
 	// current_scheduler_metrics_enabled), and a decode batch logs every interval-th time.
@@ -157,6 +158,8 @@ type Scheduler struct {
 	stream  *Stream
 
 	waitingPrefixRefreshCalls int
+	// bounded is the bounded longest-prefix-match batch (bounded_lpm.go).
+	bounded boundedLPM
 
 	// prefillDecodeIntervalRemaining is _prefill_decode_interval_remaining (scheduler.py:1354@297e54fd):
 	// the rounds in which prefill is still held back.
@@ -312,10 +315,12 @@ func (r *Req) setFinishWithAbort() {
 	r.ToFinish = "abort"
 }
 
-// initReqMaxNewTokens is init_req_max_new_tokens (:2693-2730).
+// initReqMaxNewTokens is init_req_max_new_tokens (:3074-3150@c4af57ff). max_req_len is the most
+// tokens one request can forward; the last token generated is sampled and never forwarded, so a
+// request may generate max_req_len - input_len + 1 of them.
 func (s *Scheduler) initReqMaxNewTokens(r *Req) {
 	inputLen := len(r.C.OriginInputIDs)
-	maxNew := max(0, min(r.MaxNewTokens, s.cfg.MaxReqLen-inputLen-1))
+	maxNew := max(0, min(r.MaxNewTokens, s.cfg.MaxReqLen-inputLen+1))
 	capacity := s.cfg.MaxTotalNumTokens
 	m, ok := s.alloc.MaxNewTokensForMemory(inputLen, maxNew, capacity, nil, s.cfg.ChunkedPrefillSize)
 	if !ok {
@@ -444,13 +449,15 @@ func (s *Scheduler) getNextBatchToRun() *Batch {
 	return ret
 }
 
-// shouldDeferPrefill is _should_defer_prefill (scheduler.py:1400-1411@297e54fd). A running batch
-// below the minimum size admits prefill every round so that it can grow.
+// shouldDeferPrefill is _should_defer_prefill (scheduler.py:1506-1524@c4af57ff). A running batch
+// below the minimum size admits prefill every round so that it can grow. With nothing decoding
+// there is no decode to protect, and waiting would only idle the GPU between chunks (data
+// parallel attention, which keeps the synchronized cadence, is refused by cfg).
 func (s *Scheduler) shouldDeferPrefill(running *Batch) bool {
 	if s.prefillDecodeIntervalRemaining == 0 {
 		return false
 	}
-	if running.Size() < s.cfg.PrefillDecodeIntervalMinBs {
+	if running.Size() < s.cfg.PrefillDecodeIntervalMinBs || running.IsEmpty() {
 		s.prefillDecodeIntervalRemaining = 0
 		return false
 	}
@@ -522,10 +529,20 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 		a.chunkedReqLimit = s.shortestPrefillChunkLimit(s.chunkedReq, s.waiting, rem)
 		s.chunkedReq = a.addChunkedReq(s.chunkedReq)
 	}
+	// A parked chunk found no KV in this pass: admit no one ahead of it, so that no batch carries a
+	// chunked request it does not run.
+	chunkParked := s.chunkedReq != nil && !slices.Contains(a.canRunList, s.chunkedReq)
 	// Get requests from the waiting queue to a new prefill batch.
-	for _, r := range s.waiting {
-		// A spent pass budget admits no one, even before the first candidate.
-		if a.budgetState() == Other {
+	candidates := s.waiting
+	if s.bounded.active {
+		// Only the members of the bounded batch are visited (admission_candidates); no request here
+		// is skipped for a temporary prerequisite, so the fallback batch is never exposed.
+		candidates = slices.Clone(s.bounded.members)
+	}
+	for _, r := range candidates {
+		// A spent pass budget admits no one, even before the first candidate: the resumed chunk or
+		// the mixed decode rows can spend it.
+		if chunkParked || a.budgetState() == Other {
 			break
 		}
 		runningBS = len(running.Reqs)
@@ -706,7 +723,10 @@ func ridOrNil(r *Req) *string {
 // request's next token is the scenario's.
 func (s *Scheduler) runBatch(b *Batch) Forward {
 	s.forwardCt++
-	if b.ExtendNumTokens > 0 {
+	// The counter that HRRN and shortest-prefill-first age by counts the tokens extend batches
+	// compute. A batch reused for decode keeps its stale ExtendNumTokens, so only extend batches count
+	// (_on_step_launch, scheduler.py:5167-5181@c4af57ff).
+	if (b.Mode == Extend || b.Mode == Mixed) && b.ExtendNumTokens > 0 {
 		s.processedTokens += b.ExtendNumTokens
 	}
 	f := Forward{Mode: b.Mode, BatchSize: b.Size(), SeqLens: slices.Clone(b.SeqLens),

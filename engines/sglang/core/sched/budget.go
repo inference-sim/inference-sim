@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/mem_cache/prefill_budget.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/mem_cache/prefill_budget.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 
 package sched
 
 import "github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 
-// budget is PrefillBudget (prefill_budget.py:62-168@297e54fd) over a single token pool. Its
+// budget is PrefillBudget (prefill_budget.py:90-318@c4af57ff) over a single token pool. Its
 // offsets are floats because the running requests' expected decode tokens are scaled by
-// new_token_ratio (schedule_policy.py:785-795@297e54fd); cache.FixedPrefillBudget holds them as
+// new_token_ratio (schedule_policy.py:1240-1251@c4af57ff); cache.FixedPrefillBudget holds them as
 // integers and serves only the whole-token case.
 type budget struct {
 	alloc         cache.Allocator
@@ -25,7 +25,7 @@ func newBudget(a cache.Allocator, t cache.PrefixCache, mixedDecodeTokens int) *b
 
 func (b *budget) ceilPaged(n int) int { return ceilTo(n, b.pageSize) }
 
-// availableAndEvictable is _available_and_evictable (:91-97).
+// availableAndEvictable is _available_and_evictable (:144-154).
 func (b *budget) availableAndEvictable() float64 {
 	evictable := b.tree.EvictableSize()
 	if b.tree.SupportsMamba() {
@@ -37,10 +37,10 @@ func (b *budget) availableAndEvictable() float64 {
 func (b *budget) remainingTotal() float64   { return b.availableAndEvictable() - b.totalOffset }
 func (b *budget) remainingCurrent() float64 { return b.availableAndEvictable() - b.currentOffset }
 
-// hasCapacity is has_capacity (:111-112).
+// hasCapacity is has_capacity (:167-171), without context-parallel sharding.
 func (b *budget) hasCapacity() bool { return b.remainingTotal() > 0 && b.remainingCurrent() > 0 }
 
-// checkPrefill is check_prefill (:114-128) on one pool: it admits when the request's total fits
+// checkPrefill is check_prefill (:193-216) on one pool: it admits when the request's total fits
 // under what remains, and leaves the chunk limit as it was.
 func (b *budget) checkPrefill(totalTokens int, chunkLimit *int) (bool, *int) {
 	if float64(totalTokens) < b.remainingTotal() {
@@ -49,19 +49,26 @@ func (b *budget) checkPrefill(totalTokens int, chunkLimit *int) (bool, *int) {
 	return false, nil
 }
 
-// availableChunkTokens is available_chunk_tokens (:140-144): the chunk limit, cut to what remains
-// in total; a continuing chunk with nothing left still makes progress to release its KV.
-func (b *budget) availableChunkTokens(chunkLimit int) int {
+// availableChunkTokens is available_chunk_tokens (:259-268@c4af57ff): the chunk limit, cut to what
+// remains in total. With nothing remaining the continuation parks (false) rather than take the
+// headroom the running decodes were promised.
+func (b *budget) availableChunkTokens(chunkLimit int) (int, bool) {
 	available := min(chunkLimit, int(b.remainingTotal()))
 	if available > 0 {
-		return available
+		return available, true
 	}
-	return chunkLimit
+	return 0, false
 }
 
-// reserve is reserve (:156-168).
-func (b *budget) reserve(extendInputLen int, maxNewTokens float64, extraTokens int) {
+// reserve is reserve (:283-318@c4af57ff). A request cut short by a chunk cap takes the rest of its
+// prompt and its decode tokens from the total as well when commitUnfinished is set, which only a
+// continuing chunk under a chunk cap sets (add_chunked_req): later requests of the pass then see
+// the KV that the rest will need.
+func (b *budget) reserve(extendInputLen int, maxNewTokens float64, extraTokens int, unfinishedInputLen int, deferredMaxNewTokens float64, commitUnfinished bool) {
 	immediate := b.ceilPaged(extendInputLen) + b.pageSize + extraTokens
 	b.totalOffset += float64(immediate) + maxNewTokens
 	b.currentOffset += float64(immediate)
+	if commitUnfinished {
+		b.totalOffset += float64(b.ceilPaged(unfinishedInputLen)) + deferredMaxNewTokens
+	}
 }

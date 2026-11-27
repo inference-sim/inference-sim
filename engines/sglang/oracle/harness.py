@@ -115,6 +115,11 @@ class Run:
             out = getattr(obj, "output_ids", None) or getattr(obj, "decode_ids", None)
             if out is not None:
                 rec["output_lens"] = [len(x) if hasattr(x, "__len__") else 1 for x in out]
+            else:
+                # SGLang main sends the rows' ids in one array and their row boundaries.
+                offsets = getattr(obj, "output_ids_offsets", None)
+                if offsets is not None:
+                    rec["output_lens"] = [b - a for a, b in zip(offsets, offsets[1:])]
         if self.steps:
             self.steps[-1]["outputs"].append(rec)
 
@@ -291,7 +296,7 @@ def install(run: Run) -> None:
 
     # platform: the device's free memory is the scenario's.
     import sglang.srt.utils as srt_utils
-    import sglang.srt.utils.common as utils_common
+    import sglang.srt.utils.device as utils_device
 
     def available_memory(device, gpu_id, distributed=False, empty_cache=True, cpu_group=None):
         return float(gib)
@@ -299,9 +304,9 @@ def install(run: Run) -> None:
     def memory_capacity(device=None):
         return float(gib) * 1024  # MiB, as get_device_memory_capacity reports it
 
-    utils_common.get_available_gpu_memory = available_memory
+    utils_device.get_available_gpu_memory = available_memory
     srt_utils.get_available_gpu_memory = available_memory
-    utils_common.get_device_memory_capacity = memory_capacity
+    utils_device.get_device_memory_capacity = memory_capacity
     srt_utils.get_device_memory_capacity = memory_capacity
 
     # transport: the scheduler's sockets.

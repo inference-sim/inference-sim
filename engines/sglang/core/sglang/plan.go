@@ -54,8 +54,8 @@ type Env struct {
 	NewTokenRatioDecaySteps                   float64
 	RetractDecodeSteps                        int
 	// ClipMaxNewTokens is SGLANG_CLIP_MAX_NEW_TOKENS_ESTIMATION (schedule_policy.py:89).
-	ClipMaxNewTokens                 int
-	DisableConsecutivePrefillOverlap bool
+	ClipMaxNewTokens           int
+	DisableOverlapAfterPrefill bool
 }
 
 // DefaultEnv is the environment of a process that sets none of them.
@@ -76,23 +76,17 @@ type Runtime struct {
 	VocabSize          int
 }
 
-// extraMaxContextLen is the request pool's row slack beyond the context length for a model with
-// no speculative decoding (kv_cache_configurator.py, extra_max_context_len).
-const extraMaxContextLen = 4
-
 // requestRowLen is the request pool's row length: the context length plus the headroom of
-// get_req_to_token_extra_context_len (allocation_sizing.py:96-116@297e54fd), 4 plus the draft tokens, and
-// at a page size above one at least the double-buffered decode reserve plus the page's rounding.
+// get_req_to_token_headroom (mem_cache/allocation_sizing.py:150-160@c4af57ff). A step without
+// speculation writes one slot past the context, whatever the page size. A speculative step runs
+// get_decode_reserve() ahead of the committed length, twice the larger of the steps and the draft
+// tokens (a chain, top-k 1), and a paged allocator rounds that up by the page size less one.
 func requestRowLen(a SchedArgs, contextLen int) int {
-	extra := extraMaxContextLen
-	if a.SpeculativeNumDraftTokens > 0 {
-		alloc := max(a.SpeculativeNumSteps, a.SpeculativeNumDraftTokens)
-		extra = extraMaxContextLen + a.SpeculativeNumDraftTokens
-		if a.PageSize > 1 {
-			extra = max(extra, 2*alloc+a.PageSize-1)
-		}
+	if a.SpeculativeNumDraftTokens <= 0 {
+		return contextLen + 1
 	}
-	return contextLen + extra
+	reserve := 2 * max(a.SpeculativeNumSteps, a.SpeculativeNumDraftTokens)
+	return contextLen + reserve + a.PageSize - 1
 }
 
 // SchedConfig is the settings SGLang's Scheduler.__init__ derives from resolved ServerArgs, the
@@ -176,7 +170,7 @@ func SchedConfig(a SchedArgs, rt Runtime, env Env) (sched.Config, error) {
 		TreeCache:                          "UnifiedRadixCache",
 		DisaggregationMode:                 mode,
 		EnableOverlap:                      !a.DisableOverlapSchedule,
-		DisableConsecutivePrefillOverlap:   env.DisableConsecutivePrefillOverlap,
+		DisableOverlapAfterPrefill:         env.DisableOverlapAfterPrefill,
 		EnableMetrics:                      a.EnableMetrics,
 		AllowAutoTruncate:                  a.AllowAutoTruncate,
 		ContextLen:                         rt.ContextLen,

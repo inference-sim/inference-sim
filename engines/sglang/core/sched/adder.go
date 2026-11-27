@@ -40,6 +40,10 @@ type adder struct {
 
 	canRunList    []*Req
 	newChunkedReq *Req
+	// chunkedReqWaits is set when the unfinished chunked request could not run this pass (no KV
+	// for a chunk). Only one chunked request is tracked, and any other would take its room, so the
+	// pass admits no one and preempts no one (schedule_policy.py:1111-1113@c4af57ff).
+	chunkedReqWaits bool
 	// preemptList holds the running requests preempted for a higher-priority one; the caller
 	// queues them again.
 	preemptList []*Req
@@ -82,7 +86,7 @@ func (a *adder) ceilPaged(n int) int { return ceilTo(n, a.pageSize) }
 
 // budgetState is budget_state (:874-893).
 func (a *adder) budgetState() AddResult {
-	if !a.budget.hasCapacity() {
+	if a.chunkedReqWaits || !a.budget.hasCapacity() {
 		return NoToken
 	}
 	if a.remInputTokens <= 0 {
@@ -96,7 +100,7 @@ func (a *adder) budgetState() AddResult {
 
 // updatePrefillBudget is _update_prefill_budget (:895-952): the compute budgets take the extend
 // rounded to pages, the KV budget what the extend and the expected decode need.
-func (a *adder) updatePrefillBudget(prefixLen, extendInputLen int, maxNewTokens int, retractedStain bool) {
+func (a *adder) updatePrefillBudget(prefixLen, extendInputLen int, maxNewTokens int, retractedStain bool, unfinished unfinishedRest) {
 	a.logHitTokens += prefixLen
 	a.logInputTokens += extendInputLen
 	if retractedStain {
@@ -105,17 +109,39 @@ func (a *adder) updatePrefillBudget(prefixLen, extendInputLen int, maxNewTokens 
 	}
 	extend := a.ceilPaged(extendInputLen)
 	// reserve() already charges one page; the per-request overhead is one page (no sharding).
-	a.budget.reserve(extend, float64(maxNewTokens), 0)
+	a.budget.reserve(extend, float64(maxNewTokens), 0, unfinished.inputLen, float64(unfinished.maxNewTokens), unfinished.commit)
 	a.remInputTokens -= extend
 	if a.remChunkTokens != nil {
 		*a.remChunkTokens -= extend
 	}
 }
 
-// addChunkedReq is add_chunked_req (:1140-1223): the next chunk of the request being prefilled in
-// pieces. It returns the request while chunks remain, nil when this chunk finishes it.
+// unfinishedRest is the part of a request a chunk cap leaves for later passes: the rest of its
+// prompt and its decode tokens. The budget holds it back from later requests of this pass only
+// when commit is set (_update_prefill_budget's commit_unfinished).
+type unfinishedRest struct {
+	inputLen, maxNewTokens int
+	commit                 bool
+}
+
+// addChunkedReq is add_chunked_req (:1735-1741@c4af57ff): the next chunk of the request being
+// prefilled in pieces. It returns the request while chunks remain, nil when this chunk finishes it.
+// A request returned without being added waits, and closes the pass to new requests.
 func (a *adder) addChunkedReq(r *Req) *Req {
-	rem := a.budget.availableChunkTokens(*a.remChunkTokens)
+	res := a.addChunkedReqInner(r)
+	if res == r && !slices.Contains(a.canRunList, r) {
+		a.chunkedReqWaits = true
+	}
+	return res
+}
+
+// addChunkedReqInner is _add_chunked_req (:1743-1867@c4af57ff).
+func (a *adder) addChunkedReqInner(r *Req) *Req {
+	rem, ok := a.budget.availableChunkTokens(*a.remChunkTokens)
+	if !ok {
+		// No KV for a chunk: park rather than take the running decodes' headroom.
+		return r
+	}
 	if a.chunkedReqLimit != nil {
 		if *a.chunkedReqLimit <= 0 {
 			panic("chunked_req_limit must be positive")
@@ -125,13 +151,22 @@ func (a *adder) addChunkedReq(r *Req) *Req {
 	cand := r.InputLen() - r.C.PrefixLen
 	truncated := cand > rem
 	newLen := min(cand, rem)
+	if newLen <= 0 {
+		// No progress this pass: wait rather than run an empty chunk.
+		return r
+	}
 	r.ExtendEnd = r.C.PrefixLen + newLen
 	a.canRunList = append(a.canRunList, r)
 	maxNew := 0
-	if !truncated {
+	rest := unfinishedRest{}
+	if truncated {
+		// Under a chunk cap, requests are admitted after a chunk cut short; holding its rest and
+		// its decode keeps them off the KV the later passes need.
+		rest = unfinishedRest{cand - newLen, min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens), a.chunkedReqLimit != nil}
+	} else {
 		maxNew = min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens)
 	}
-	a.updatePrefillBudget(0, r.ExtendLen(), maxNew, r.RetractedStain)
+	a.updatePrefillBudget(0, r.ExtendLen(), maxNew, r.RetractedStain, rest)
 	if truncated {
 		return r
 	}
@@ -143,6 +178,9 @@ func (a *adder) addChunkedReq(r *Req) *Req {
 func (a *adder) addOneReq(r *Req, hasChunkedReq bool) AddResult {
 	if x := a.s.cfg.PrefillMaxRequests; x != nil && len(a.canRunList) >= *x {
 		return Other
+	}
+	if a.chunkedReqWaits {
+		return NoToken
 	}
 	if a.s.cfg.Disable && r.IgnoreEOS {
 		return a.addOneReqIgnoreEOS(r)
@@ -182,8 +220,9 @@ func (a *adder) selectAdmission(r *Req, totalTokens int, hasChunkedReq bool) (ad
 	isChunked := false
 	maxNew := min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens)
 	if chunkTokensLimit != nil && inputTokens > *chunkTokensLimit {
-		if hasChunkedReq && a.s.policy == ShortestPrefillFirst {
-			// Only one unfinished chunked request can be tracked.
+		if hasChunkedReq {
+			// Only one unfinished chunked request can be tracked; a continuation cut short by
+			// memory leaves chunk budget to spare.
 			return admission{}, Other, false
 		}
 		extend = *chunkTokensLimit / a.pageSize * a.pageSize
@@ -207,7 +246,7 @@ func (a *adder) commit(r *Req, adm admission) {
 	if adm.isChunked {
 		a.newChunkedReq = r
 	}
-	a.updatePrefillBudget(adm.prefixLen, adm.extendLen, adm.maxNewTokens, r.RetractedStain)
+	a.updatePrefillBudget(adm.prefixLen, adm.extendLen, adm.maxNewTokens, r.RetractedStain, unfinishedRest{})
 	// _account_prefill_cache_admission (:962-1000): a retraction's reprocessing is not a hit.
 	if !r.RetractedStain {
 		a.logDeviceHitTokens += adm.prefixLen
@@ -278,7 +317,7 @@ func (a *adder) addOneReqIgnoreEOS(r *Req) AddResult {
 		// Not chunked, or the last chunk: the whole sequence is committed this pass.
 		r.ExtendEnd = r.InputLen()
 		a.canRunList = append(a.canRunList, r)
-		a.updatePrefillBudget(0, r.ExtendLen(), min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens), r.RetractedStain)
+		a.updatePrefillBudget(0, r.ExtendLen(), min(r.MaxNewTokens, a.s.cfg.ClipMaxNewTokens), r.RetractedStain, unfinishedRest{})
 	} else {
 		if *a.remChunkTokens <= 0 {
 			return Other
@@ -290,7 +329,7 @@ func (a *adder) addOneReqIgnoreEOS(r *Req) AddResult {
 		r.ExtendEnd = r.C.PrefixLen + trunc
 		a.canRunList = append(a.canRunList, r)
 		a.newChunkedReq = r
-		a.updatePrefillBudget(0, trunc, 0, r.RetractedStain)
+		a.updatePrefillBudget(0, trunc, 0, r.RetractedStain, unfinishedRest{})
 	}
 	return a.budgetState()
 }
@@ -300,6 +339,11 @@ func (a *adder) addOneReqIgnoreEOS(r *Req) AddResult {
 // enough tokens come free. It reports whether the preemption was committed.
 func (a *adder) preemptToSchedule(req *Req) bool {
 	s := a.s
+	if a.chunkedReqWaits {
+		// The pass admits no one while the unfinished chunked request waits, so a preempted
+		// request would gain the new one nothing.
+		return false
+	}
 	var valid []*Req
 	for _, r := range a.running.Reqs {
 		// A request that finished in the last result keeps its place in the batch until the next filter.

@@ -14,7 +14,7 @@ aborts at ingest for its length; --no-cache disables the radix cache (fixed-leng
 add_one_req_ignore_eos); --truncate sets --allow-auto-truncate (use it with --oversize: the long input is cut to the limit and runs); --overlap runs SGLang's overlap event loop (S14); --eos makes the sampled token the model's
 end-of-sequence token, so each request that does not ignore it finishes at its first token, while a decode batch that
 holds it is already launched (the extra discarded step); --no-consecutive-prefill-overlap sets
-SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP; --heavy makes more requests that generate longer; --seed-arg sets the server's random_seed (the random policy's stream).
+SGLANG_DISABLE_OVERLAP_AFTER_PREFILL; --heavy makes more requests that generate longer; --seed-arg sets the server's random_seed (the random policy's stream).
 """
 import argparse
 import json
@@ -83,7 +83,7 @@ def scenario(seed: int, policy: str, page: int, mixed: bool, tight: bool, opt) -
         "requests": reqs,
     }
     if opt.no_consecutive_prefill_overlap:
-        out["sglang_env"] = {"SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": "1"}
+        out["sglang_env"] = {"SGLANG_DISABLE_OVERLAP_AFTER_PREFILL": "1"}
     return out
 
 

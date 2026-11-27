@@ -108,7 +108,7 @@ func TestDraftSlotsCountInTheInputLengthCheck(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			e := specEngine(t, tc.steps, func(c *sched.Config) {
-				c.ContextLen, c.MaxContextLen = context, context+4+tc.steps+1
+				c.ContextLen, c.MaxContextLen = context, context+2*(tc.steps+1)
 				if tc.steps == 0 {
 					c.SpecNumSteps, c.SpecNumDraftTokens = 0, 0
 				}
@@ -121,14 +121,14 @@ func TestDraftSlotsCountInTheInputLengthCheck(t *testing.T) {
 	}
 }
 
-// The request pool's rows are longer by the draft tokens (get_req_to_token_extra_context_len,
-// 4 + num_draft_tokens), so a request can hold its reserve at the end of the context.
-func TestSchedConfigWidensTheRequestRowsByTheDraftTokens(t *testing.T) {
+// The request pool's rows are one column longer than the context without speculation, whatever the
+// page size, and with it longer by the double-buffered decode reserve plus the page's rounding
+// (get_req_to_token_headroom), so a request can hold its reserve at the end of the context.
+func TestSchedConfigWidensTheRequestRowsByTheDecodeReserve(t *testing.T) {
 	rt := Runtime{MaxTotalNumTokens: 4096, ReqPoolSize: 9, MaxRunningRequests: 9, ContextLen: 8192, EOSTokenIDs: []int64{1}, VocabSize: 10}
 	for _, tc := range []struct{ page, draft, extra int }{
-		{1, 0, 4}, {1, 2, 4 + 2}, {1, 4, 4 + 4},
-		// at a page size above one the double-buffered reserve plus the page's rounding can be wider
-		{16, 0, 4}, {16, 4, max(4+4, 2*4+15)}, {128, 8, max(4+8, 2*8+127)},
+		{1, 0, 1}, {1, 2, 2 * 2}, {1, 4, 2 * 4},
+		{16, 0, 1}, {16, 4, 2*4 + 15}, {128, 8, 2*8 + 127},
 	} {
 		a := SchedArgs{PageSize: tc.page, SchedulePolicy: "fcfs", MaxPrefillTokens: 16384, ScheduleConservativeness: 1.0,
 			DisaggregationMode: "null", SpeculativeNumSteps: max(tc.draft-1, 0), SpeculativeNumDraftTokens: tc.draft}

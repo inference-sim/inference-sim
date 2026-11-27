@@ -95,6 +95,9 @@ func (t *simTree) insert(ids []int64) { t.keys = append(t.keys, ids) }
 // tree and sorts it in place (a stable sort, as Python's). running is the running batch, which the
 // routing-key policy counts keys in.
 func (s *Scheduler) calcPriority(queue []*Req, running *Batch) {
+	if s.calcBoundedPriority(queue) {
+		return
+	}
 	policy := s.policy
 	if policy == LPM || policy == HRRN {
 		if len(queue) > waitingQueuePrefixMatchMax {
@@ -345,23 +348,49 @@ func (s *Scheduler) shortestPrefillChunkLimit(chunked *Req, queue []*Req, budget
 	return &v
 }
 
-// computePrefixMatches is _compute_prefix_matches (:346-397): the match against the tree for each
-// request, and the in-batch prefix check that defers a request whose prefix a queued one shares.
+// computePrefixMatches is _compute_prefix_matches (:589-651@c4af57ff): the match against the tree
+// for each request, and the in-batch prefix check that defers a request whose prefix a queued
+// one shares. Of the requests with almost nothing cached that share a prefix only one runs, so
+// the shared prefix is computed once: under shortest-prefill-first the checked requests are
+// visited shortest uncached work first, so the leader that runs is the shortest of its group and
+// not the first of it in queue order. Only the first InBatchPrefixDeprioritizeThreshold tokens
+// can decide a match, so the check keys on them.
 func (s *Scheduler) computePrefixMatches(queue []*Req) map[string]bool {
 	deprioritized := map[string]bool{}
 	s.waitTree.reset()
+	type candidate struct {
+		r   *Req
+		key []int64
+	}
+	var candidates []candidate
 	for _, r := range queue {
 		ids := r.allIDs()
 		s.matchKVCache(r, ids, nil)
 		if r.C.PrefixLen <= s.cfg.InBatchPrefixCheckThreshold {
-			if s.waitTree.match(ids) >= s.cfg.InBatchPrefixDeprioritizeThreshold {
-				deprioritized[r.RID()] = true
-			} else {
-				s.waitTree.insert(ids)
-			}
+			candidates = append(candidates, candidate{r, ids[:pySliceEnd(len(ids), s.cfg.InBatchPrefixDeprioritizeThreshold)]})
+		}
+	}
+	if s.policy == ShortestPrefillFirst {
+		sort.SliceStable(candidates, func(i, j int) bool {
+			return shortestPrefillWork(candidates[i].r) < shortestPrefillWork(candidates[j].r)
+		})
+	}
+	for _, c := range candidates {
+		if s.waitTree.match(c.key) >= s.cfg.InBatchPrefixDeprioritizeThreshold {
+			deprioritized[c.r.RID()] = true
+		} else {
+			s.waitTree.insert(c.key)
 		}
 	}
 	return deprioritized
+}
+
+// pySliceEnd is the end index of Python's seq[:n] for a sequence of length size.
+func pySliceEnd(size, n int) int {
+	if n < 0 {
+		return max(size+n, 0)
+	}
+	return min(size, n)
 }
 
 var _ = cache.FullComponentType

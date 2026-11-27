@@ -53,7 +53,7 @@ ORACLE_INPUTS = run_scheduler.ORACLE_INPUTS + ("oracle/run_sched.py",)
 HOOKS = {"server_args": (), "inputs": (), "run": None, "config": None, "setup": None}
 
 # SGLANG_* variables a scenario may set, by `sglang_env`; the others are removed (run_scheduler.child).
-SCHED_SGLANG_ENV = ("SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",)
+SCHED_SGLANG_ENV = ("SGLANG_DISABLE_OVERLAP_AFTER_PREFILL",)
 
 
 def sched_server_args(scenario: dict):
@@ -159,7 +159,7 @@ def config_of(s) -> dict:
         "allow_auto_truncate": bool(get_serving().allow_auto_truncate),
         "retraction_policy": str(get_schedule().retraction_policy),
         "context_len": int(s.model_config.context_len),
-        "disable_consecutive_prefill_overlap": bool(envs.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP.get()),
+        "disable_overlap_after_prefill": bool(envs.SGLANG_DISABLE_OVERLAP_AFTER_PREFILL.get()),
         "random_seed": int(s.server_args.random_seed),
         "schedule_low_priority_values_first": bool(s.schedule_low_priority_values_first),
         "priority_scheduling_preemption_threshold": int(s.priority_scheduling_preemption_threshold),

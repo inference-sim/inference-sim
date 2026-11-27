@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/managers/scheduler.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/managers/scheduler.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 
 package sched
 
@@ -21,12 +21,13 @@ func (b *Batch) snapshot() *Batch {
 	return &c
 }
 
-// isDisableOverlapForBatch is is_disable_overlap_for_batch (scheduler.py:2136-2174) without data
-// parallel attention, speculation or grammars: two extend batches in a row (a mixed batch extends)
-// do not overlap when the environment says so, so that the first one's result is not held back.
-func (s *Scheduler) isDisableOverlapForBatch(batch, last *Batch) bool {
-	isExtend := func(b *Batch) bool { return b != nil && (b.Mode == Extend || b.Mode == Mixed) }
-	return s.cfg.DisableConsecutivePrefillOverlap && isExtend(batch) && isExtend(last)
+// shouldProcessLastBatchEarly is should_process_last_batch_early (scheduler.py:2327-2348@c4af57ff)
+// without data parallel attention, speculation or grammars: with SGLANG_DISABLE_OVERLAP_AFTER_PREFILL
+// the result of an extend batch (a mixed batch extends) is processed before the next batch is formed,
+// so that the first token of a prefill is not held back a step. It is decided from the last batch
+// alone, before the next one exists.
+func (s *Scheduler) shouldProcessLastBatchEarly(last *Batch) bool {
+	return s.cfg.DisableOverlapAfterPrefill && last != nil && (last.Mode == Extend || last.Mode == Mixed)
 }
 
 // popAndProcess is pop_and_process (scheduler.py:2068-2071): process the oldest launched batch.
@@ -39,15 +40,15 @@ func (s *Scheduler) popAndProcess() {
 	s.processBatchResult(b)
 }
 
-// overlapIteration is the body of event_loop_overlap (scheduler.py:2073-2133) after the requests
+// overlapIteration is the body of event_loop_overlap (scheduler.py:2255-2325@c4af57ff) after the requests
 // arrive. It returns the batch it launched, which becomes last_batch.
 func (s *Scheduler) overlapIteration(rec *StepRecord) *Batch {
-	batch := s.getNextBatchToRun()
-	disable := s.isDisableOverlapForBatch(batch, s.last)
-	// Without overlap for this batch, the last batch's result is processed first.
-	if disable {
+	// The last batch's result is processed first when it is a prefill's and the environment says so.
+	early := s.shouldProcessLastBatchEarly(s.last)
+	if early {
 		s.popAndProcess()
 	}
+	batch := s.getNextBatchToRun()
 	// Launch the current batch.
 	if batch != nil {
 		rec.Forwards = append(rec.Forwards, s.runBatch(batch))
@@ -55,7 +56,7 @@ func (s *Scheduler) overlapIteration(rec *StepRecord) *Batch {
 	}
 	// Process the last batch.
 	if s.last != nil {
-		if !disable {
+		if !early {
 			s.popAndProcess()
 		}
 	} else if batch == nil && s.isFullyIdle() {
