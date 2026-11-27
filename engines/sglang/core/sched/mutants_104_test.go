@@ -181,27 +181,27 @@ func TestSpentInputCapEndsThePass(t *testing.T) {
 	}
 }
 
-// A request longer than the chunk budget is cut into a chunk, unless shortest-prefill-first has a
-// chunked request already, which it cannot track a second of.
-func TestSecondChunkedRequestIsRefusedOnlyUnderShortestPrefillFirst(t *testing.T) {
-	for _, tc := range []struct {
-		policy string
-		admits bool
-	}{{"fcfs", true}, {"shortest-prefill-first", false}} {
-		s := adderRig(t, func(c *Config) {
-			n := 16
-			c.ChunkedPrefillSize = &n
-			c.Policy = tc.policy
-		})
-		a := s.newAdder(s.running, 0)
-		r := queued(s, 0, 40, 4)
-		res := a.addOneReq(r, true)
-		if tc.admits {
-			if len(admittedIDs(a)) != 1 || r.ExtendEnd != 16 || a.newChunkedReq != r {
-				t.Fatalf("%s: admitted %v, extend end %d, chunked %v; want a 16-token chunk", tc.policy, admittedIDs(a), r.ExtendEnd, a.newChunkedReq)
+// A request longer than the chunk budget is cut into a chunk, unless a chunked request is already
+// unfinished: only one can be tracked, under every policy (schedule_policy.py:1111-1113@c4af57ff;
+// before it was refused only under shortest-prefill-first).
+func TestSecondChunkedRequestIsRefusedUnderEveryPolicy(t *testing.T) {
+	for _, policy := range []string{"fcfs", "shortest-prefill-first"} {
+		for _, hasChunked := range []bool{false, true} {
+			s := adderRig(t, func(c *Config) {
+				n := 16
+				c.ChunkedPrefillSize = &n
+				c.Policy = policy
+			})
+			a := s.newAdder(s.running, 0)
+			r := queued(s, 0, 40, 4)
+			res := a.addOneReq(r, hasChunked)
+			if !hasChunked {
+				if len(admittedIDs(a)) != 1 || r.ExtendEnd != 16 || a.newChunkedReq != r {
+					t.Fatalf("%s: admitted %v, extend end %d, chunked %v; want a 16-token chunk", policy, admittedIDs(a), r.ExtendEnd, a.newChunkedReq)
+				}
+			} else if res != Other || len(admittedIDs(a)) != 0 || a.newChunkedReq != nil {
+				t.Fatalf("%s: verdict %v, admitted %v; want Other and nothing", policy, res, admittedIDs(a))
 			}
-		} else if res != Other || len(admittedIDs(a)) != 0 || a.newChunkedReq != nil {
-			t.Fatalf("%s: verdict %v, admitted %v; want Other and nothing", tc.policy, res, admittedIDs(a))
 		}
 	}
 }

@@ -7,6 +7,7 @@
  "finished": {
   "r0": {
    "reason": {
+    "ignored_stop": null,
     "length": 4,
     "type": "length"
    },
@@ -14,6 +15,7 @@
   },
   "r1": {
    "reason": {
+    "ignored_stop": null,
     "length": 3,
     "type": "length"
    },
@@ -21,6 +23,7 @@
   },
   "r2": {
    "reason": {
+    "ignored_stop": null,
     "length": 2,
     "type": "length"
    },
@@ -33,27 +36,27 @@
   "max_total_num_tokens": 120149
  },
  "provenance": {
-  "blis_sglang_commit": "9531e8d4266a63187092d17b18e8d02611188c3b",
-  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
-  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "blis_sglang_commit": "1a7dcddd8dd44a28d23645f8ec8a6a8f8622c182",
+  "lockfile_sha256": "6e08f237723633701d731058a3358d19c93e36841ae681ac8f19e58a1b6c7d77",
+  "mock_version": "gpu-mock/10+7d012d459dd6",
   "model": "Qwen/Qwen2.5-0.5B-Instruct",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
-   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
-   "oracle/harness.py": "a3b5bfbc5670969a78dff5d50e24a5e17bbb8d50ed70e1d77825013608c10ac5",
-   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/harness.json": "a616a3a535dc670cba483de6102f925d9d45054931c49e0561abe765b71ab2d8",
+   "oracle/harness.py": "cdba51e7883c1837f9e9eee4231b32104d54d6e3e1213917eba18549df0c5e16",
+   "oracle/mocks.json": "0e43d9a6fcea6735bbb2228a858cee3c5af9a2b2534b9c3e4f5231533a5c7959",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
    "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
    "oracle/scenarios/tiny-memory.json": "f8f32a4dbc5f04238ea18fae710f14d15e275fd7447bc7f6e31d0d8f52265043",
    "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
    "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
   },
-  "platform": "linux-x86_64",
+  "platform": "darwin-arm64",
   "python": "3.12.16",
   "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
   "scenario_sha256": "f8f32a4dbc5f04238ea18fae710f14d15e275fd7447bc7f6e31d0d8f52265043",
   "seed": 0,
-  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "sglang_commit": "c4af57ff93f301846fa1da4c31f8523c08c7510d",
   "tier": 2
  },
  "receive": {
@@ -95,7 +98,7 @@
      "loop": {
       "file": "python/sglang/srt/managers/scheduler.py",
       "function": "event_loop_normal",
-      "line": 2025,
+      "line": 2219,
       "upstream_code": true
      },
      "mode": "EXTEND",
@@ -117,7 +120,7 @@
      "loop": {
       "file": "python/sglang/srt/managers/scheduler.py",
       "function": "event_loop_normal",
-      "line": 2025,
+      "line": 2219,
       "upstream_code": true
      },
      "mode": "DECODE",
@@ -139,7 +142,7 @@
      "loop": {
       "file": "python/sglang/srt/managers/scheduler.py",
       "function": "event_loop_normal",
-      "line": 2025,
+      "line": 2219,
       "upstream_code": true
      },
      "mode": "DECODE",
@@ -182,7 +185,7 @@
      "loop": {
       "file": "python/sglang/srt/managers/scheduler.py",
       "function": "event_loop_normal",
-      "line": 2025,
+      "line": 2219,
       "upstream_code": true
      },
      "mode": "EXTEND",
@@ -203,7 +206,7 @@
      "loop": {
       "file": "python/sglang/srt/managers/scheduler.py",
       "function": "event_loop_normal",
-      "line": 2025,
+      "line": 2219,
       "upstream_code": true
      },
      "mode": "DECODE",

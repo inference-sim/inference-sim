@@ -3,9 +3,9 @@
 of oracle/serverargs/cases.json, after SGLang resolves and publishes that case's ServerArgs.
 
 For each case it records what the decode step lowers to:
-  alignment          get_cuda_graph_batch_size_alignment() (python/sglang/srt/utils/common.py:4168)
+  alignment          get_cuda_graph_batch_size_alignment() (python/sglang/srt/layers/dp_attention.py:1405@c4af57ff)
   gather             require_mlp_tp_gather(), require_attn_tp_gather(), require_mlp_sync()
-                     (utils/common.py:4067-4165)
+                     (layers/dp_attention.py:1304-1402@c4af57ff)
   moe                the MoE all-to-all and runner backends initialize_moe_config() installs
                      (layers/moe/utils.py:479-495)
   attention          the (prefill, decode) attention backends the model runner builds
@@ -65,7 +65,7 @@ def lower_case(case, chip, models):
     from sglang.srt import runtime_context
     from sglang.srt.layers.moe.utils import get_moe_a2a_backend, get_moe_runner_backend, initialize_moe_config
     from sglang.srt.model_executor.runner.base_cuda_graph_runner import BaseCudaGraphRunner, get_batch_sizes_to_capture
-    from sglang.srt.utils import common
+    from sglang.srt.layers import dp_attention as common
 
     runtime_context.publish(sa, role="scheduler")
     initialize_moe_config()
