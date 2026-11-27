@@ -14320,6 +14320,13 @@
           "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -14344,6 +14351,13 @@
           "core/sched/testdata/golden-sched/chunked-retract.trace.json",
           "core/sched/testdata/golden-sched/truncate-a.trace.json",
           "core/sched/testdata/golden-sched/truncate-loose.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
         ]
       },
       "estimation": {
@@ -14413,6 +14427,45 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "triton",
+          "torch_native",
+          "flex_attention",
+          "dsa",
+          "qsa",
+          "unlimited_ocr_v2",
+          "dsv4",
+          "ernie55",
+          "fa3",
+          "fa4",
+          "flashinfer",
+          "llada2_cfg_flashinfer",
+          "flashmla",
+          "trtllm_mla",
+          "cutedsl_mla",
+          "trtllm_mha",
+          "hpc_ops",
+          "minicpm_flashattn",
+          "minicpm_flashinfer",
+          "aiter",
+          "wave",
+          "intel_amx",
+          "ascend",
+          "intel_xpu"
+        ],
+        "covered": [
+          "dsa",
+          "dsv4",
+          "fa3",
+          "flashinfer",
+          "nsa",
+          "triton",
+          "trtllm_mha",
+          "trtllm_mla"
         ]
       },
       "estimation": {
@@ -14572,6 +14625,29 @@
           "core/sched/testdata/golden-sched/chunked-retract.trace.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": -1,
+            "closed": "above"
+          },
+          {
+            "value": 0,
+            "closed": "above"
+          },
+          {
+            "value": 1,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0,
+          1,
+          2,
+          3
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -14639,6 +14715,12 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -14752,6 +14834,12 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -14930,6 +15018,12 @@
       "evidence": {
         "traces": [
           "core/metrics/testdata/golden-metrics/k-chunked-retract.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -15287,6 +15381,12 @@
           "oracle/scenarios-sched/priority-fcfs-no-preempt.json"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -15300,6 +15400,13 @@
           "config/testdata/serverargs.json",
           "oracle/scenarios-sched/chunked-retract.json",
           "oracle/scenarios-sched/nocache-fcfs.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
         ]
       },
       "estimation": {
@@ -15545,6 +15652,23 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2
         ]
       },
       "estimation": {
@@ -16525,6 +16649,13 @@
         "traces": [
           "core/sched/testdata/golden-sched/chunked-retract.trace.json",
           "core/sched/testdata/golden-sched/priority-fcfs.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
         ]
       },
       "estimation": {
@@ -17882,6 +18013,26 @@
           "lower/testdata/sglang_lower.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "auto",
+          "fp8_e5m2",
+          "fp8_e4m3",
+          "mxfp8",
+          "bf16",
+          "bfloat16",
+          "nvfp4",
+          "fp4_mx_block16"
+        ],
+        "covered": [
+          "auto",
+          "bf16",
+          "bfloat16",
+          "fp8_e4m3",
+          "fp8_e5m2"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -18303,6 +18454,19 @@
           "lower/testdata/sglang_lower.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "float32",
+          "bfloat16",
+          "float16"
+        ],
+        "covered": [
+          "bfloat16",
+          "float16",
+          "float32"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -18395,6 +18559,12 @@
           "core/sched/testdata/golden-sched/max-prefill-tokens.trace.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -18410,6 +18580,12 @@
           "core/sched/testdata/golden-sched/queue-limit-heavy.trace.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -18422,6 +18598,28 @@
         "traces": [
           "config/testdata/serverargs.json",
           "core/sched/testdata/golden-sched/chunked-retract.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 400,
+            "closed": "above"
+          },
+          {
+            "value": 513,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          0,
+          1,
+          2
         ]
       },
       "estimation": {
@@ -18468,6 +18666,12 @@
       "evidence": {
         "traces": [
           "config/testdata/serverargs.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -18646,6 +18850,12 @@
       "evidence": {
         "traces": [
           "config/testdata/serverargs.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "covered": [
+          "<model>"
         ]
       },
       "estimation": {
@@ -19076,6 +19286,22 @@
           "lower/testdata/sglang_lower.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -19223,6 +19449,12 @@
           "core/sched/testdata/golden-sched/prefill-max-nocache.trace.json"
         ]
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -19248,6 +19480,12 @@
           "core/sched/testdata/golden-sched/priority-fcfs.trace.json",
           "core/sched/testdata/golden-sched/priority-heavy.trace.json",
           "core/sched/testdata/golden-sched/priority-threshold.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
         ]
       },
       "estimation": {
@@ -19284,6 +19522,47 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "awq",
+          "fp8",
+          "mxfp8",
+          "gptq",
+          "gptq_marlin",
+          "awq_marlin",
+          "bitsandbytes",
+          "gguf",
+          "modelopt",
+          "modelopt_fp8",
+          "modelopt_fp4",
+          "nvfp4_online",
+          "modelopt_mixed",
+          "petit_nvfp4",
+          "w8a8_int8",
+          "w8a8_fp8",
+          "moe_wna16",
+          "w4afp8",
+          "mxfp4",
+          "auto-round",
+          "auto-round-int8",
+          "compressed-tensors",
+          "modelslim",
+          "mxfp_w4a8",
+          "quark",
+          "quark_int4fp8_moe",
+          "quark_mxfp4",
+          "mlx_q4",
+          "mlx_q8",
+          "unquant",
+          "humming"
+        ],
+        "covered": [
+          "fp8",
+          "modelopt_fp4",
+          "modelopt_mixed"
         ]
       },
       "estimation": {
@@ -19433,6 +19712,17 @@
           "core/sched/testdata/golden-sched/retract-priority-lof.trace.json"
         ]
       },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "length",
+          "priority"
+        ],
+        "covered": [
+          "length",
+          "priority"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -19580,6 +19870,13 @@
           "core/sched/testdata/golden-sched/priority-low-first.trace.json"
         ]
       },
+      "value_classes": {
+        "type": "boolean",
+        "covered": [
+          "false",
+          "true"
+        ]
+      },
       "estimation": {
         "rule": "leave_unset"
       }
@@ -19598,6 +19895,31 @@
           "core/sched/testdata/golden-sched/heavy-spf.trace.json",
           "core/sched/testdata/golden-sched/random-a.trace.json",
           "core/sched/testdata/golden-sched/routing-a.trace.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "lpm",
+          "random",
+          "fcfs",
+          "dfs-weight",
+          "lof",
+          "priority",
+          "routing-key",
+          "hrrn",
+          "shortest-prefill-first",
+          "uniboost"
+        ],
+        "covered": [
+          "dfs-weight",
+          "fcfs",
+          "hrrn",
+          "lof",
+          "lpm",
+          "random",
+          "routing-key",
+          "shortest-prefill-first"
         ]
       },
       "estimation": {
@@ -20293,6 +20615,12 @@
       "evidence": {
         "proof": "oracle/inertness/stream_interval.json"
       },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
+      },
       "estimation": {
         "rule": "none"
       }
@@ -20459,6 +20787,41 @@
         "traces": [
           "config/testdata/serverargs.json",
           "lower/testdata/sglang_lower.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "thresholds": [
+          {
+            "value": 1,
+            "closed": "above"
+          },
+          {
+            "value": 2,
+            "closed": "above"
+          },
+          {
+            "value": 3,
+            "closed": "above"
+          },
+          {
+            "value": 4,
+            "closed": "above"
+          },
+          {
+            "value": 5,
+            "closed": "above"
+          },
+          {
+            "value": 9,
+            "closed": "above"
+          }
+        ],
+        "covered_classes": [
+          1,
+          2,
+          4,
+          5
         ]
       },
       "estimation": {

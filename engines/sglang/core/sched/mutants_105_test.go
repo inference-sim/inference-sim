@@ -73,7 +73,7 @@ func TestBudgetHasNoCapacityWhenEitherRemainderIsSpent(t *testing.T) {
 
 	// The expected decode tokens use up all the room, while the tokens needed right now do not.
 	totalSpent := newBudget(s.alloc, s.tree, 0)
-	totalSpent.reserve(10, float64(room-11), 0)
+	totalSpent.reserve(10, float64(room-11), 0, 0, 0, false)
 	if totalSpent.remainingTotal() != 0 || totalSpent.remainingCurrent() <= 0 {
 		t.Fatalf("setup: remaining total %v, current %v", totalSpent.remainingTotal(), totalSpent.remainingCurrent())
 	}
@@ -84,7 +84,7 @@ func TestBudgetHasNoCapacityWhenEitherRemainderIsSpent(t *testing.T) {
 	// After a preemption gives back running requests' expected tokens, the total offset falls
 	// below the current one; the current offset can then be the one that is spent.
 	currentSpent := newBudget(s.alloc, s.tree, 0)
-	currentSpent.reserve(10, 0, 0)
+	currentSpent.reserve(10, 0, 0, 0, 0, false)
 	currentSpent.totalOffset = 1
 	currentSpent.currentOffset = float64(room)
 	if currentSpent.remainingCurrent() != 0 || currentSpent.remainingTotal() <= 0 {
@@ -95,9 +95,9 @@ func TestBudgetHasNoCapacityWhenEitherRemainderIsSpent(t *testing.T) {
 	}
 }
 
-// A chunk is cut to what remains in total; a continuing chunk with nothing left keeps its limit,
-// so that it still makes progress and releases its KV.
-func TestChunkTokensAreCutToWhatRemainsAndKeepTheLimitWhenNothingDoes(t *testing.T) {
+// A chunk is cut to what remains in total; a continuing chunk with nothing left parks (no chunk is
+// offered) rather than take the headroom the running decodes were promised.
+func TestChunkTokensAreCutToWhatRemainsAndParkWhenNothingDoes(t *testing.T) {
 	s, err := build(baseConfig(t), 13)
 	if err != nil {
 		t.Fatal(err)
@@ -106,10 +106,11 @@ func TestChunkTokensAreCutToWhatRemainsAndKeepTheLimitWhenNothingDoes(t *testing
 	for _, c := range []struct{ remaining, limit, want int }{
 		{room, 7, 7}, // plenty left: the limit
 		{3, 7, 3},    // less left than the limit: what is left
-		{0, 7, 7},    // nothing left: the limit again
+		{0, 7, 0},    // nothing left: parks
 	} {
 		b := newBudget(s.alloc, s.tree, room-c.remaining)
-		if got := b.availableChunkTokens(c.limit); got != c.want {
+		got, ok := b.availableChunkTokens(c.limit)
+		if ok != (c.want > 0) || got != c.want {
 			t.Errorf("limit %d with %d tokens remaining: %d chunk tokens, want %d", c.limit, c.remaining, got, c.want)
 		}
 	}

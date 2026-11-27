@@ -118,7 +118,7 @@ func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.
 		t.Errorf("got %v, want a refusal naming the release", err)
 	}
 	for block, issue := range map[string]string{
-		"model_path: m\ntp_size: 8\ndp_size: 8\nenable_dp_attention: true\n": "#2356",
+		"model_path: m\ntp_size: 8\nattn_dp_size: 8\n": "#2356",
 		"model_path: m\nenable_hierarchical_cache: true\n":                   "#2341",
 		"model_path: m\nscheduler_recv_interval: 10\n":                       "#2344",
 	} {
@@ -233,7 +233,7 @@ func TestEachUnmodelledSettingIsRefusedOnItsOwn(t *testing.T) {
 		issue string
 	}{
 		{"tree drafting and verification", func(a *config.ServerArgs) { a.SpeculativeAlgorithm = &spec; a.SpeculativeEagleTopk = &topk }, "#2355"},
-		{"DP attention", func(a *config.ServerArgs) { a.EnableDpAttention = true }, "#2356"},
+		{"DP attention", func(a *config.ServerArgs) { a.AttnDpSize = 2 }, "#2356"},
 		{"a data-parallel size above one", func(a *config.ServerArgs) { a.DpSize = 2 }, "#2356"},
 		{"pipeline parallelism", func(a *config.ServerArgs) { a.PpSize = 2 }, "#2358"},
 		{"P/D disaggregation", func(a *config.ServerArgs) { a.DisaggregationMode = "prefill" }, "#2351"},
