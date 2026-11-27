@@ -99,6 +99,8 @@ func (m *MHAPool) LayerNum() int { return m.layerNum }
 
 // BytesPerToken is the cell size DefaultPoolConfigurator charges an MHA token
 // (pool_configurator.py:491-498@297e54fd): K and V heads over every layer.
+func (m *MHAPool) IDSpaces() []string { return []string{"FULL"} }
+
 func (m *MHAPool) BytesPerToken() int64 {
 	return int64(m.HeadNum) * int64(m.HeadDim+m.VHeadDim) * int64(m.layerNum) * int64(m.DType.ItemSize())
 }
@@ -157,6 +159,8 @@ func (m *MLAPool) LayerNum() int { return m.layerNum }
 // (pool_configurator.py:379-386@297e54fd): the latent row over every layer, at the KV dtype's
 // element size. The configurator's row is calculate_mla_kv_cache_dim, which is the KVCacheDim
 // the builder hands the pool.
+func (m *MLAPool) IDSpaces() []string { return []string{"FULL"} }
+
 func (m *MLAPool) BytesPerToken() int64 {
 	return int64(m.KVCacheDim) * int64(m.layerNum) * int64(m.DType.ItemSize())
 }
@@ -273,6 +277,8 @@ func (d *DSAPool) indexerLayers() int {
 // BytesPerToken is the MLA cell plus the indexer cell, as DefaultPoolConfigurator charges a DSA
 // token (pool_configurator.py:399-409, 560-635@297e54fd): one index row per layer that holds
 // index keys, shared by index_kpool tokens.
+func (d *DSAPool) IDSpaces() []string { return []string{"FULL"} }
+
 func (d *DSAPool) BytesPerToken() int64 {
 	indexer := int64(ceilDiv(d.indexRowBytes(), d.IndexKPool)) * int64(d.indexerLayers())
 	return d.MLAPool.BytesPerToken() + indexer

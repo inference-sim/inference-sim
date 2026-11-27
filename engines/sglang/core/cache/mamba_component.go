@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/mem_cache/unified_cache/components/mamba.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/mem_cache/unified_cache/components/mamba.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 // Also derived from, at the same release: python/sglang/srt/mem_cache/base_prefix_cache.py (InsertParams, InsertResult, EvictParams).
 
 package cache
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -17,6 +16,9 @@ type MambaInsert struct {
 	Value []int64
 	// KeepIdx is mamba_keep_idx: the ping-pong entry a finished request's donation came from.
 	KeepIdx *int
+	// CheckpointDeferred is mamba_checkpoint_deferred: the component let a running request's
+	// checkpoint go by, so nothing is inserted and cleanup frees nothing.
+	CheckpointDeferred bool
 }
 
 // MambaInsertResult is the Mamba field of InsertResult (base_prefix_cache.py:124@297e54fd):
@@ -29,10 +31,6 @@ type MambaEvictor interface {
 	EvictForAlloc(mambaNum int)
 }
 
-// ErrMambaAllocFailed is the assertion _alloc_mamba_slot raises when eviction freed no slot
-// (mamba.py:546).
-var ErrMambaAllocFailed = errors.New("can not alloc mamba cache")
-
 // MambaLifecycle is the request-side half of MambaComponent (components/mamba.py:527-727@297e54fd):
 // how a request's mamba state is chosen for the tree when its KV is cached, and what is freed
 // afterwards. It works on the hybrid request pool and a stand-in for the cache's eviction; the
@@ -41,6 +39,11 @@ type MambaLifecycle struct {
 	Pool        *HybridRequestPool
 	ExtraBuffer bool
 	Evictor     MambaEvictor
+	// CheckpointsLevel is --hybrid-cache-checkpoints-level (default 2); Window is a tree with sliding
+	// window layers, which checkpoints every chunk; PrefillWorker is a P/D prefill worker.
+	CheckpointsLevel int
+	Window           bool
+	PrefillWorker    bool
 }
 
 // MambaLifecycleParams are the settings a MambaLifecycle is built from. Int8Checkpoint is a pool
@@ -53,6 +56,10 @@ type MambaLifecycleParams struct {
 	Evictor        MambaEvictor
 	Int8Checkpoint bool
 	ReplaySSM      bool
+	// CheckpointsLevel is --hybrid-cache-checkpoints-level; 0 means its default, 2.
+	CheckpointsLevel int
+	Window           bool
+	PrefillWorker    bool
 }
 
 // NewMambaLifecycle builds a MambaLifecycle, refusing by name a pool whose lifecycle it does not
@@ -66,25 +73,44 @@ func NewMambaLifecycle(p MambaLifecycleParams) (*MambaLifecycle, error) {
 	case p.Pool == nil || p.Evictor == nil:
 		return nil, fmt.Errorf("cache: a MambaLifecycle needs its hybrid request pool and an evictor")
 	}
-	return &MambaLifecycle{Pool: p.Pool, ExtraBuffer: p.ExtraBuffer, Evictor: p.Evictor}, nil
+	level := p.CheckpointsLevel
+	if level == 0 {
+		level = 2
+	}
+	return &MambaLifecycle{Pool: p.Pool, ExtraBuffer: p.ExtraBuffer, Evictor: p.Evictor, CheckpointsLevel: level,
+		Window: p.Window, PrefillWorker: p.PrefillWorker}, nil
 }
 
-// allocMambaSlot is _alloc_mamba_slot (:527-554): one slot of the mamba allocator, evicting for it
-// when the allocator is empty. The extra_buffer_lazy branch that first drops the request's own
-// COW-source lock needs the tree's locks; a request holding one is refused.
-func (m *MambaLifecycle) allocMambaSlot(req *Req) (int64, error) {
+// tryAllocMambaSlot is _try_alloc_mamba_slot (:842-870@c4af57ff): one slot of the mamba allocator,
+// evicting for it when the allocator is empty; none when every state is locked. The
+// extra_buffer_lazy branch that first drops the request's own COW-source lock needs the tree's
+// locks; a request holding one is refused.
+func (m *MambaLifecycle) tryAllocMambaSlot(req *Req) (int64, bool, error) {
 	if s, ok := m.Pool.Mamba.Alloc(1); ok {
-		return s[0], nil
+		return s[0], true, nil
 	}
 	if req != nil && m.Pool.lazy && req.Lock != nil {
-		return 0, fmt.Errorf("cache: dropping the COW-source lock before a mamba eviction (extra_buffer_lazy) is not modelled; inference-sim/inference-sim#2442")
+		return 0, false, fmt.Errorf("cache: dropping the COW-source lock before a mamba eviction (extra_buffer_lazy) is not modelled; inference-sim/inference-sim#2442")
 	}
 	m.Evictor.EvictForAlloc(1)
 	s, ok := m.Pool.Mamba.Alloc(1)
 	if !ok {
-		return 0, ErrMambaAllocFailed
+		return 0, false, nil
 	}
-	return s[0], nil
+	return s[0], true, nil
+}
+
+// defersCheckpoint is _defers_checkpoint (:961-980@c4af57ff): below checkpoint level 3 a running
+// request publishes a state only at its branching point or, on a P/D prefill worker, once its
+// prompt is complete. A tree with window layers keeps every chunk.
+func (m *MambaLifecycle) defersCheckpoint(req *Req, tokenIDsLen, checkpointLen int) bool {
+	if m.CheckpointsLevel >= 3 || m.Window {
+		return false
+	}
+	if b := req.MambaBranchingSeqlen; b != nil && checkpointLen == *b {
+		return false
+	}
+	return !(m.PrefillWorker && tokenIDsLen >= len(req.OriginInputIDs))
 }
 
 // FreeMambaValue is _free_mamba_value (:576-580) without the int8 pool: the donated slot goes back
@@ -149,17 +175,22 @@ func (m *MambaLifecycle) PrepareForCachingReq(req *Req, ins *MambaInsert, tokenI
 	if cacheLen == nil {
 		return 0, nil
 	}
-	// Donate the mamba index to the radix cache instead of copying.
+	if m.defersCheckpoint(req, tokenIDsLen, *cacheLen) {
+		ins.CheckpointDeferred = true
+		return 0, nil
+	}
+	// Donate the mamba index to the radix cache instead of copying; with every state locked there
+	// is none to give, and the checkpoint goes by.
 	var donated int64
 	if m.ExtraBuffer {
-		slot, err := m.allocMambaSlot(req)
-		if err != nil {
+		slot, ok, err := m.tryAllocMambaSlot(req)
+		if err != nil || !ok {
 			return 0, err
 		}
 		donated = m.Pool.DonatePingPongSlot(row, mk, slot)
 	} else {
-		slot, err := m.allocMambaSlot(req)
-		if err != nil {
+		slot, ok, err := m.tryAllocMambaSlot(req)
+		if err != nil || !ok {
 			return 0, err
 		}
 		// SGLang copies the request's state into the new slot; the state tensors are not modelled.
@@ -190,6 +221,9 @@ func (m *MambaLifecycle) CleanupAfterCachingReq(req *Req, finished bool, res *Ma
 		if !inserted {
 			return m.Pool.FreeMambaCache(row, mk, nil)
 		}
+		return nil
+	}
+	if ins != nil && ins.CheckpointDeferred {
 		return nil
 	}
 	if ins != nil && ins.Value != nil && (res == nil || res.Exist) {

@@ -281,14 +281,14 @@ func TestMambaLifecycleRefusesTheLazyLockDrop(t *testing.T) {
 		t.Fatal(err)
 	}
 	held := &Req{ID: "r", Lock: &TreeLock{}}
-	if _, err := life.allocMambaSlot(held); err == nil || !strings.Contains(err.Error(), "extra_buffer_lazy") {
+	if _, _, err := life.tryAllocMambaSlot(held); err == nil || !strings.Contains(err.Error(), "extra_buffer_lazy") {
 		t.Fatalf("got %v, want a refusal naming extra_buffer_lazy", err)
 	}
 	if len(ev.evictions) != 0 {
 		t.Errorf("the cache was asked to evict %v before the refusal", ev.evictions)
 	}
 	// Without a lock the eviction runs and the freed slot is taken.
-	if slot, err := life.allocMambaSlot(&Req{ID: "r2"}); err != nil || slot != 1 || len(ev.evictions) != 1 {
+	if slot, ok, err := life.tryAllocMambaSlot(&Req{ID: "r2"}); err != nil || !ok || slot != 1 || len(ev.evictions) != 1 {
 		t.Errorf("without a lock: slot %d, error %v, evictions %v; want slot 1 after one eviction", slot, err, ev.evictions)
 	}
 }

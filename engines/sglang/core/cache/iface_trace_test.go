@@ -181,7 +181,7 @@ func isWithin(tr Trace, c Call, seq int) bool {
 func TestGoNameMapsSGLangMethodNames(t *testing.T) {
 	for m, want := range map[string]string{
 		"match_prefix": "MatchPrefix", "free_kv_row": "FreeKVRow", "get_kvcache": "GetKVCache",
-		"swa_reprefill_tail_tokens": "SWAReprefillTailTokens", "__init__": "New",
+		"window_reprefill_tail_tokens": "WindowReprefillTailTokens", "__init__": "New",
 	} {
 		if got := GoName(m); got != want {
 			t.Errorf("GoName(%q) = %q, want %q", m, got, want)

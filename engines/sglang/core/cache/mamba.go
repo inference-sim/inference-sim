@@ -360,39 +360,61 @@ func (p *HybridRequestPool) PingPongMap() [][]int64 {
 	return out
 }
 
-// ErrMambaExhausted is the assertion HybridReqToTokenPool.alloc raises when the mamba pool has no
-// slot for a request (memory_pool.py:1608-1611).
-var ErrMambaExhausted = fmt.Errorf("not enough space for mamba cache, try to increase --mamba-full-memory-ratio or --max-mamba-cache-size")
+// ErrMambaExhausted is StateSlotsExhausted, which StateStorage.acquire raises when the one
+// allocation of every slot the batch needs finds too few (kv/state_storage.py:155-161@c4af57ff).
+var ErrMambaExhausted = fmt.Errorf("not enough space for mamba cache or its ping pong idx, try to increase --mamba-full-memory-ratio or --max-mamba-cache-size")
 
-// Alloc is HybridReqToTokenPool.alloc (memory_pool.py:1572-1633): rows as the request pool gives
-// them, then each request without a mamba slot takes one (and, with the extra buffer and no
-// ping-pong buffer yet, its tracking slots). Rows are taken before the mamba slots, so a failure
-// leaves the rows allocated, as SGLang does.
+// Alloc is acquire_rows (static_kv_storage.py:98-127@c4af57ff) over HybridReqToTokenPool: rows as
+// the request pool gives them, then every slot the batch needs from one allocation (state.acquire,
+// kv/state_storage.py:121-185). The first slots are the working slots of the requests that hold
+// none, in request order; the rest are the tracking slots of the requests with no ping-pong
+// buffer, each its initial count in turn. If the slots run out, the rows taken go back before
+// the exhaustion surfaces, so a failure leaves no request bound.
 func (p *HybridRequestPool) Alloc(reqs []*Req) ([]int, error) {
+	fresh := make([]bool, len(reqs))
+	for i, r := range reqs {
+		fresh[i] = r.KV.ReqPoolIdx == nil
+	}
 	rows, ok := p.RequestPool.Alloc(reqs)
 	if !ok {
 		return nil, nil
 	}
+	var needing, untracked []*Req
 	for _, r := range reqs {
 		if r.KV.Mamba == nil {
 			r.KV.Mamba = &MambaKV{}
 		}
-		m := r.KV.Mamba
-		if !m.HoldsMamba() {
-			got, ok := p.Mamba.Alloc(1)
-			if !ok {
-				return nil, ErrMambaExhausted
-			}
-			m.PoolIdx = &got[0]
-			m.NeedsClear = true
+		if !r.KV.Mamba.HoldsMamba() {
+			needing = append(needing, r)
 		}
-		if p.extraBuffer && m.PingPongBuffer == nil {
-			if err := p.allocPingPong(m); err != nil {
-				return nil, err
-			}
+		if p.extraBuffer && r.KV.Mamba.PingPongBuffer == nil {
+			untracked = append(untracked, r)
 		}
 	}
-	// The maps are written once every request holds its slots (memory_pool.py:1622-1632).
+	per := 0
+	if len(untracked) > 0 {
+		per = p.initialTracking
+	}
+	if count := len(needing) + per*len(untracked); count > 0 {
+		slots, ok := p.Mamba.Alloc(count)
+		if !ok {
+			for i, r := range reqs {
+				if fresh[i] {
+					p.RequestPool.Free(r)
+				}
+			}
+			return nil, ErrMambaExhausted
+		}
+		for i, r := range needing {
+			idx := slots[i]
+			r.KV.Mamba.PoolIdx = &idx
+			r.KV.Mamba.NeedsClear = true
+		}
+		rest := slots[len(needing):]
+		for i, r := range untracked {
+			p.handOutTracking(r.KV.Mamba, rest[i*per:(i+1)*per])
+		}
+	}
 	for _, r := range reqs {
 		row := *r.KV.ReqPoolIdx
 		p.reqToMamba[row] = *r.KV.Mamba.PoolIdx
@@ -403,14 +425,10 @@ func (p *HybridRequestPool) Alloc(reqs []*Req) ([]int, error) {
 	return rows, nil
 }
 
-// allocPingPong is _alloc_ping_pong_buffer (memory_pool.py:1753-1782): the initial tracking
-// slots, the rest -1; the last tracked index is the other one unless lazy.
-func (p *HybridRequestPool) allocPingPong(m *MambaKV) error {
-	n := p.initialTracking
-	slots, ok := p.Mamba.Alloc(n)
-	if !ok {
-		return fmt.Errorf("not enough space for mamba ping pong idx, try to increase --mamba-full-memory-ratio")
-	}
+// handOutTracking is _hand_out_tracking (kv/state_storage.py:235-258@c4af57ff): the request's
+// buffer is its slots, the rest of the buffer -1; the last tracked index is the other one unless
+// lazy.
+func (p *HybridRequestPool) handOutTracking(m *MambaKV, slots []int64) {
 	buf := make([]int64, p.pingPongSize)
 	for i := range buf {
 		buf[i] = -1
@@ -418,7 +436,7 @@ func (p *HybridRequestPool) allocPingPong(m *MambaKV) error {
 	copy(buf, slots)
 	m.PingPongBuffer = buf
 	m.PingPongEmpty = make([]bool, p.pingPongSize)
-	for i := n; i < p.pingPongSize; i++ {
+	for i := len(slots); i < p.pingPongSize; i++ {
 		m.PingPongEmpty[i] = true
 	}
 	m.PrevTrackSeqlen = nil
@@ -429,7 +447,6 @@ func (p *HybridRequestPool) allocPingPong(m *MambaKV) error {
 		last = 0
 	}
 	m.LastTrackIdx = &last
-	return nil
 }
 
 // PingPongOtherIdx is get_mamba_ping_pong_other_idx (memory_pool.py:1743-1747).

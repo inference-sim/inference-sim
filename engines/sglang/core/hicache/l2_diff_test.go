@@ -115,6 +115,20 @@ func (a *l2Alloc) AvailableSize() int {
 	a.avail = a.avail[1:]
 	return v
 }
+func (a *l2Alloc) OwnerAvailableSize() int {
+	a.made = append(a.made, l2Made{"owner_available_size", ""})
+	if len(a.avail) == 0 {
+		return -1
+	}
+	v := a.avail[0]
+	a.avail = a.avail[1:]
+	return v
+}
+func (a *l2Alloc) WindowPoolNames() []string { return nil }
+func (a *l2Alloc) TargetWindowPool() *string {
+	a.made = append(a.made, l2Made{"target_window_pool", ""})
+	return nil
+}
 func (a *l2Alloc) FreeSegment(s []int64, start int) {
 	a.made = append(a.made, l2Made{"free_segment", fmt.Sprint(s, start)})
 }
@@ -876,7 +890,7 @@ type tracedReceipt struct {
 }
 
 func (t tracedReceipt) uuids() []int64 {
-	if u, ok := t.Host["FULL"]; ok {
+	if u, ok := t.Host["full"]; ok {
 		return []int64{u}
 	}
 	return nil
@@ -893,8 +907,8 @@ type tracedStep struct {
 }
 
 func (s tracedStep) figure(m string) figure {
-	f := figure{m: m, ints: []int{s.Tracker["FULL"], s.Unbacked},
-		slots: append(append([][]int64{}, s.DeviceFrees["FULL"]...), s.HostFrees["FULL"]...)}
+	f := figure{m: m, ints: []int{s.Tracker["full"], s.Unbacked},
+		slots: append(append([][]int64{}, s.DeviceFrees["full"]...), s.HostFrees["full"]...)}
 	if s.BackupKV != nil {
 		f.nodes = s.BackupKV.NodeIDs
 	}
@@ -1374,17 +1388,23 @@ func (r *l2Replay) answer(c cache.Call) error {
 		}
 		return r.nodes.Pair(want.LastDeviceNode, got.LastDeviceNode)
 	case "evict", "evict_for_alloc":
-		var p struct {
-			NumTokens int `json:"num_tokens"`
-		}
-		if err := c.Arg("params", &p); err != nil {
-			return err
-		}
 		var got cache.EvictResult
 		if c.Method == "evict" {
+			var p struct {
+				NumTokens int `json:"num_tokens"`
+			}
+			if err := c.Arg("params", &p); err != nil {
+				return err
+			}
 			got = l.Evict(cache.EvictParams{NumTokens: p.NumTokens})
 		} else {
-			got = l.EvictForAlloc(cache.EvictParams{NumTokens: p.NumTokens})
+			var d struct {
+				FullTokens int `json:"full_tokens"`
+			}
+			if err := c.Arg("demand", &d); err != nil {
+				return err
+			}
+			got = l.EvictForAlloc(cache.KVDemand{FullTokens: d.FullTokens})
 		}
 		var want cache.EvictResult
 		if err := c.Answer(&want); err != nil {
@@ -1479,7 +1499,7 @@ func (r *l2Replay) answer(c cache.Call) error {
 	case "protected_size":
 		return wantInt(l.ProtectedSize())
 	case "swa_reprefill_tail_tokens":
-		return wantInt(l.SWAReprefillTailTokens(nil))
+		return wantInt(l.WindowReprefillTailTokens(nil))
 	case "supports_swa":
 		return wantBool(l.SupportsSWA())
 	case "supports_mamba":

@@ -246,6 +246,18 @@ func (r *allocReplay) execAllocator(c Call, tree *allocScriptedTree) {
 		r.wantSlots(c, got, ok)
 	case "available_size":
 		r.want(c, a.AvailableSize())
+	case "owner_available_size":
+		r.want(c, a.OwnerAvailableSize())
+	case "window_pool_names":
+		r.want(c, []string{})
+		if len(a.WindowPoolNames()) != 0 {
+			r.t.Errorf("seq %d: window_pool_names is %v, SGLang's none", c.Seq, a.WindowPoolNames())
+		}
+	case "target_window_pool":
+		r.want(c, nil)
+		if a.TargetWindowPool() != nil {
+			r.t.Errorf("seq %d: target_window_pool is set, SGLang's is None", c.Seq)
+		}
 	case "free":
 		var s []int64
 		r.arg(c, "free_index", &s)
@@ -614,16 +626,24 @@ func (s *allocScriptedTree) SupportsMamba() bool {
 	return v
 }
 
-func (s *allocScriptedTree) EvictForAlloc(p EvictParams) EvictResult {
-	c := s.take("evict_for_alloc")
-	var args struct {
-		NumTokens int `json:"num_tokens"`
-	}
-	if err := c.Arg("params", &args); err != nil {
+func (s *allocScriptedTree) WindowCheckpointInterval() int {
+	var v int
+	if err := s.take("window_checkpoint_interval").Answer(&v); err != nil {
 		s.r.t.Fatal(err)
 	}
-	if args.NumTokens != p.NumTokens {
-		s.r.t.Errorf("seq %d: the port evicts %d tokens, SGLang %d", c.Seq, p.NumTokens, args.NumTokens)
+	return v
+}
+
+func (s *allocScriptedTree) EvictForAlloc(d KVDemand) EvictResult {
+	c := s.take("evict_for_alloc")
+	var args struct {
+		FullTokens int `json:"full_tokens"`
+	}
+	if err := c.Arg("demand", &args); err != nil {
+		s.r.t.Fatal(err)
+	}
+	if args.FullTokens != d.FullTokens {
+		s.r.t.Errorf("seq %d: the port asks for %d tokens, SGLang %d", c.Seq, d.FullTokens, args.FullTokens)
 	}
 	var out EvictResult
 	if err := c.Answer(&out); err != nil {

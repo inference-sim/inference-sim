@@ -50,7 +50,7 @@ type NodeID int64
 type ComponentType string
 
 // FullComponentType is ComponentType.FULL, every tree's base component.
-const FullComponentType ComponentType = "FULL"
+const FullComponentType ComponentType = "full"
 
 // Key is a RadixKey (radix_cache.py:59-99@297e54fd): the tokens a tree is keyed on and the
 // namespace that separates trees. Bigram is EAGLE's bigram view, whose length is one less than
@@ -127,6 +127,12 @@ type EvictParams struct {
 	NumTokens int
 }
 
+// KVDemand is KVDemand (kv/alloc/demand.py@c4af57ff) on the FULL path: what an allocation will
+// take of the token pool, not what to evict.
+type KVDemand struct {
+	FullTokens int
+}
+
 // EvictResult is EvictResult (base_prefix_cache.py:163-170@297e54fd) on the FULL path.
 type EvictResult struct {
 	NumTokensEvicted int `json:"num_tokens_evicted"`
@@ -182,6 +188,9 @@ type Req struct {
 	// PrefixLen is the matched prefix the request's extend starts after.
 	PrefixLen int
 	Finished  bool
+	// MambaBranchingSeqlen is req.mamba_branching_seqlen: the length at which the tree branches, where a
+	// hybrid model's state is published (schedule_batch.py@c4af57ff).
+	MambaBranchingSeqlen *int
 }
 
 // PrefixCache is BasePrefixCache (base_prefix_cache.py:390-741@297e54fd): what the scheduler
@@ -198,10 +207,13 @@ type PrefixCache interface {
 	// FreeKVRow frees the slots of row positions in the half-open ranges of req's row.
 	FreeKVRow(req *Req, ranges [][2]int)
 	Evict(p EvictParams) EvictResult
-	// EvictForAlloc evicts for an allocation short by p's counts: it stops once the allocator
-	// can serve them, which may be before p's counts are evicted (unified_radix_cache.py:697-779
-	// @297e54fd).
-	EvictForAlloc(p EvictParams) EvictResult
+	// EvictForAlloc evicts so that an allocation of d can be served (unified_radix_cache.py:806-818,
+	// 829-850@c4af57ff): nothing when the token pool already serves it, else the walk runs until it
+	// does, which may free more than the shortfall.
+	EvictForAlloc(d KVDemand) EvictResult
+	// WindowCheckpointInterval is the grid of the state checkpoints a window is kept behind
+	// (base_prefix_cache.py:877@c4af57ff); 0 without state checkpoints.
+	WindowCheckpointInterval() int
 	IncLockRef(n NodeID) LockReceipt
 	DecLockRef(n NodeID, r LockReceipt)
 	Lock(n NodeID) *TreeLock
@@ -224,7 +236,13 @@ type PrefixCache interface {
 	SupportsSWA() bool
 	SupportsMamba() bool
 	SupportsPrefixSharing() bool
-	SWAReprefillTailTokens(req *Req) int
+	// WindowReprefillTailTokens is the window rows a match leaves to recompute (base_prefix_cache.py:907@c4af57ff); 0 for a cache with no window.
+	WindowReprefillTailTokens(req *Req) int
+	// RetainedWindowTokens and RetainedWindowReqCount are KV held outside the tree and the sessions (base_prefix_cache.py:920-926@c4af57ff); 0 here.
+	RetainedWindowTokens() int
+	RetainedWindowReqCount() int
+	// LeaseCheckpointStateSlots is a context in which checkpoints take their state slots in one take (base_prefix_cache.py:585@c4af57ff); a cache with no state takes none.
+	LeaseCheckpointStateSlots(reqs []*Req)
 	// SessionRecords is the KV records sessions own, by session id.
 	SessionRecords() map[string]ReqKV
 	FlushPendingBackups()
@@ -408,6 +426,13 @@ type Allocator interface {
 	Size() int
 	PageSize() int
 	AvailableSize() int
+	// OwnerAvailableSize is what the token pool serves now (allocator/base.py:300-303@c4af57ff);
+	// the same as AvailableSize for a pool with no window beside it.
+	OwnerAvailableSize() int
+	// WindowPoolNames and TargetWindowPool name the window sub-pools the allocator keeps and the
+	// one a reader sizes a window by (allocator/base.py@c4af57ff); a static pool of one kind has none.
+	WindowPoolNames() []string
+	TargetWindowPool() *string
 	// Alloc takes needSize slots, or returns false when fewer are free.
 	Alloc(needSize int) ([]int64, bool)
 	// AllocExtend gives each request of an extend batch the slots for its new tokens, filling
@@ -476,6 +501,8 @@ type ReqToTokenPool interface {
 // KVPool is KVCache (memory_pool.py:2005-2184@297e54fd) as sizing: what the pool holds and
 // what each token of it costs. The buffers are the GPU's and are not modelled.
 type KVPool interface {
+	// IDSpaces names how each token sub-pool names a slot (memory_pool.py:2016@c4af57ff); a plain pool has the one.
+	IDSpaces() []string
 	Size() int
 	PageSize() int
 	LayerNum() int

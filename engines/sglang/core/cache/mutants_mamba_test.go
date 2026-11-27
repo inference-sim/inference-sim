@@ -291,3 +291,43 @@ func TestPrepareForCachingReqNeedsAMambaSlot(t *testing.T) {
 }
 
 func ptrInt(i int) *int { return &i }
+
+// A running request publishes its latest state only at checkpoint level 3, at its branching
+// point, or (on a prefill worker) with its prompt complete; at the default level 2 the
+// checkpoint goes by, with nothing donated and nothing for cleanup to free
+// (_defers_checkpoint, mamba.py:961-980@c4af57ff).
+func TestARunningRequestsCheckpointIsDeferredBelowLevelThree(t *testing.T) {
+	branch := 64
+	for _, tc := range []struct {
+		name     string
+		level    int
+		branch   *int
+		prefill  bool
+		wantLen  int
+		deferred bool
+	}{
+		{"the default level", 0, nil, false, 0, true},
+		{"level 2 at the branching point", 2, &branch, false, 64, false},
+		{"level 3", 3, nil, false, 64, false},
+		{"a prefill worker with its prompt complete", 2, nil, true, 64, false},
+	} {
+		pool := NewHybridRequestPool(2, 8, 32, true, false, true)
+		life, err := NewMambaLifecycle(MambaLifecycleParams{Pool: pool, ExtraBuffer: true, Evictor: &treeSlots{pool: pool},
+			CheckpointsLevel: tc.level, PrefillWorker: tc.prefill})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := &Req{ID: "r", OriginInputIDs: make([]int64, 100), MambaBranchingSeqlen: tc.branch}
+		if _, err := pool.Alloc([]*Req{req}); err != nil {
+			t.Fatal(err)
+		}
+		seq := 64
+		req.KV.Mamba.LastTrackSeqlen = &seq
+		ins := &MambaInsert{}
+		got, err := life.PrepareForCachingReq(req, ins, 100, false)
+		if err != nil || got != tc.wantLen || ins.CheckpointDeferred != tc.deferred || (ins.Value == nil) != tc.deferred {
+			t.Errorf("%s: length %d, deferred %v, donated %v, error %v; want length %d, deferred %v",
+				tc.name, got, ins.CheckpointDeferred, ins.Value, err, tc.wantLen, tc.deferred)
+		}
+	}
+}

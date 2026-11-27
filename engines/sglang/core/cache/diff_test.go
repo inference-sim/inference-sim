@@ -59,6 +59,23 @@ func (a *stubAllocator) AvailableSize() int {
 	return v
 }
 
+func (a *stubAllocator) OwnerAvailableSize() int {
+	a.made = append(a.made, madeCall{"owner_available_size", ""})
+	if len(a.avail) == 0 {
+		return -1
+	}
+	v := a.avail[0]
+	a.avail = a.avail[1:]
+	return v
+}
+
+func (a *stubAllocator) WindowPoolNames() []string { return nil }
+
+func (a *stubAllocator) TargetWindowPool() *string {
+	a.made = append(a.made, madeCall{"target_window_pool", ""})
+	return nil
+}
+
 func (a *stubAllocator) FreeSegment(s []int64, start int) {
 	a.made = append(a.made, madeCall{"free_segment", fmt.Sprint(s, start)})
 }
@@ -307,7 +324,7 @@ func decode[T any](raw json.RawMessage) (T, error) {
 func (r *replay) call(c Call) error {
 	// SGLang's answers to the calls this one makes at the allocator, for the stand-in to give.
 	r.alloc.avail = nil
-	for _, x := range r.within(c.Seq, AllocatorIface, "available_size") {
+	for _, x := range r.within(c.Seq, AllocatorIface, "available_size", "owner_available_size") {
 		v, err := decode[int](x.Ret)
 		if err != nil {
 			return err
@@ -357,10 +374,10 @@ type wantCalls struct{ alloc, pool []madeCall }
 
 func (r *replay) wantMade(c Call) (wantCalls, error) {
 	var w wantCalls
-	for _, x := range r.within(c.Seq, AllocatorIface, "available_size", "free_segment", "free_segments", "free") {
+	for _, x := range r.within(c.Seq, AllocatorIface, "available_size", "owner_available_size", "target_window_pool", "free_segment", "free_segments", "free") {
 		switch x.Method {
-		case "available_size":
-			w.alloc = append(w.alloc, madeCall{"available_size", ""})
+		case "available_size", "owner_available_size", "target_window_pool":
+			w.alloc = append(w.alloc, madeCall{x.Method, ""})
 		case "free_segment":
 			var s []int64
 			var start int
@@ -477,19 +494,23 @@ func (r *replay) answer(c Call) error {
 		}
 		return r.pair(want.LastDeviceNode, got.LastDeviceNode)
 	case "evict", "evict_for_alloc":
-		var p struct {
-			Params struct {
-				NumTokens int `json:"num_tokens"`
-			} `json:"params"`
-		}
-		if err := c.Arg("params", &p.Params); err != nil {
-			return err
-		}
 		var got EvictResult
 		if c.Method == "evict" {
-			got = r.c.Evict(EvictParams{NumTokens: p.Params.NumTokens})
+			var p struct {
+				NumTokens int `json:"num_tokens"`
+			}
+			if err := c.Arg("params", &p); err != nil {
+				return err
+			}
+			got = r.c.Evict(EvictParams{NumTokens: p.NumTokens})
 		} else {
-			got = r.c.EvictForAlloc(EvictParams{NumTokens: p.Params.NumTokens})
+			var d struct {
+				FullTokens int `json:"full_tokens"`
+			}
+			if err := c.Arg("demand", &d); err != nil {
+				return err
+			}
+			got = r.c.EvictForAlloc(KVDemand{FullTokens: d.FullTokens})
 		}
 		var want EvictResult
 		if err := ret(&want); err != nil {
@@ -596,14 +617,15 @@ func (r *replay) answer(c Call) error {
 		if got := r.c.PrefixDeviceIndices(req); !slices.Equal(got, want) {
 			return fmt.Errorf("prefix slots %v, SGLang's %v", got, want)
 		}
-	case "evictable_size", "protected_size", "full_evictable_size", "full_protected_size", "swa_reprefill_tail_tokens":
+	case "evictable_size", "protected_size", "full_evictable_size", "full_protected_size", "window_reprefill_tail_tokens", "retained_window_tokens", "retained_window_req_count":
 		var want int
 		if err := ret(&want); err != nil {
 			return err
 		}
 		got := map[string]func() int{"evictable_size": r.c.EvictableSize, "protected_size": r.c.ProtectedSize,
 			"full_evictable_size": r.c.FullEvictableSize, "full_protected_size": r.c.FullProtectedSize,
-			"swa_reprefill_tail_tokens": func() int { return r.c.SWAReprefillTailTokens(nil) }}[c.Method]()
+			"window_reprefill_tail_tokens": func() int { return r.c.WindowReprefillTailTokens(nil) },
+			"retained_window_tokens":       r.c.RetainedWindowTokens, "retained_window_req_count": r.c.RetainedWindowReqCount}[c.Method]()
 		if got != want {
 			return fmt.Errorf("%d, SGLang's %d", got, want)
 		}
@@ -616,6 +638,8 @@ func (r *replay) answer(c Call) error {
 		if [2]int{a, b} != want {
 			return fmt.Errorf("%v, SGLang's %v", [2]int{a, b}, want)
 		}
+	case "lease_checkpoint_state_slots":
+		r.c.LeaseCheckpointStateSlots(nil)
 	case "supports_swa", "supports_mamba", "supports_prefix_sharing", "supports_fast_match_prefix", "claim_kv_row":
 		var want bool
 		if err := ret(&want); err != nil {
@@ -626,6 +650,14 @@ func (r *replay) answer(c Call) error {
 			"claim_kv_row": func() bool { return r.c.ClaimKVRow(nil) }}[c.Method]()
 		if got != want {
 			return fmt.Errorf("%v, SGLang's %v", got, want)
+		}
+	case "window_checkpoint_interval":
+		var want int
+		if err := ret(&want); err != nil {
+			return err
+		}
+		if got := r.c.WindowCheckpointInterval(); got != want {
+			return fmt.Errorf("%d, SGLang's %d", got, want)
 		}
 	case "dfs_weight_order":
 		var hs []NodeID

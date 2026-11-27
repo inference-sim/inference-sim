@@ -50,12 +50,12 @@
       0
      ],
      [
-      2,
-      3
+      4,
+      5
      ],
      [
-      5,
-      6
+      6,
+      7
      ],
      [
       8,
@@ -73,8 +73,8 @@
      0,
      0,
      1,
-     4,
-     7
+     2,
+     3
     ]
    },
    "tree_mamba_slots": []
@@ -96,7 +96,7 @@
     "p1": {
      "mamba_keep_idx": 1,
      "mamba_value": [
-      3
+      5
      ]
     },
     "p2": {
@@ -122,8 +122,8 @@
       false
      ],
      "mamba_ping_pong_track_buffer": [
-      2,
-      3
+      4,
+      5
      ],
      "mamba_pool_idx": 1,
      "mamba_prev_track_seqlen": 50,
@@ -161,12 +161,12 @@
       0
      ],
      [
-      2,
-      3
+      4,
+      5
      ],
      [
-      5,
-      6
+      6,
+      7
      ],
      [
       8,
@@ -184,8 +184,8 @@
      0,
      0,
      1,
-     4,
-     7
+     2,
+     3
     ]
    },
    "tree_mamba_slots": []
@@ -207,13 +207,13 @@
     "p1": {
      "mamba_keep_idx": 1,
      "mamba_value": [
-      3
+      5
      ]
     },
     "p2": {
      "mamba_keep_idx": 0,
      "mamba_value": [
-      5
+      6
      ]
     },
     "p3": {
@@ -235,10 +235,10 @@
       false
      ],
      "mamba_ping_pong_track_buffer": [
-      5,
-      6
+      6,
+      7
      ],
-     "mamba_pool_idx": 4,
+     "mamba_pool_idx": 2,
      "mamba_prev_track_seqlen": 200,
      "req_pool_idx": 5
     }
@@ -274,12 +274,12 @@
       0
      ],
      [
-      2,
-      3
+      4,
+      5
      ],
      [
-      5,
-      6
+      6,
+      7
      ],
      [
       8,
@@ -297,8 +297,8 @@
      0,
      0,
      1,
-     4,
-     7
+     2,
+     3
     ]
    },
    "tree_mamba_slots": []
@@ -320,20 +320,18 @@
     "p1": {
      "mamba_keep_idx": 1,
      "mamba_value": [
-      3
+      5
      ]
     },
     "p2": {
      "mamba_keep_idx": 0,
      "mamba_value": [
-      5
+      6
      ]
     },
     "p3": {
      "mamba_keep_idx": null,
-     "mamba_value": [
-      9
-     ]
+     "mamba_value": null
     }
    },
    "on": "component",
@@ -351,16 +349,17 @@
      ],
      "mamba_ping_pong_track_buffer": [
       8,
-      10
+      9
      ],
-     "mamba_pool_idx": 7,
+     "mamba_pool_idx": 3,
      "mamba_prev_track_seqlen": null,
      "req_pool_idx": 6
     }
    },
-   "ret": 64,
+   "ret": 0,
    "state": {
     "mamba_free": [
+     10,
      11,
      12,
      13,
@@ -388,16 +387,16 @@
       0
      ],
      [
-      2,
-      3
+      4,
+      5
      ],
      [
-      5,
-      6
+      6,
+      7
      ],
      [
       8,
-      10
+      9
      ]
     ],
     "req_free": [
@@ -411,8 +410,8 @@
      0,
      0,
      1,
-     4,
-     7
+     2,
+     3
     ]
    },
    "tree_mamba_slots": []
@@ -433,20 +432,18 @@
     "p1": {
      "mamba_keep_idx": 1,
      "mamba_value": [
-      3
+      5
      ]
     },
     "p2": {
      "mamba_keep_idx": 0,
      "mamba_value": [
-      5
+      6
      ]
     },
     "p3": {
      "mamba_keep_idx": null,
-     "mamba_value": [
-      9
-     ]
+     "mamba_value": null
     }
    },
    "on": "component",
@@ -455,7 +452,7 @@
      "kv_allocated_len": 0,
      "mamba_cow_src_index": null,
      "mamba_last_track_idx": 1,
-     "mamba_last_track_seqlen": null,
+     "mamba_last_track_seqlen": 64,
      "mamba_needs_clear": true,
      "mamba_next_track_idx": 0,
      "mamba_ping_pong_empty": [
@@ -464,9 +461,9 @@
      ],
      "mamba_ping_pong_track_buffer": [
       8,
-      10
+      9
      ],
-     "mamba_pool_idx": 7,
+     "mamba_pool_idx": 3,
      "mamba_prev_track_seqlen": null,
      "req_pool_idx": 6
     }
@@ -474,6 +471,7 @@
    "ret": null,
    "state": {
     "mamba_free": [
+     10,
      11,
      12,
      13,
@@ -481,8 +479,7 @@
      15,
      16,
      17,
-     18,
-     9
+     18
     ],
     "ping_pong_map": [
      [
@@ -502,16 +499,16 @@
       0
      ],
      [
-      2,
-      3
+      4,
+      5
      ],
      [
-      5,
-      6
+      6,
+      7
      ],
      [
       8,
-      10
+      9
      ]
     ],
     "req_free": [
@@ -525,8 +522,8 @@
      0,
      0,
      1,
-     4,
-     7
+     2,
+     3
     ]
    },
    "tree_mamba_slots": []
@@ -534,26 +531,26 @@
  ],
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "607dedb0b1b5d7ca74a47efe17292579047409d4",
-  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
-  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "blis_sglang_commit": "cd719c269af186c8f342844451001a724a3dc057",
+  "lockfile_sha256": "6e08f237723633701d731058a3358d19c93e36841ae681ac8f19e58a1b6c7d77",
+  "mock_version": "gpu-mock/10+7d012d459dd6",
   "model": "qwen2.5-0.5b",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
-   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
-   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/harness.json": "a616a3a535dc670cba483de6102f925d9d45054931c49e0561abe765b71ab2d8",
+   "oracle/mocks.json": "0e43d9a6fcea6735bbb2228a858cee3c5af9a2b2534b9c3e4f5231533a5c7959",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_mamba_component.py": "3a4a9d81e292e9251e5ce90ecdf97331ff9584752b3be2e29c60dff9443a7b86",
-   "oracle/run_mamba_pools.py": "8deea3b0828e40e543df1342344a5f00ca043e26166a19699f4958d9eb24da01",
+   "oracle/run_mamba_component.py": "efa7e09d4421e48f388e9b5c47a3e4ec75f1d8ac45b7b2a3d870210b04fae392",
+   "oracle/run_mamba_pools.py": "5d5467ebbd2c9cfd08bd5964f254f1364383d844c3a95bb69e06bba5ff6cbe43",
    "oracle/scenarios-mamba-component/boundaries.json": "65c3efe53fb06ab8540325da3f64755afd2510b5c9ee245e0ca04640b9d19625",
    "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
   },
-  "platform": "linux-x86_64",
+  "platform": "darwin-arm64",
   "python": "3.12.16",
   "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
   "scenario_sha256": "65c3efe53fb06ab8540325da3f64755afd2510b5c9ee245e0ca04640b9d19625",
   "seed": 0,
-  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "sglang_commit": "c4af57ff93f301846fa1da4c31f8523c08c7510d",
   "tier": 2
  }
 }

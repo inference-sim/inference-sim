@@ -25,8 +25,8 @@
       false
      ],
      "mamba_ping_pong_track_buffer": [
-      2,
-      3
+      3,
+      4
      ],
      "mamba_pool_idx": 1,
      "mamba_prev_track_seqlen": null,
@@ -47,7 +47,7 @@
       5,
       6
      ],
-     "mamba_pool_idx": 4,
+     "mamba_pool_idx": 2,
      "mamba_prev_track_seqlen": null,
      "req_pool_idx": 6
     }
@@ -89,8 +89,8 @@
       0
      ],
      [
-      2,
-      3
+      3,
+      4
      ],
      [
       5,
@@ -110,7 +110,7 @@
      0,
      0,
      1,
-     4
+     2
     ]
    }
   },
@@ -138,8 +138,8 @@
       false
      ],
      "mamba_ping_pong_track_buffer": [
-      2,
-      3
+      3,
+      4
      ],
      "mamba_pool_idx": 1,
      "mamba_prev_track_seqlen": null,
@@ -199,8 +199,8 @@
       9
      ],
      [
-      2,
-      3
+      3,
+      4
      ],
      [
       5,
@@ -219,7 +219,7 @@
      0,
      7,
      1,
-     4
+     2
     ]
    }
   },
@@ -261,8 +261,8 @@
       9
      ],
      [
-      2,
-      3
+      3,
+      4
      ],
      [
       5,
@@ -281,7 +281,7 @@
      0,
      7,
      1,
-     4
+     2
     ]
    }
   },
@@ -306,8 +306,8 @@
       false
      ],
      "mamba_ping_pong_track_buffer": [
-      2,
-      3
+      3,
+      4
      ],
      "mamba_pool_idx": 1,
      "mamba_prev_track_seqlen": null,
@@ -345,8 +345,8 @@
       9
      ],
      [
-      2,
-      3
+      3,
+      4
      ],
      [
       5,
@@ -365,7 +365,7 @@
      0,
      7,
      1,
-     4
+     2
     ]
    }
   },
@@ -395,7 +395,7 @@
       false
      ],
      "mamba_ping_pong_track_buffer": [
-      2,
+      3,
       13
      ],
      "mamba_pool_idx": 1,
@@ -404,7 +404,7 @@
     }
    },
    "ret": [
-    3
+    4
    ],
    "state": {
     "mamba_free": [
@@ -436,7 +436,7 @@
       9
      ],
      [
-      2,
+      3,
       13
      ],
      [
@@ -456,7 +456,7 @@
      0,
      7,
      1,
-     4
+     2
     ]
    }
   },
@@ -517,7 +517,7 @@
       9
      ],
      [
-      2,
+      3,
       13
      ],
      [
@@ -537,7 +537,7 @@
      0,
      7,
      1,
-     4
+     2
     ]
    }
   },
@@ -606,7 +606,7 @@
       9
      ],
      [
-      2,
+      3,
       13
      ],
      [
@@ -626,7 +626,7 @@
      0,
      7,
      1,
-     4
+     2
     ]
    }
   },
@@ -663,7 +663,7 @@
      14,
      1,
      13,
-     4,
+     2,
      5,
      6
     ],
@@ -689,7 +689,7 @@
       9
      ],
      [
-      2,
+      3,
       13
      ],
      [
@@ -709,7 +709,7 @@
      0,
      7,
      1,
-     4
+     2
     ]
    }
   },
@@ -737,8 +737,8 @@
       false
      ],
      "mamba_ping_pong_track_buffer": [
-      11,
-      12
+      12,
+      13
      ],
      "mamba_pool_idx": 10,
      "mamba_prev_track_seqlen": null,
@@ -759,7 +759,7 @@
       14,
       1
      ],
-     "mamba_pool_idx": 13,
+     "mamba_pool_idx": 11,
      "mamba_prev_track_seqlen": null,
      "req_pool_idx": 3
     }
@@ -771,7 +771,7 @@
    "state": {
     "mamba_free": [
      13,
-     4,
+     2,
      5,
      6
     ],
@@ -785,8 +785,8 @@
       0
      ],
      [
-      11,
-      12
+      12,
+      13
      ],
      [
       14,
@@ -797,7 +797,7 @@
       9
      ],
      [
-      2,
+      3,
       13
      ],
      [
@@ -812,10 +812,10 @@
      0,
      0,
      10,
-     13,
+     11,
      7,
      1,
-     4
+     2
     ]
    }
   },
@@ -977,25 +977,25 @@
  },
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "4202caaac4804470e1eeb2a5f82d6d82970720c0",
-  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
-  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "blis_sglang_commit": "cd719c269af186c8f342844451001a724a3dc057",
+  "lockfile_sha256": "6e08f237723633701d731058a3358d19c93e36841ae681ac8f19e58a1b6c7d77",
+  "mock_version": "gpu-mock/10+7d012d459dd6",
   "model": "qwen2.5-0.5b",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
-   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
-   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/harness.json": "a616a3a535dc670cba483de6102f925d9d45054931c49e0561abe765b71ab2d8",
+   "oracle/mocks.json": "0e43d9a6fcea6735bbb2228a858cee3c5af9a2b2534b9c3e4f5231533a5c7959",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_mamba_pools.py": "8deea3b0828e40e543df1342344a5f00ca043e26166a19699f4958d9eb24da01",
+   "oracle/run_mamba_pools.py": "5d5467ebbd2c9cfd08bd5964f254f1364383d844c3a95bb69e06bba5ff6cbe43",
    "oracle/scenarios-mamba-pools/req-pool-extra-buffer.json": "e561e6a7abfc5db7b4f7dde40d6cf5609857a2f1d90771e1d4bef6e3f7fb3132",
    "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
   },
-  "platform": "linux-x86_64",
+  "platform": "darwin-arm64",
   "python": "3.12.16",
   "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
   "scenario_sha256": "e561e6a7abfc5db7b4f7dde40d6cf5609857a2f1d90771e1d4bef6e3f7fb3132",
   "seed": 0,
-  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "sglang_commit": "c4af57ff93f301846fa1da4c31f8523c08c7510d",
   "tier": 2
  },
  "sizing": [

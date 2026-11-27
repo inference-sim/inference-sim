@@ -118,9 +118,9 @@ func TestTheFactoryRefusesAnotherReleaseAndWhatTheEngineDoesNotModel(t *testing.
 		t.Errorf("got %v, want a refusal naming the release", err)
 	}
 	for block, issue := range map[string]string{
-		"model_path: m\ntp_size: 8\nattn_dp_size: 8\n": "#2356",
-		"model_path: m\nenable_hierarchical_cache: true\n":                   "#2341",
-		"model_path: m\nscheduler_recv_interval: 10\n":                       "#2344",
+		"model_path: m\ntp_size: 8\nattn_dp_size: 8\n":     "#2356",
+		"model_path: m\nenable_hierarchical_cache: true\n": "#2341",
+		"model_path: m\nscheduler_recv_interval: 10\n":     "#2344",
 	} {
 		_, err := FactoryFor(h).New(specOf(t, block))
 		if err == nil || !strings.Contains(err.Error(), issue) {

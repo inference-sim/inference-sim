@@ -407,9 +407,9 @@ func (l *L2) LoadBack(node cache.NodeID, memQuota *int) bool {
 		return fail()
 	}
 	alloc := l.Allocator()
-	if avail := alloc.AvailableSize(); avail < kv {
-		l.EvictForAlloc(cache.EvictParams{NumTokens: kv - avail})
-		if alloc.AvailableSize() < kv {
+	if alloc.OwnerAvailableSize() < kv {
+		l.EvictForAlloc(cache.KVDemand{FullTokens: kv})
+		if alloc.OwnerAvailableSize() < kv {
 			return fail()
 		}
 	}

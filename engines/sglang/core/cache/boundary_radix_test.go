@@ -85,14 +85,14 @@ func TestEvictionStopsAtItsTarget(t *testing.T) {
 		t.Errorf("evicting 0 tokens evicted %d, %d evictable remain", got, r.cache.EvictableSize())
 	}
 	before := r.alloc.AvailableSize() // 11
-	if got := r.cache.EvictForAlloc(EvictParams{NumTokens: 3}).NumTokensEvicted; got != 3 {
+	if got := r.cache.EvictForAlloc(KVDemand{FullTokens: before + 3}).NumTokensEvicted; got != 3 {
 		t.Errorf("an allocation short by 3 evicted %d tokens", got)
 	}
 	if got := r.alloc.AvailableSize(); got != before+3 {
 		t.Errorf("available %d, want %d: the walk goes on past its target", got, before+3)
 	}
-	if got := r.cache.EvictForAlloc(EvictParams{NumTokens: 0}).NumTokensEvicted; got != 0 {
-		t.Errorf("no shortfall evicted %d", got)
+	if got := r.cache.EvictForAlloc(KVDemand{FullTokens: before + 3}).NumTokensEvicted; got != 0 {
+		t.Errorf("an allocation the pool already serves evicted %d", got)
 	}
 }
 

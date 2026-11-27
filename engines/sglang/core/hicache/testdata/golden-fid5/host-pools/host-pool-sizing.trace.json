@@ -198,12 +198,12 @@
   {
    "as": "dsa_fp8_indexer",
    "class": "DSAIndexerPoolHost",
-   "layer_num": 3,
+   "layer_num": 2,
    "layout": "layer_first",
    "page_num": 5,
    "page_size": 64,
    "size": 320,
-   "size_per_token": 396
+   "size_per_token": 264
   },
   {
    "as": "dsa_skip_indexer",
@@ -218,22 +218,22 @@
   {
    "as": "dsa_kpool2_indexer",
    "class": "DSAIndexerPoolHost",
-   "layer_num": 2,
+   "layer_num": 1,
    "layout": "layer_first",
    "page_num": 5,
    "page_size": 128,
    "size": 640,
-   "size_per_token": 132
+   "size_per_token": 66
   },
   {
    "as": "dsa_fp8_indexer_page_first",
    "class": "DSAIndexerPoolHost",
-   "layer_num": 3,
+   "layer_num": 2,
    "layout": "page_first",
    "page_num": 5,
    "page_size": 64,
    "size": 320,
-   "size_per_token": 396
+   "size_per_token": 264
   },
   {
    "as": "dsa_skip_indexer_page_unified",
@@ -243,29 +243,29 @@
  ],
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "94b8247439a496d3acdd3fa7f6bff3298ad40718",
-  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
-  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "blis_sglang_commit": "cd719c269af186c8f342844451001a724a3dc057",
+  "lockfile_sha256": "6e08f237723633701d731058a3358d19c93e36841ae681ac8f19e58a1b6c7d77",
+  "mock_version": "gpu-mock/10+7d012d459dd6",
   "model": "none: the driver builds SGLang's device and host pools from the sequence's blocks",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
-   "oracle/cache_interfaces.py": "eaa605e74915b2804a0a56dd1c30c7cfddf0f644f8771fd36418e53cdaf919e3",
-   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
+   "oracle/cache_interfaces.py": "b4380b2bffa39a34899fc6bbce56a9b479aa2f43c74d20ea263316a88691b6f6",
+   "oracle/harness.json": "a616a3a535dc670cba483de6102f925d9d45054931c49e0561abe765b71ab2d8",
    "oracle/hicache_interfaces.py": "20bbe10dd6c27183547f95a10edabe0f01974dc2808c0b0a775a3bbd26c8fb9b",
-   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/mocks.json": "0e43d9a6fcea6735bbb2228a858cee3c5af9a2b2534b9c3e4f5231533a5c7959",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_hicache.py": "a5a5a63c8d774bccc54fe954772c10dc97d496dd0f942f0ab6be1cb721f611e4",
-   "oracle/run_host_pools.py": "2ff1062003dac1cd1bb13e8a85543da3f966b34ab8197ed6b2eec94a577a8009",
+   "oracle/run_hicache.py": "0d6b322fe72772e06fc44547d04c1b5ef6c0980c8223124e73ba6188b94b494a",
+   "oracle/run_host_pools.py": "3eef7754bdbc14455f53644e771f98bfe647ff2259405ed5d979d5bd59a46182",
    "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
    "oracle/scenarios-host-pools/host-pool-sizing.json": "c3e06beb981ee164615071cee9fe430289206110b79b58f000194247935849b9",
    "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
   },
-  "platform": "linux-x86_64",
+  "platform": "darwin-arm64",
   "python": "3.12.16",
   "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
   "scenario_sha256": "c3e06beb981ee164615071cee9fe430289206110b79b58f000194247935849b9",
   "seed": 0,
-  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "sglang_commit": "c4af57ff93f301846fa1da4c31f8523c08c7510d",
   "tier": 2
  }
 }

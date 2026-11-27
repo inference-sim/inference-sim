@@ -222,38 +222,37 @@ func (c *RadixCache) evict(request, target int) EvictResult {
 	return EvictResult{NumTokensEvicted: n}
 }
 
-// EvictForAlloc is evict_for_alloc (:697-779) for the FULL component: the walk runs until the
-// allocator can serve p's shortfall beyond what it has free now.
-func (c *RadixCache) EvictForAlloc(p EvictParams) EvictResult {
+// EvictForAlloc is evict_for_alloc and evict_pool_shortfalls (unified_radix_cache.py:806-850@c4af57ff)
+// for the FULL component of a pool of its own: the token pool's shortfall against d is what the
+// walk is asked for, and the walk runs until the pool serves d.
+func (c *RadixCache) EvictForAlloc(d KVDemand) EvictResult {
 	if c.cfg.Disable {
 		return EvictResult{}
 	}
-	if p.NumTokens <= 0 {
+	if d.FullTokens <= 0 {
 		return EvictResult{}
 	}
-	target := c.alloc.AvailableSize() + p.NumTokens
-	// A shared Mamba pool would fund the target from FULL (:740-777); a FULL-only allocator has
-	// no donor.
-	if c.alloc.MambaFullCacheDonor() != nil {
-		panic("cache: a Mamba donor allocator under a FULL-only radix cache")
+	short := d.FullTokens - c.alloc.OwnerAvailableSize()
+	if short <= 0 {
+		return EvictResult{}
 	}
-	return c.evict(p.NumTokens, target)
+	return c.evict(short, d.FullTokens)
 }
 
+// WindowCheckpointInterval is window_checkpoint_interval (unified_radix_cache.py:4791-4799@c4af57ff):
+// a tree with no state component keeps no checkpoints.
+func (c *RadixCache) WindowCheckpointInterval() int { return 0 }
+
 // evictFull is _evict_components (:952-1058) for the FULL component; target < 0 means no
-// availability target.
+// availability target, otherwise the owner pool's size the walk runs to.
 func (c *RadixCache) evictFull(request, target int) int {
 	tr := Tracker{FullComponentType: 0}
-	// target_reached (:968-998) reads the allocator's free size, and reads it again when the
-	// first read falls short.
+	// target_reached (:1217-1223@c4af57ff) reads the owner pool's free size once.
 	reached := func() bool {
 		if target < 0 {
 			return false
 		}
-		if c.alloc.AvailableSize() >= target {
-			return true
-		}
-		return c.alloc.AvailableSize() >= target
+		return c.alloc.OwnerAvailableSize() >= target
 	}
 	toTarget := target >= 0 && request > 0
 	if reached() || (!toTarget && tr[FullComponentType] >= request) {
@@ -378,6 +377,8 @@ func (c *RadixCache) Checkpoint(req *Req, upTo int) {
 // FreeKVRow is free_kv_row (base_prefix_cache.py:507-521@297e54fd) with no SWA: the row's
 // slots in the coalesced ranges, freed as segments.
 func (c *RadixCache) FreeKVRow(req *Req, ranges [][2]int) {
+	// window_sub_pool_of reads the allocator's target window pool, whether or not it has one.
+	c.alloc.TargetWindowPool()
 	row := c.pool.Row(*req.KV.ReqPoolIdx)
 	var segs []Segment
 	for _, r := range coalesce(ranges) {
@@ -408,11 +409,14 @@ func (c *RadixCache) PrefixDeviceIndices(req *Req) []int64 {
 }
 
 // The streaming-session entries: a request outside a session is never handed to one.
-func (c *RadixCache) MaybeHandToSession(req *Req)           {}
-func (c *RadixCache) ClaimKVRow(req *Req) bool              { return false }
-func (c *RadixCache) OnRelease(req *Req, checkpointed bool) {}
-func (c *RadixCache) SessionRecords() map[string]ReqKV      { return map[string]ReqKV{} }
-func (c *RadixCache) SWAReprefillTailTokens(req *Req) int   { return 0 }
+func (c *RadixCache) MaybeHandToSession(req *Req)            {}
+func (c *RadixCache) ClaimKVRow(req *Req) bool               { return false }
+func (c *RadixCache) OnRelease(req *Req, checkpointed bool)  {}
+func (c *RadixCache) SessionRecords() map[string]ReqKV       { return map[string]ReqKV{} }
+func (c *RadixCache) WindowReprefillTailTokens(req *Req) int { return 0 }
+func (c *RadixCache) RetainedWindowTokens() int              { return 0 }
+func (c *RadixCache) RetainedWindowReqCount() int            { return 0 }
+func (c *RadixCache) LeaseCheckpointStateSlots(reqs []*Req)  {}
 
 // The host-tier entries, with no host tier.
 func (c *RadixCache) FlushPendingBackups()                                {}
@@ -420,7 +424,7 @@ func (c *RadixCache) FinishStoragePrefetchAdmission(string, int, *string) {}
 func (c *RadixCache) ReleaseHostResources()                               {}
 
 func (c *RadixCache) EvictableSize() int     { return c.core.EvictableSize() }
-func (c *RadixCache) ProtectedSize() int     { return c.core.ProtectedSize() }
+func (c *RadixCache) ProtectedSize() int     { return c.core.FullProtectedSize() } // protected_size is full_protected_size (unified_radix_cache.py:4946@c4af57ff)
 func (c *RadixCache) FullEvictableSize() int { return c.core.FullEvictableSize() }
 func (c *RadixCache) FullProtectedSize() int { return c.core.FullProtectedSize() }
 func (c *RadixCache) TotalSize() (int, int)  { return c.tree.totalSize(), 0 }

@@ -95,7 +95,7 @@ type Input struct {
 type Internal struct {
 	// MaxRunningRequestsExplicitlySet records whether the input stated max_running_requests, not
 	// whether resolution gave one (a model's default leaves it false).
-	MaxRunningRequestsExplicitlySet *bool
+	MaxRunningRequestsExplicitlySet           *bool
 	RadixEvictionPolicyExplicitlySet          bool
 	SwaFullTokensRatioExplicitlySet           *bool
 	SpeculativeDraftQuantizationExplicitlySet *bool

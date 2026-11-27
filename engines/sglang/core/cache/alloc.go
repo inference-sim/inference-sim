@@ -52,6 +52,10 @@ func (a *TokenAllocator) Clear() {
 // AvailableSize is token.py:50-52@297e54fd.
 func (a *TokenAllocator) AvailableSize() int { return len(a.free) + len(a.release) }
 
+func (a *TokenAllocator) OwnerAvailableSize() int   { return a.AvailableSize() }
+func (a *TokenAllocator) WindowPoolNames() []string { return nil }
+func (a *TokenAllocator) TargetWindowPool() *string { return nil }
+
 // Alloc is token.py:54-63@297e54fd: the first needSize free slots.
 func (a *TokenAllocator) Alloc(needSize int) ([]int64, bool) {
 	if a.needSort && needSize > len(a.free) {
@@ -194,6 +198,10 @@ func (a *PagedAllocator) Clear() {
 
 // AvailableSize is paged.py:168-169@297e54fd, in slots.
 func (a *PagedAllocator) AvailableSize() int { return (len(a.free) + a.numStaged) * a.pageSize }
+
+func (a *PagedAllocator) OwnerAvailableSize() int   { return a.AvailableSize() }
+func (a *PagedAllocator) WindowPoolNames() []string { return nil }
+func (a *PagedAllocator) TargetWindowPool() *string { return nil }
 
 // mergeAndSortFree is paged.py:174-179@297e54fd.
 func (a *PagedAllocator) mergeAndSortFree() {
@@ -473,15 +481,16 @@ func pageDisjoint(segments []Segment, pageSize int) []Segment {
 	return out
 }
 
-// evictToFreeTokens is base.py:132-145@297e54fd: evict the shortfall from a tree that shares
-// prefixes. The follow-up loop of _evict_until_allocatable (common.py:292-318) runs only under
-// page-interleave sharding, which is refused (refuse.go), so it never runs here.
+// evictToFreeTokens is base.py:248-261@c4af57ff: ask a tree that shares prefixes to evict for an
+// allocation of numTokens when the allocator cannot serve it. The follow-up loop of
+// _evict_until_allocatable (common.py:254-278) runs only under page-interleave sharding, which is
+// refused (refuse.go), so it never runs here.
 func evictToFreeTokens(a Allocator, tree PrefixCache, numTokens int) {
 	if tree == nil || !tree.SupportsPrefixSharing() {
 		return
 	}
-	if shortfall := numTokens - a.AvailableSize(); shortfall > 0 {
-		tree.EvictForAlloc(EvictParams{NumTokens: shortfall})
+	if a.AvailableSize() < numTokens {
+		tree.EvictForAlloc(KVDemand{FullTokens: numTokens})
 	}
 }
 

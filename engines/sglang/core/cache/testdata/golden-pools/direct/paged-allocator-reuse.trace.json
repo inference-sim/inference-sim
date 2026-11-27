@@ -304,6 +304,7 @@
      9,
      35
     ],
+    "req_to_token_write": null,
     "seq_lens": [
      5,
      10,
@@ -313,7 +314,8 @@
      5,
      10,
      9
-    ]
+    ],
+    "swa": null
    },
    "cls": "PagedTokenToKVPoolAllocator",
    "i": "allocator",
@@ -404,9 +406,14 @@
   },
   {
    "args": {
+    "checkpoint_interval": 0,
+    "chunk_align": null,
     "chunk_size": 64,
+    "decode_retire_lag": 0,
+    "eviction_interval": 1,
     "input_tokens": 9,
     "max_new_tokens": 30,
+    "prefill_retire_lag": 0,
     "sliding_window_size": null,
     "token_capacity": 32
    },
@@ -461,26 +468,26 @@
  "cells": [],
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "9531e8d4266a63187092d17b18e8d02611188c3b",
-  "lockfile_sha256": "a3fb4e4773230faee4ffdd89437a96b2f3bfb3082e4be4cef4f44d44c66ed569",
-  "mock_version": "gpu-mock/9+f7e50518d4b2",
+  "blis_sglang_commit": "cd719c269af186c8f342844451001a724a3dc057",
+  "lockfile_sha256": "6e08f237723633701d731058a3358d19c93e36841ae681ac8f19e58a1b6c7d77",
+  "mock_version": "gpu-mock/10+7d012d459dd6",
   "model": "none: the driver builds SGLang's pools and allocators from the sequence's pools block",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
-   "oracle/cache_interfaces.py": "eaa605e74915b2804a0a56dd1c30c7cfddf0f644f8771fd36418e53cdaf919e3",
-   "oracle/harness.json": "dad4a88c3b69c528ce64aea735f7de22c97eaf086b72a3876fc72fa853d4b268",
-   "oracle/mocks.json": "9782b21a0b9428d105a51cde9983b1554f456ef4e7f7ac11c73992f202104173",
+   "oracle/cache_interfaces.py": "b4380b2bffa39a34899fc6bbce56a9b479aa2f43c74d20ea263316a88691b6f6",
+   "oracle/harness.json": "a616a3a535dc670cba483de6102f925d9d45054931c49e0561abe765b71ab2d8",
+   "oracle/mocks.json": "0e43d9a6fcea6735bbb2228a858cee3c5af9a2b2534b9c3e4f5231533a5c7959",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-   "oracle/run_pools.py": "b6694ebcb141874ffc8ee2d78636a47295724e3dbdd9ded7b89f6232c674bc1e",
-   "oracle/scenarios-pools/paged-allocator-reuse.json": "1cd1b63cb9c1b76b6d165099078b4ec9de86a470586ff001c29f9bbd6995b708",
+   "oracle/run_pools.py": "8b3359802166abcbe77aa54cfb44f95168209c1621621c27dde20d5c518f42b5",
+   "oracle/scenarios-pools/paged-allocator-reuse.json": "dd9dc255be818dccd32387f4c89f0832462d7fcedcdeec7a2e9a0790c8357c3e",
    "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
   },
-  "platform": "linux-x86_64",
+  "platform": "darwin-arm64",
   "python": "3.12.16",
   "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
-  "scenario_sha256": "1cd1b63cb9c1b76b6d165099078b4ec9de86a470586ff001c29f9bbd6995b708",
+  "scenario_sha256": "dd9dc255be818dccd32387f4c89f0832462d7fcedcdeec7a2e9a0790c8357c3e",
   "seed": 0,
-  "sglang_commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
+  "sglang_commit": "c4af57ff93f301846fa1da4c31f8523c08c7510d",
   "tier": 2
  },
  "sizing": [
