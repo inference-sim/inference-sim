@@ -205,6 +205,7 @@ func (r *resolver) applyDeepseekV4Defaults() {
 	if kv != r.cfg.KvCacheDtype {
 		r.declare("_deepseek_v4_kv_cache_dtype", "kv_cache_dtype", kv)
 	}
+	r.resolveEngramConfig()
 	if r.cfg.Dsv4AttnBackend == "auto" {
 		r.declare(src, "dsv4_attn_backend", r.defaultDSV4AttentionBackend())
 	}
@@ -273,4 +274,17 @@ func (r *resolver) validateDeepseekV41Features() {
 	enabled := !r.cfg.EnablePrefillCp && r.cfg.AttnCpSize == 1 && r.cfg.DcpSize == 1 &&
 		!r.cfg.EnableReturnHiddenStates && !graphIncompatible && !dpIncompatible
 	r.declare("validate_deepseek_v41_features", "enable_decoder_swa_bounded_replay", enabled)
+}
+
+// resolveEngramConfig is _resolve_engram_config (deepseek_v4_hook.py:69-112@c4af57ff). DeepSeek-V4.1
+// resolves --engram-config to an EngramConfig, whose defaults an unset input takes; the input
+// itself is not an accepted field (accepted.go), so only the defaults are reachable. Every other
+// model leaves it unset.
+func (r *resolver) resolveEngramConfig() {
+	if r.model.ModelType != "deepseek_v41" {
+		return
+	}
+	r.declare("_resolve_engram_config", "engram_config", map[string]any{
+		"group_size": 0, "group_store": "", "lookup": "auto", "placement": "gpu", "replication": "none",
+	})
 }

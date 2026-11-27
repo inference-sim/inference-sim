@@ -78,8 +78,8 @@ func TestResolveAgainstSGLang(t *testing.T) {
 			if err != nil {
 				t.Fatalf("SGLang accepts this case; Resolve refused it: %v", err)
 			}
-			if len(c.Resolved) != len(FieldNames())+3 {
-				t.Errorf("SGLang records %d fields, ServerArgs in Go has %d and 3 internal ones", len(c.Resolved), len(FieldNames()))
+			if len(c.Resolved) != len(FieldNames())+4 {
+				t.Errorf("SGLang records %d fields, ServerArgs in Go has %d and 4 internal ones", len(c.Resolved), len(FieldNames()))
 			}
 			names := make([]string, 0, len(c.Resolved))
 			for n := range c.Resolved {
@@ -359,10 +359,10 @@ func TestAnEmptyCustomWeightLoaderIsTheUnsetOne(t *testing.T) {
 	}
 }
 
-// attention_backend nsa is the deprecated alias of dsa in SGLang v0.5.23 (attention_registry.py
-// :166-176): a DSA model that states it resolves as one that states dsa, or neither, apart from
-// the field itself, whichever step decided the rest.
-func TestResolveTakesNSAAsTheDSABackend(t *testing.T) {
+// attention_backend nsa was removed in SGLang 1.0 and is refused with the name of its successor
+// dsa (validation_hook.py:991-1016@c4af57ff); a DSA model that states dsa resolves as one that
+// states neither, apart from the field itself.
+func TestResolveRefusesNSAAndTakesDSAAsTheDefaultBackend(t *testing.T) {
 	for _, c := range readAnswers(t).Cases {
 		if c.Name != "glm5-h200-tp8-recipe" {
 			continue
@@ -382,7 +382,16 @@ func TestResolveTakesNSAAsTheDSABackend(t *testing.T) {
 			return got
 		}
 		def := resolve(nil)
-		for _, backend := range []string{"nsa", "dsa"} {
+		args := map[string]any{"model_path": "<model>", "attention_backend": "nsa"}
+		for k, v := range c.Args {
+			args[k] = v
+		}
+		args["attention_backend"] = "nsa"
+		var up *UpstreamRefusal
+		if _, err := Resolve(Input{Args: args, Chip: c.Chip, Model: c.ModelFacts}); !errors.As(err, &up) || !strings.Contains(up.Message, "use dsa") {
+			t.Errorf("attention_backend nsa: got %v, want SGLang's refusal naming dsa", err)
+		}
+		for _, backend := range []string{"dsa"} {
 			got := resolve(backend)
 			if got.Args.DsaPrefillBackend == nil || def.Args.DsaPrefillBackend == nil ||
 				*got.Args.DsaPrefillBackend != *def.Args.DsaPrefillBackend ||

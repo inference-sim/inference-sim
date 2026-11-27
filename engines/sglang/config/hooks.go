@@ -252,6 +252,11 @@ func (r *resolver) handleCacheCompatibility() {
 	if r.internal.SwaFullTokensRatioExplicitlySet == nil {
 		r.internal.SwaFullTokensRatioExplicitlySet = ptr(r.cfg.SwaFullTokensRatio != nil)
 	}
+	// kv_cache_hook.py:545-551@c4af57ff: read from the input, since a model's default (DeepSeek-V4's)
+	// is declared earlier and leaves it false.
+	if r.internal.MaxRunningRequestsExplicitlySet == nil {
+		r.internal.MaxRunningRequestsExplicitlySet = ptr(r.raw.MaxRunningRequests != nil)
+	}
 }
 
 // resolveBoundaryReduction is resolve_boundary_reduction (boundary_reduction.py:57-92). A draft

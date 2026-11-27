@@ -167,7 +167,7 @@ func (r *resolver) handleGPUMemorySettings() {
 		setMaxBs(tpLarge(48, 160))
 	case gpuMem < 60*1024:
 		setChunk(4096)
-		setMaxBs(tpLarge(32, 160))
+		setMaxBs(tpLarge(128, 160))
 	case gpuMem < 90*1024:
 		setChunk(8192)
 		setMaxBs(tpLarge(256, 512))

@@ -89,10 +89,13 @@ type Input struct {
 	Model ModelFacts
 }
 
-// Internal holds the three ServerArgs fields whose names start with an underscore. SGLang's
-// resolution writes them; no user sets them (arg_groups/fields/memory.py:45, schedule.py:164,
-// spec.py:226@297e54fd).
+// Internal holds the four ServerArgs fields whose names start with an underscore. SGLang's
+// resolution writes them; no user sets them (arg_groups/fields/memory.py:45, schedule.py:38,
+// spec.py:226@c4af57ff).
 type Internal struct {
+	// MaxRunningRequestsExplicitlySet records whether the input stated max_running_requests, not
+	// whether resolution gave one (a model's default leaves it false).
+	MaxRunningRequestsExplicitlySet *bool
 	RadixEvictionPolicyExplicitlySet          bool
 	SwaFullTokensRatioExplicitlySet           *bool
 	SpeculativeDraftQuantizationExplicitlySet *bool
@@ -111,10 +114,12 @@ type Resolved struct {
 	RandomSeedDrawn bool
 }
 
-// Value is a resolved field's value as JSON holds it, by its SGLang name, including the three
+// Value is a resolved field's value as JSON holds it, by its SGLang name, including the four
 // internal fields.
 func (r *Resolved) Value(name string) (any, bool) {
 	switch name {
+	case "_max_running_requests_explicitly_set":
+		return jsonPtr(r.Internal.MaxRunningRequestsExplicitlySet), true
 	case "_radix_eviction_policy_explicitly_set":
 		return r.Internal.RadixEvictionPolicyExplicitlySet, true
 	case "_swa_full_tokens_ratio_explicitly_set":
