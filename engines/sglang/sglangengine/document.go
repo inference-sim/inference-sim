@@ -142,7 +142,7 @@ func refuseUnmodelled(a *config.ServerArgs) error {
 	switch {
 	case a.SpeculativeEagleTopk != nil && *a.SpeculativeEagleTopk > 1:
 		return fmt.Errorf("sglangengine: tree drafting and tree verification (speculative_eagle_topk %d) are not modelled by the engine (inference-sim/inference-sim#2355)", *a.SpeculativeEagleTopk)
-	case a.EnableDpAttention || a.DpSize > 1:
+	case a.AttnDpSize > 1 || a.DpSize > 1:
 		return fmt.Errorf("sglangengine: DP attention is not modelled by the engine (inference-sim/inference-sim#2356)")
 	case a.PpSize > 1:
 		return fmt.Errorf("sglangengine: pipeline parallelism is not modelled by the engine (inference-sim/inference-sim#2358)")

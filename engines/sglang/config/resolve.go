@@ -201,6 +201,12 @@ func (r *resolver) raise(site, message string) {
 
 // Resolve resolves input as SGLang v0.5.23's ServerArgs.resolve_once does on the input's chip.
 func Resolve(in Input) (res *Resolved, err error) {
+	if err := checkRemovedKwargs(in.Args); err != nil {
+		return nil, err
+	}
+	if err := checkRemovedOptions(in.Args); err != nil {
+		return nil, err
+	}
 	raw := Defaults()
 	names := make([]string, 0, len(in.Args))
 	for name := range in.Args {
@@ -300,7 +306,7 @@ func deref(p any) any {
 // field for any input Resolve accepts (accepted.go) is named in a comment rather than ported;
 // SGLang's start-up checks in those steps are not yet ported either (inference-sim/inference-sim#2344).
 func (r *resolver) run() {
-	r.handleDeprecatedDPAttention()
+	// validate_removed_options runs in Resolve (checkRemovedOptions), on the input as given.
 	// handle_mega_moe, handle_return_hidden_states_mode, handle_media_url_security (it declares
 	// allowed_media_domains, the [] it holds), handle_watermark_config: no change here.
 	r.handleHicacheRatioDefault()
@@ -308,7 +314,7 @@ func (r *resolver) run() {
 	// validate_prefill_cp_platform, handle_hardware_runtime_validation, handle_model_source_paths,
 	// apply_muse_spark_env_defaults, handle_multimodal, handle_ssl_validation and
 	// handle_asr_validation: no change here.
-	r.handleDeprecatedArgs()
+	r.handleGrpcArgs()
 	r.handleMissingDefaultValues()
 	// handle_expert_pack: no change here.
 	r.handlePDDisaggregation()

@@ -316,8 +316,7 @@
    "chip": "H100",
    "args": {
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {
@@ -370,8 +369,7 @@
     "tp_size": 8,
     "ep_size": 8,
     "moe_a2a_backend": "deepep",
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {
@@ -447,11 +445,10 @@
    "args": {
     "tp_size": 4,
     "moe_a2a_backend": "deepep",
-    "dp_size": 4,
-    "enable_dp_attention": true,
     "ep_size": 4,
     "disaggregation_mode": "decode",
-    "disaggregation_transfer_backend": "nixl"
+    "disaggregation_transfer_backend": "nixl",
+    "attn_dp_size": 4
    }
   },
   {
@@ -484,9 +481,8 @@
    "chip": "B200",
    "args": {
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true,
-    "chunked_prefill_size": -1
+    "chunked_prefill_size": -1,
+    "attn_dp_size": 8
    }
   },
   {
@@ -520,9 +516,8 @@
    "chip": "H200",
    "args": {
     "tp_size": 4,
-    "dp_size": 2,
-    "enable_dp_attention": true,
-    "chunked_prefill_size": -4
+    "chunked_prefill_size": -4,
+    "attn_dp_size": 2
    }
   },
   {
@@ -535,10 +530,9 @@
     "speculative_eagle_topk": 2,
     "speculative_num_draft_tokens": 6,
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true,
     "disaggregation_mode": "decode",
-    "disaggregation_transfer_backend": "nixl"
+    "disaggregation_transfer_backend": "nixl",
+    "attn_dp_size": 8
    }
   },
   {
@@ -547,11 +541,10 @@
    "chip": "H100",
    "args": {
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true,
     "max_running_requests": 300,
     "disaggregation_mode": "decode",
-    "disaggregation_transfer_backend": "nixl"
+    "disaggregation_transfer_backend": "nixl",
+    "attn_dp_size": 8
    }
   },
   {
@@ -564,8 +557,7 @@
     "speculative_eagle_topk": 2,
     "speculative_num_draft_tokens": 6,
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {
@@ -574,8 +566,7 @@
    "chip": "probe-20GiB",
    "args": {
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {
@@ -591,9 +582,8 @@
    "args": {
     "tp_size": 4,
     "moe_a2a_backend": "deepep",
-    "dp_size": 4,
-    "enable_dp_attention": true,
-    "ep_size": 4
+    "ep_size": 4,
+    "attn_dp_size": 4
    }
   },
   {
@@ -625,10 +615,9 @@
     "speculative_eagle_topk": 1,
     "speculative_num_draft_tokens": 5,
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true,
     "disaggregation_mode": "decode",
-    "disaggregation_transfer_backend": "nixl"
+    "disaggregation_transfer_backend": "nixl",
+    "attn_dp_size": 8
    }
   },
   {
@@ -729,9 +718,9 @@
     "reasoning_parser": "glm45",
     "mem_fraction_static": 0.85,
     "served_model_name": "glm-5-fp8",
-    "enable_flashinfer_allreduce_fusion": true,
     "host": "0.0.0.0",
-    "port": 8888
+    "port": 8888,
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -749,7 +738,7 @@
    "chip": "H200",
    "args": {
     "tp_size": 1,
-    "enable_flashinfer_allreduce_fusion": true
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -901,10 +890,10 @@
     "reasoning_parser": "glm45",
     "mem_fraction_static": 0.85,
     "served_model_name": "glm-5-fp8",
-    "enable_flashinfer_allreduce_fusion": true,
     "host": "0.0.0.0",
     "port": 8888,
-    "kv_cache_dtype": "fp8_e4m3"
+    "kv_cache_dtype": "fp8_e4m3",
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -938,10 +927,10 @@
     "reasoning_parser": "glm45",
     "mem_fraction_static": 0.85,
     "served_model_name": "glm-5-fp8",
-    "enable_flashinfer_allreduce_fusion": true,
     "host": "0.0.0.0",
     "port": 8888,
-    "kv_cache_dtype": "bf16"
+    "kv_cache_dtype": "bf16",
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -954,10 +943,10 @@
     "reasoning_parser": "glm45",
     "mem_fraction_static": 0.85,
     "served_model_name": "glm-5-fp8",
-    "enable_flashinfer_allreduce_fusion": true,
     "host": "0.0.0.0",
     "port": 8888,
-    "kv_cache_dtype": "bfloat16"
+    "kv_cache_dtype": "bfloat16",
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -970,10 +959,10 @@
     "reasoning_parser": "glm45",
     "mem_fraction_static": 0.85,
     "served_model_name": "glm-5-fp8",
-    "enable_flashinfer_allreduce_fusion": true,
     "host": "0.0.0.0",
     "port": 8888,
-    "kv_cache_dtype": "fp8_e5m2"
+    "kv_cache_dtype": "fp8_e5m2",
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -1055,11 +1044,11 @@
     "reasoning_parser": "glm45",
     "mem_fraction_static": 0.85,
     "served_model_name": "glm-5-fp8",
-    "enable_flashinfer_allreduce_fusion": true,
     "host": "0.0.0.0",
     "port": 8888,
     "dsa_prefill_backend": "flashmla_sparse",
-    "dsa_decode_backend": "flashmla_sparse"
+    "dsa_decode_backend": "flashmla_sparse",
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -1072,11 +1061,11 @@
     "reasoning_parser": "glm45",
     "mem_fraction_static": 0.85,
     "served_model_name": "glm-5-fp8",
-    "enable_flashinfer_allreduce_fusion": true,
     "host": "0.0.0.0",
     "port": 8888,
     "dsa_prefill_backend": "fa3",
-    "dsa_decode_backend": "trtllm"
+    "dsa_decode_backend": "trtllm",
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -1106,11 +1095,11 @@
     "attention_backend": "nsa",
     "chunked_prefill_size": 8192,
     "mem_fraction_static": 0.85,
-    "enable_flashinfer_allreduce_fusion": true,
     "context_length": 202752,
     "trust_remote_code": true,
     "tool_call_parser": "glm47",
-    "reasoning_parser": "glm45"
+    "reasoning_parser": "glm45",
+    "flashinfer_allreduce_fusion_backend": "auto"
    }
   },
   {
@@ -1438,8 +1427,7 @@
    "chip": "H200",
    "args": {
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {
@@ -1710,8 +1698,7 @@
     "tp_size": 8,
     "ep_size": 8,
     "moe_a2a_backend": "deepep",
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {
@@ -1720,8 +1707,7 @@
    "chip": "B300",
    "args": {
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {
@@ -1741,8 +1727,7 @@
     "tp_size": 8,
     "ep_size": 8,
     "moe_a2a_backend": "deepep",
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {
@@ -1751,8 +1736,7 @@
    "chip": "B300",
    "args": {
     "tp_size": 8,
-    "dp_size": 8,
-    "enable_dp_attention": true
+    "attn_dp_size": 8
    }
   },
   {

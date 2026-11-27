@@ -17,19 +17,6 @@ import "strconv"
 // The resolution steps of the serving, HiCache, disaggregation, parallelism, KV-cache and
 // model-path hooks, each as far as an accepted input reaches it.
 
-// handleDeprecatedDPAttention is handle_deprecated_dp_attention (parallel_hook.py:39-61):
-// `--dp-size N --enable-dp-attention` becomes `--attn-dp-size N`.
-func (r *resolver) handleDeprecatedDPAttention() {
-	const src = "_handle_deprecated_dp_attention"
-	if !r.cfg.EnableDpAttention {
-		return
-	}
-	if r.cfg.AttnDpSize == 1 {
-		r.declare(src, "attn_dp_size", r.cfg.DpSize, "dp_size", 1)
-	}
-	r.declare(src, "enable_dp_attention", false)
-}
-
 // handleHicacheRatioDefault is handle_hicache_ratio_default (hicache_hook.py:100-126).
 func (r *resolver) handleHicacheRatioDefault() {
 	const src = "_handle_hicache_ratio_default"
@@ -51,24 +38,12 @@ func (r *resolver) handleHicacheRatioDefault() {
 	}
 }
 
-// handleDeprecatedArgs is handle_deprecated_args (serving_hook.py:256-432). Only its
-// unconditional declarations reach an accepted input: the deprecated FlashInfer fusion flag is
-// cleared (after it states the auto backend), a deprecated tool-call parser name is replaced, and grpc_worker_threads takes SGLANG_GRPC_WORKER_THREADS, whose default is 4
-// (environ.py:1715).
-func (r *resolver) handleDeprecatedArgs() {
-	const src = "_handle_deprecated_args"
-	// serving_hook.py:272-281: a deprecated tool-call parser name is replaced by its successor.
-	if r.cfg.ToolCallParser != nil {
-		if succ, ok := map[string]string{"qwen25": "qwen", "glm45": "glm"}[*r.cfg.ToolCallParser]; ok {
-			r.declare(src, "tool_call_parser", succ)
-		}
-	}
-	// serving_hook.py:284-297: the deprecated flag states the "auto" backend.
-	if r.cfg.EnableFlashinferAllreduceFusion && r.cfg.FlashinferAllreduceFusionBackend == nil {
-		r.declare(src, "flashinfer_allreduce_fusion_backend", "auto")
-	}
-	r.declare(src, "enable_flashinfer_allreduce_fusion", false)
-	r.declare(src, "grpc_worker_threads", 4)
+// handleGrpcArgs is handle_grpc_args (serving_hook.py:268-). Only its unconditional declaration
+// reaches an accepted input: grpc_worker_threads takes SGLANG_GRPC_WORKER_THREADS, whose default
+// is 4 (environ.py:SGLANG_GRPC_WORKER_THREADS). The deprecated-flag renames this step carried at
+// v0.5.23 are gone: a removed name is refused by checkRemovedOptions.
+func (r *resolver) handleGrpcArgs() {
+	r.declare("_handle_grpc_args", "grpc_worker_threads", 4)
 }
 
 // handleMissingDefaultValues is handle_missing_default_values (serving_hook.py:632-709).
