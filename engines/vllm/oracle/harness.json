@@ -10,6 +10,7 @@
     "core/engine/testdata/golden-dp-nixl/",
     "core/connector/nixl/testdata/golden/",
     "core/connector/offloading/testdata/golden/",
+    "core/connector/offloading/testdata/golden-mamba/",
     "core/connector/multi/testdata/golden/",
     "core/connector/offloading/testdata/golden-fid5/",
     "core/connector/tiering/testdata/golden/",

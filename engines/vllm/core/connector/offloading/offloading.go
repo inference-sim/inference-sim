@@ -51,6 +51,12 @@ type Group struct {
 	BlockSize     int
 	Window        int // 0 is full attention
 	ExtraRetained int
+	// Mamba is a MambaSpec group with prefix caching (is_mamba_prefix_caching_group,
+	// offloading/scheduler.py:86-93, 265-267@v0.34.0). Its state is one chunk wide
+	// (get_sliding_window_size_in_chunks, offloading/config.py), so the lookup treats it as a window
+	// of one chunk, and its chunks are stored only from the KV cache manager's boundary-state
+	// hand-offs (requires_cow_source), never from the request's block table.
+	Mamba bool
 }
 
 // Config is the connector's configuration (SchedulerOffloadConfig.from_spec,
@@ -83,6 +89,10 @@ type Config struct {
 	// config/speculative.py:2122-2149): its trailing chunk is volatile while
 	// decoding and a hit on it peeks one chunk past the boundary. nil is none.
 	EagleGroups []bool
+	// RetentionInterval is prefix_cache_retention_interval: nil is dense retention, 0 vLLM's default
+	// for a model with Mamba groups. Only the shared-prefix junction reads it here; New refuses a
+	// value beside a sliding-window group, whose store mask it changes (reachable_block_mask).
+	RetentionInterval *int
 	// Manager builds the OffloadingManager over the CPU tier: TieringOffloadingSpec's
 	// TieringOffloadingManager with its secondary tiers (vllm/v1/kv_offload/tiering/spec.py@4ba787ec).
 	// nil is the CPU tier alone (CPUOffloadingSpec, or TieringOffloadingSpec with no secondary tier).
@@ -112,12 +122,16 @@ type groupCfg struct {
 	windowChunks int
 }
 
-func (g groupCfg) sliding() bool { return g.Window > 0 }
+func (g groupCfg) sliding() bool { return g.Window > 0 || g.Mamba }
 
 // loadWindowChunks is load_window_size_in_chunks (scheduler.py:109-126).
 func (g groupCfg) loadWindowChunks(numTokens int) int {
 	if !g.sliding() {
 		return 0
+	}
+	if g.Mamba {
+		// Only a SlidingWindowSpec widens the window (GroupOffloadConfig.load_window_size_in_chunks).
+		return g.windowChunks
 	}
 	right := mod(-numTokens, g.tokensPerChunk)
 	return max(g.windowChunks, cdiv(g.Window-1+g.ExtraRetained+right, g.tokensPerChunk))
@@ -278,7 +292,9 @@ type Scheduler struct {
 	groups    []groupCfg
 	full, swa []int // _full_attention_groups, _sliding_window_groups (largest window first)
 	alignment int   // alignment_tokens
-	manager   Manager
+	// mambaAlign is resolve_mamba_align_size: the Mamba groups' chunk size, 0 with none.
+	mambaAlign int
+	manager    Manager
 	// params are the kv_transfer_params of requests not yet started (SetRequestParams).
 	params     map[string]map[string]any
 	cpu        *cpuManager // the CPU tier, which manager is or fronts
@@ -316,10 +332,19 @@ func New(cfg Config) (*Scheduler, error) {
 	if cfg.PrefixCaching {
 		s.loading = map[Key]bool{}
 	}
+	if cfg.RetentionInterval != nil {
+		for _, g := range cfg.Groups {
+			if g.Window > 0 {
+				return nil, fmt.Errorf("offloading: prefix_cache_retention_interval %d beside a sliding-window group is not "+
+					"modelled: it changes which window blocks are stored (reachable_block_mask, %s)", *cfg.RetentionInterval, GroupIssue)
+			}
+		}
+	}
 	if cfg.KVGroups != nil && len(cfg.KVGroups) != len(cfg.Groups) {
 		return nil, fmt.Errorf("offloading: %d KV group ids for %d offloaded groups", len(cfg.KVGroups), len(cfg.Groups))
 	}
 	fullChunk := map[int]bool{}
+	mambaChunks := map[int]bool{}
 	for _, g := range cfg.Groups {
 		// Groups of several block sizes are accepted. The paths the earlier refusal named, the
 		// partial-tail hand-off and the Mamba alignment, are reached only through a Mamba group in
@@ -329,6 +354,14 @@ func New(cfg Config) (*Scheduler, error) {
 		// MiniMax-M3.1-Flash) runs the same code each group already runs alone: tokens_per_chunk,
 		// hashes_per_chunk and the window are per group, and alignment_tokens is the full-attention
 		// groups' single chunk size, taken below. Not diff-tested against vLLM's oracle.
+		if g.Mamba && g.BlockSize > cfg.TokensPerHash && cfg.BlocksPerChunk == 1 {
+			// supports_partial_tail (offloading/scheduler.py:273-292@v0.34.0): a Mamba block larger than the
+			// hash block makes the connector look up and store a state inside a block, which needs the
+			// KV cache manager's fine-grained partial hash hits and copy-on-write hand-off
+			// (kv/mamba_manager_align.go refuses a group whose block exceeds the hash block).
+			return nil, fmt.Errorf("offloading: a Mamba group of block size %d beside hash block size %d needs the partial-tail "+
+				"lookup and copy-on-write hand-off, which are not modelled (%s)", g.BlockSize, cfg.TokensPerHash, GroupIssue)
+		}
 		if g.BlockSize%cfg.TokensPerHash != 0 {
 			// Whether vLLM accepts a group whose block is smaller than the hash block, and how it sizes
 			// its offload block then, is https://github.com/inference-sim/inference-sim/issues/2433.
@@ -338,7 +371,14 @@ func New(cfg Config) (*Scheduler, error) {
 		gc := groupCfg{Group: g, tokensPerChunk: g.BlockSize * cfg.BlocksPerChunk}
 		gc.eagle = len(s.groups) < len(cfg.EagleGroups) && cfg.EagleGroups[len(s.groups)]
 		gc.hashesPerChunk = gc.tokensPerChunk / cfg.TokensPerHash
-		if g.Window > 0 {
+		if g.Mamba {
+			// get_sliding_window_size_in_chunks: a Mamba state is one chunk.
+			gc.windowChunks = 1
+			mambaChunks[gc.tokensPerChunk] = true
+			if g.Window > 0 {
+				return nil, errors.New("offloading: a Mamba group states no window")
+			}
+		} else if g.Window > 0 {
 			// get_sliding_window_size_in_chunks (scheduler.py:129-140).
 			gc.windowChunks = max(cdiv(g.Window, gc.tokensPerChunk), cdiv(g.Window-1+g.ExtraRetained, gc.tokensPerChunk))
 		} else {
@@ -355,6 +395,15 @@ func New(cfg Config) (*Scheduler, error) {
 		for _, g := range s.groups {
 			s.alignment = max(s.alignment, g.tokensPerChunk)
 		}
+	}
+	// resolve_mamba_align_size (scheduler.py:138-156): the Mamba groups agree on one chunk size,
+	// which the hit window is rounded down to.
+	if len(mambaChunks) > 1 {
+		return nil, fmt.Errorf("offloading: Mamba groups of several chunk sizes (%v) are not modelled: vLLM asserts they agree "+
+			"(resolve_mamba_align_size, scheduler.py:154)", mambaChunks)
+	}
+	for t := range mambaChunks {
+		s.mambaAlign = t
 	}
 	for i, g := range s.groups {
 		if g.sliding() {
@@ -422,7 +471,19 @@ func Check(o Options) error {
 // KV cache groups (it is SupportsHMA, offloading_connector.py:53), the batch queue and drafters
 // (oracle/run_offloading.py run_queued; fuzz seeds 60000+).
 func (s *Scheduler) ConnectorModels() sched.Capabilities {
-	return sched.Capabilities{HybridGroups: true, ConcurrentBatches: true, Drafters: true, PackedGroups: true}
+	return sched.Capabilities{HybridGroups: true, ConcurrentBatches: true, Drafters: true, PackedGroups: true,
+		MambaGroups: true}
+}
+
+// ReadsBoundaryStates implements sched.BoundaryStateReader: the connector stores the Mamba boundary
+// states the KV cache manager hands off, so it asks for them when a group needs them.
+func (s *Scheduler) ReadsBoundaryStates() bool {
+	for _, g := range s.groups {
+		if g.Mamba {
+			return true
+		}
+	}
+	return false
 }
 
 // LoadedGroups implements sched.GroupLoader: the offloading connector states no
@@ -528,10 +589,11 @@ func (s *Scheduler) MatchedTokensOrDefer(r *sched.Request, local int) (int, bool
 	}
 	s.updateKeys(st)
 	st.localHit = local
-	n, deferred := s.lookupComplete(st)
+	n, deferred, boundary := s.lookupComplete(st)
 	if deferred {
 		return 0, false, true
 	}
+	s.registerSharedPrefixJunction(st, boundary, n)
 	return n, n > 0, false
 }
 
@@ -594,7 +656,7 @@ func (s *Scheduler) windowLookup(keys []Key, window, initial int, a *Access) (in
 
 // lookupComplete is _lookup_complete_chunks (scheduler.py:752-952) without an external bound
 // (max_num_new_tokens); max_load_tokens bounds the hit (:866-871, 915-920).
-func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
+func (s *Scheduler) lookupComplete(st *reqState) (hit int, deferred bool, faBoundary int) {
 	local := st.localHit
 	maxHit := st.req.NumTokens()
 	if st.maxLoad >= 0 {
@@ -603,8 +665,14 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 	if len(s.swa) > 0 {
 		maxHit--
 	}
+	if len(s.swa) > 0 && s.mambaAlign > 0 {
+		// Constrain the hit window to the Mamba chunk (scheduler.py:937-941@v0.34.0).
+		maxHit -= maxHit % s.mambaAlign
+	}
 	hitTokens := 0
-	deferred := false
+	// faBoundary is the hit boundary the full-attention groups proved before the first window or
+	// Mamba group narrowed it, -1 until one is reached (full_attention_hit_boundary, :955-972).
+	faBoundary = -1
 	order := append(append([]int(nil), s.full...), s.swa...)
 	// eagleVerified are the drafter groups whose volatile trailing chunk this iteration has
 	// already popped (:790-793).
@@ -622,7 +690,14 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 				maxHit -= maxHit % g.tokensPerChunk
 			}
 			if maxHit-local < g.tokensPerChunk {
-				return 0, false
+				return 0, false, faBoundary
+			}
+			if g.sliding() && faBoundary < 0 {
+				// Groups before the first sparse group are full attention.
+				faBoundary = 0
+				if len(s.full) > 0 && !deferred {
+					faBoundary = maxHit
+				}
 			}
 			// A drafter group queries one extra chunk, which it pops (:830-842).
 			queryMax := maxHit
@@ -646,7 +721,7 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 				n, pend = s.windowLookup(ks, window, g.loadWindowChunks(end)+drop, st.access)
 			}
 			if n == 0 && !pend {
-				return 0, false
+				return 0, false, faBoundary
 			}
 			if pend {
 				deferred = true
@@ -659,7 +734,7 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 			}
 			newHit := maxHit - local
 			if newHit < g.tokensPerChunk {
-				return 0, false
+				return 0, false, faBoundary
 			}
 			if newHit < hitTokens {
 				if !g.eagle {
@@ -677,7 +752,7 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 		}
 	}
 	if deferred {
-		return 0, true
+		return 0, true, faBoundary
 	}
 	if len(s.loading) > 0 {
 		for gi, g := range s.groups {
@@ -689,12 +764,23 @@ func (s *Scheduler) lookupComplete(st *reqState) (int, bool) {
 			}
 			for _, k := range ks {
 				if s.loading[k] {
-					return 0, true
+					return 0, true, faBoundary
 				}
 			}
 		}
 	}
-	return hitTokens, false
+	return hitTokens, false, faBoundary
+}
+
+// registerSharedPrefixJunction is _maybe_register_shared_prefix_junction (scheduler.py:1329-1342
+// @v0.34.0): where a sparse group (a window or a Mamba state) cut the hit below what the
+// full-attention groups proved, the request pins that boundary as its shared-prefix junction, as
+// get_computed_blocks does for a local hit, so the recompute retains the state there.
+func (s *Scheduler) registerSharedPrefixJunction(st *reqState, boundary, hit int) {
+	if s.cfg.RetentionInterval == nil || boundary < 0 || boundary <= st.localHit+hit {
+		return
+	}
+	st.req.SetSharedPrefixBoundary(boundary)
 }
 
 // AfterAlloc is update_state_after_alloc (scheduler.py:1146-1279): the load job for the hit's
@@ -744,6 +830,11 @@ func (s *Scheduler) AfterAlloc(r *sched.Request, blocks sched.AllocatedBlocks, e
 			// load_key_ranges (:1440-1459@4ba787ec): each key's tokens, from the load's first block.
 			for i, k := range gk {
 				c := start/bpc + i
+				if g.Mamba {
+					// A recurrent state supports the whole reused prefix (:1596-1600).
+					st.loadRanges = append(st.loadRanges, loadRange{lo: local, hi: cached, key: k})
+					continue
+				}
 				st.loadRanges = append(st.loadRanges, loadRange{lo: max(start*g.BlockSize, c*g.tokensPerChunk),
 					hi: min(cached, (c+1)*g.tokensPerChunk), key: k})
 			}
@@ -980,7 +1071,7 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 			start := gs.nextStored
 			horizon := prompt / g.tokensPerChunk
 			finalAlign := 0
-			if g.sliding() && !g.eagle && s.alignment > 0 && s.alignment%g.BlockSize == 0 {
+			if g.sliding() && !g.Mamba && !g.eagle && s.alignment > 0 && s.alignment%g.BlockSize == 0 {
 				finalAlign = s.alignment / g.BlockSize
 			}
 			reconsider := r.IsFinished() && n != horizon && finalAlign > 0
@@ -997,6 +1088,11 @@ func (s *Scheduler) buildStores(step sched.StepOutput) []Job {
 				start = min(start, (hb-hb%finalAlign)/bpc)
 			}
 			ranges[gi] = storeRange{start, n}
+			if g.Mamba {
+				// requires_cow_source: the state comes from the KV cache manager's hand-off, not the
+				// block table (:1992-1993).
+				continue
+			}
 			if n <= start {
 				continue
 			}
@@ -1137,7 +1233,10 @@ func (s *Scheduler) BuildMeta(step sched.StepOutput) any {
 			s.flush[j] = true
 		}
 	}
-	m := Meta{Loads: s.loadJobs, Stores: s.buildStores(step)}
+	// _build_partial_tail_store_jobs first, then _build_store_jobs (scheduler.py:2341-2342): the
+	// hand-offs' jobs take the lower ids.
+	stores := s.buildBoundaryStores(step)
+	m := Meta{Loads: s.loadJobs, Stores: append(stores, s.buildStores(step)...)}
 	for j := range s.flush {
 		m.Flush = append(m.Flush, j)
 	}
@@ -1351,3 +1450,53 @@ var _ sched.Deferrer = (*Scheduler)(nil)
 func cdiv(a, b int) int { return (a + b - 1) / b }
 
 func mod(a, b int) int { return ((a % b) + b) % b }
+
+// buildBoundaryStores is _build_aligned_boundary_store_jobs (scheduler.py:1779-1830, reached through
+// _build_partial_tail_store_jobs :1832-1846@v0.34.0): each Mamba boundary state the KV cache manager
+// handed off at a chunk boundary the request may offload is offered to the manager as one chunk and
+// stored from its exact block. The partial-tail jobs that follow in vLLM are not modelled (New).
+func (s *Scheduler) buildBoundaryStores(step sched.StepOutput) []Job {
+	var out []Job
+	byKV := map[int]int{}
+	for i, kvg := range s.cfg.KVGroups {
+		byKV[kvg] = i
+	}
+	for _, br := range step.BoundaryStates {
+		st := s.reqs[br.Req]
+		if st == nil {
+			continue
+		}
+		r := st.req
+		maxBoundary := s.offloadable(r, r.NumTokens())
+		for _, e := range br.Entries {
+			gi, ok := e.Group, true
+			if s.cfg.KVGroups != nil {
+				gi, ok = byKV[e.Group]
+			}
+			if !ok || gi >= len(s.groups) {
+				continue
+			}
+			g := s.groups[gi]
+			if e.Block == 0 || e.Boundary > maxBoundary || e.Boundary%g.tokensPerChunk != 0 {
+				continue
+			}
+			key := makeKey(r.BlockHashes()[e.Boundary/s.cfg.TokensPerHash-1], gi)
+			st.access.a.positions[key] = e.Boundary
+			stored, chunkIDs, _, ok := s.manager.PrepareStore([]Key{key}, st.access)
+			if !ok || len(stored) == 0 {
+				continue
+			}
+			job := Job{Req: br.Req, Store: true, CPU: chunkIDs, GPU: []int{e.Block}}
+			job.GroupSizes = make([]int, len(s.groups))
+			job.BlockIndices = make([]int, len(s.groups))
+			job.GroupSizes[gi] = 1
+			job.BlockIndices[gi] = e.Boundary/g.BlockSize - 1
+			job.ID = s.newJob()
+			st.jobs[job.ID] = true
+			s.watch(e.Block, job.ID)
+			s.jobs[job.ID] = &jobStatus{req: br.Req, pending: s.cfg.Workers, keys: stored, store: true, fenced: []int{e.Block}}
+			out = append(out, job)
+		}
+	}
+	return out
+}

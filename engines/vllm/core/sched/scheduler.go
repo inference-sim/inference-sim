@@ -473,6 +473,9 @@ func (s *Scheduler) SetConnector(c Connector, conf ConnectorConfig) error {
 			connectorCapabilityIssue)
 	}
 	s.connector, s.conf = c, conf
+	if b, ok := c.(BoundaryStateReader); ok && b.ReadsBoundaryStates() {
+		s.KV.OfferBoundaryStates()
+	}
 	// defer_block_free and requires_kv_delivery (scheduler.py:184-194@5df63a72).
 	s.deferBlockFree = max(s.cfg.MaxConcurrentBatches, 1) > 1 && conf.Consumer
 	s.requiresKVDelivery = conf.Producer

@@ -62,7 +62,15 @@ type scenario struct {
 			// Eagle marks the group as holding a drafter's layer (KVCacheGroupSpec.is_eagle_group).
 			Eagle bool `json:"eagle"`
 		} `json:"kv_groups"`
-		Transfer struct {
+		// Mamba is the MambaSpec of every "mamba" KV group (oracle/run_offloading_mamba.py): the mode
+		// is align, and the retention interval is vLLM's default 0 unless the scenario states one.
+		Mamba struct {
+			SpeculativeBlocks   int `json:"num_speculative_blocks"`
+			CheckpointBlocks    int `json:"num_prefill_checkpoint_blocks"`
+			CheckpointAlignment int `json:"prefill_checkpoint_alignment"`
+		} `json:"mamba"`
+		PrefixCacheRetentionInterval *int `json:"prefix_cache_retention_interval"`
+		Transfer                     struct {
 			LoadDelay  *int `json:"load_delay"`
 			StoreDelay *int `json:"store_delay"`
 		} `json:"transfer"`
@@ -179,6 +187,7 @@ func configure(t *testing.T, sc scenario) setup {
 	}
 	var layers []kv.Group
 	var groups []Group
+	hasMamba := false
 	extra := max(0, spec.PrefillLookahead-1)
 	for _, g := range c.KVGroups {
 		switch g.Kind {
@@ -188,6 +197,12 @@ func configure(t *testing.T, sc scenario) setup {
 		case "sliding_window":
 			layers = append(layers, kv.Group{Kind: kv.SlidingWindow, Window: g.SlidingWindow, Eagle: g.Eagle})
 			groups = append(groups, Group{BlockSize: c.BlockSize, Window: g.SlidingWindow, ExtraRetained: extra})
+		case "mamba":
+			m := c.Mamba
+			layers = append(layers, kv.Group{Kind: kv.Mamba, MambaCacheMode: "align", MambaSpeculativeBlocks: m.SpeculativeBlocks,
+				MambaCheckpointBlocks: m.CheckpointBlocks, MambaCheckpointAlignment: m.CheckpointAlignment})
+			groups = append(groups, Group{BlockSize: c.BlockSize, Mamba: true})
+			hasMamba = true
 		default:
 			t.Fatalf("unknown KV cache group kind %q", g.Kind)
 		}
@@ -201,11 +216,18 @@ func configure(t *testing.T, sc scenario) setup {
 	if c.AsyncScheduling || pp > 1 {
 		queue = engine.MaxConcurrentBatches(pp, c.AsyncScheduling, v2)
 	}
-	s, err := sched.New(sched.Config{KVTransfer: true, // the connector this test installs (kv_transfer_config)
+	var retention *int
+	if hasMamba {
+		zero := 0
+		if retention = c.PrefixCacheRetentionInterval; retention == nil {
+			retention = &zero
+		}
+	}
+	s, err := sched.New(sched.Config{RetentionInterval: retention, KVTransfer: true, // the connector this test installs (kv_transfer_config)
 		MaxNumSeqs: c.MaxNumSeqs, MaxNumBatchedTokens: c.MaxNumBatchedTokens, BlockSize: c.BlockSize,
 		NumBlocks: c.NumBlocks, MaxModelLen: c.MaxModelLen, LongPrefillTokenThreshold: c.LongPrefillTokenThreshold,
 		EnableChunkedPrefill: chunked, Policy: sched.Policy(c.SchedulingPolicy), EnablePrefixCaching: caching,
-		ReserveFullSequence: true, Watermark: c.Watermark, Spec: spec, KVGroups: kv.ResolveGroups(layers, false),
+		ReserveFullSequence: true, Watermark: c.Watermark, Spec: spec, KVGroups: resolve(layers, hasMamba),
 		Async: c.AsyncScheduling, DecodeStagger: pp, UseV2ModelRunner: v2, MaxConcurrentBatches: queue,
 	})
 	if err != nil {
@@ -229,7 +251,7 @@ func configure(t *testing.T, sc scenario) setup {
 	// The world size, the connector's num_workers: tp x pp (ParallelConfig.world_size).
 	workers := max(c.TensorParallelSize, 1) * pp
 	chunks := NumChunks(int64(cpuBytes), perBlock, workers, bpc, pageSize)
-	conn, err := New(Config{Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(), NumChunks: chunks,
+	conn, err := New(Config{RetentionInterval: retention, Groups: groups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(), NumChunks: chunks,
 		OffloadPromptOnly: promptOnly, PrefixCaching: caching, Workers: workers, EagleGroups: eagleGroups(spec, s)})
 	if err != nil {
 		t.Fatal(err)
@@ -1003,4 +1025,13 @@ func draftNextnLayers(t *testing.T, draft string) int {
 	}
 	readJSON(t, filepath.Join("..", "..", "..", "oracle", "drafts", draft, "config.json"), &cfg)
 	return cfg.Layers
+}
+
+// resolve is the scenario's KV cache groups: a model with Mamba layers keeps each layer as its own
+// group, as oracle/run_offloading_mamba.py builds them.
+func resolve(layers []kv.Group, hasMamba bool) []kv.Group {
+	if hasMamba {
+		return layers
+	}
+	return kv.ResolveGroups(layers, false)
 }

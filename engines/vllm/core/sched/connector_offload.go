@@ -59,6 +59,16 @@ type StepOutput struct {
 	// (vllm/distributed/kv_transfer/kv_connector/utils.py:295-312): scheduled_new_reqs, then
 	// scheduled_cached_reqs (running, then resumed).
 	Reqs []StepRequest
+	// BoundaryStates is kv_connector_block_state.boundary_state_offloads (scheduler.py:1723-1738):
+	// the Mamba boundary-state blocks the KV cache manager hands off this step, by request in
+	// dict order. nil when no connector asked for them.
+	BoundaryStates []kv.BoundaryRequest
+}
+
+// BoundaryStateReader is a connector that stores the Mamba boundary states the KV cache manager
+// hands off each step (StepOutput.BoundaryStates); SetConnector turns the offers on for it.
+type BoundaryStateReader interface {
+	ReadsBoundaryStates() bool
 }
 
 // StepRequest is one request of yield_req_data: its new block ids per KV cache group (nil when
@@ -129,6 +139,7 @@ func (s *Scheduler) buildConnectorMeta(out *Output, running, admitted []*Request
 		return
 	}
 	step := StepOutput{Scheduled: out.Scheduled, Order: out.Order, Preempted: out.Preempted}
+	step.BoundaryStates = s.KV.TakeBoundaryStateOffloads()
 	step.Finished = append([]string(nil), s.finishedIDs...)
 	sort.Strings(step.Finished)
 	s.finishedIDs = nil
@@ -183,3 +194,14 @@ func (s *Scheduler) buildConnectorMeta(out *Output, running, admitted []*Request
 	s.tableLens = nil
 	out.KVConnectorMetadata = mb.BuildMeta(step)
 }
+
+// SetSharedPrefixBoundary raises request.shared_prefix_boundary (scheduler.py, a connector's
+// _maybe_register_shared_prefix_junction): it never lowers a boundary already set.
+func (r *Request) SetSharedPrefixBoundary(b int) {
+	if b > r.sharedPrefixBoundary {
+		r.sharedPrefixBoundary = b
+	}
+}
+
+// RetentionInterval is the configured prefix_cache_retention_interval (nil is dense retention).
+func (s *Scheduler) RetentionInterval() *int { return s.cfg.RetentionInterval }

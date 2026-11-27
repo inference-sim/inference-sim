@@ -1123,6 +1123,46 @@ func (m *Manager) NewStepStarts() {
 	}
 }
 
+// OfferBoundaryStates makes the Mamba align groups collect the boundary states they hand a KV
+// connector (_pending_boundary_state_offloads); a connector that stores them calls it once.
+func (m *Manager) OfferBoundaryStates() {
+	for _, g := range m.groups {
+		if g.align != nil {
+			g.align.offer = true
+		}
+	}
+}
+
+// BoundaryRequest is one request's entry of take_boundary_state_offloads' dict.
+type BoundaryRequest struct {
+	Req     string
+	Entries []BoundaryOffload
+}
+
+// TakeBoundaryStateOffloads is take_boundary_state_offloads (kv_cache_manager.py): this step's
+// hand-offs, drained, one row per request in the order the dict gets its keys: the groups' managers
+// in order, each one's entries in the order it made them.
+func (m *Manager) TakeBoundaryStateOffloads() []BoundaryRequest {
+	var out []BoundaryRequest
+	at := map[string]int{}
+	for _, g := range m.groups {
+		if g.align == nil {
+			continue
+		}
+		for _, o := range g.align.pending {
+			i, ok := at[o.Req]
+			if !ok {
+				i = len(out)
+				at[o.Req] = i
+				out = append(out, BoundaryRequest{Req: o.Req})
+			}
+			out[i].Entries = append(out[i].Entries, o)
+		}
+		g.align.pending = nil
+	}
+	return out
+}
+
 // EnablePartialHashHits is the coordinator's enable_partial_hash_hits
 // (kv_cache_coordinator.py:694-716@4ba787ec). It is always false here: a manager whose Mamba
 // block exceeds the hash block size, the only case where vLLM enables it, is refused at

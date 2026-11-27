@@ -67,7 +67,8 @@ func New(children []Child) (*Connector, error) {
 			"(kv_connector_extra_config connectors, multi_connector.py:235-258@4ba787ec)")
 	}
 	c := &Connector{children: append([]Child(nil), children...), chosen: map[string]int{}, hma: true,
-		caps: sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true, PackedGroups: true}}
+		caps: sched.Capabilities{HybridGroups: true, Drafters: true, ConcurrentBatches: true, PackedGroups: true,
+			MambaGroups: true}}
 	for _, ch := range children {
 		if ch.Conn == nil {
 			return nil, fmt.Errorf("multi: child %q is nil", ch.Name)
@@ -80,6 +81,7 @@ func New(children []Child) (*Connector, error) {
 		c.caps.Drafters = c.caps.Drafters && caps.Drafters
 		c.caps.ConcurrentBatches = c.caps.ConcurrentBatches && caps.ConcurrentBatches
 		c.caps.PackedGroups = c.caps.PackedGroups && caps.PackedGroups
+		c.caps.MambaGroups = c.caps.MambaGroups && caps.MambaGroups
 		if _, ok := ch.Conn.(sched.SupportsHMA); !ok {
 			c.hma = false
 		}
@@ -107,6 +109,17 @@ func (c *Connector) LoadedGroups(r *sched.Request, all []int) []int {
 		return gl.LoadedGroups(r, all)
 	}
 	return nil
+}
+
+// ReadsBoundaryStates implements sched.BoundaryStateReader: any child that stores the Mamba
+// boundary states the KV cache manager hands off.
+func (c *Connector) ReadsBoundaryStates() bool {
+	for _, ch := range c.children {
+		if b, ok := ch.Conn.(sched.BoundaryStateReader); ok && b.ReadsBoundaryStates() {
+			return true
+		}
+	}
+	return false
 }
 
 // Len is the number of children; Name is child i's name.

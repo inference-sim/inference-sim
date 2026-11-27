@@ -12,6 +12,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/multi"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/connector/offloading"
+	"github.com/inference-sim/inference-sim/engines/vllm/core/kv"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/placement"
 	"github.com/inference-sim/inference-sim/engines/vllm/core/sched"
 )
@@ -222,6 +223,15 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 		if spec.Window > 0 {
 			gr.Window, gr.ExtraRetained = spec.Window, extra
 		}
+		if spec.Kind == kv.Mamba {
+			if spec.MambaCacheMode != "align" {
+				return nil, fmt.Errorf("vllm: a KV connector beside Mamba cache mode %q is not modelled: only align keeps "+
+					"states a connector can store (%s)", spec.MambaCacheMode, issueSim+"2597")
+			}
+			// A prefix-cacheable Mamba group is one with mamba_cache_mode align
+			// (is_mamba_prefix_caching_group); the connector stores its states from the KV cache manager's hand-offs.
+			gr.Mamba = true
+		}
 		groups = append(groups, gr)
 		kvGroups = append(kvGroups, g)
 	}
@@ -259,7 +269,16 @@ func buildOffload(s *sched.Scheduler, c *offloadConfig, spec sched.Spec, method 
 	if err != nil {
 		return nil, err
 	}
-	conn, err := offloading.New(offloading.Config{Groups: groups, KVGroups: kvGroups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
+	// The connector reads prefix_cache_retention_interval from the same CacheConfig as the KV cache
+	// manager (offloading/scheduler.py:217@v0.34.0). A model without Mamba groups is modelled with
+	// dense retention, as before.
+	var retention *int
+	for _, g := range groups {
+		if g.Mamba {
+			retention = s.RetentionInterval()
+		}
+	}
+	conn, err := offloading.New(offloading.Config{RetentionInterval: retention, Groups: groups, KVGroups: kvGroups, BlocksPerChunk: bpc, TokensPerHash: s.KV.HashBlockSize(),
 		NumChunks: chunks, OffloadPromptOnly: promptOnly, PrefixCaching: prefixCaching, Workers: world, EagleGroups: eagle,
 		Manager: tiers.manager()})
 	if err != nil {
