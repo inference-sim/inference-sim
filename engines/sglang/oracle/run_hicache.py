@@ -107,7 +107,7 @@ def build_hicache(cfg: dict, h: dict, storage_dir: str):
     from sglang.srt.mem_cache.allocator.token import TokenToKVPoolAllocator
     from sglang.srt.mem_cache.cache_init_params import CacheInitParams
     from sglang.srt.mem_cache.memory_pool import MHATokenToKVPool, ReqToTokenPool
-    from sglang.srt.mem_cache.unified_cache.component_type import ComponentType
+    from sglang.srt.mem_cache.kv.plan import TREE_TOKEN, TreeSlot
     from sglang.srt.mem_cache.unified_radix_cache import UnifiedRadixCache
     from sglang.srt.runtime_context import get_parallel
     from sglang.srt.server_args import set_global_server_args_for_scheduler
@@ -129,7 +129,7 @@ def build_hicache(cfg: dict, h: dict, storage_dir: str):
         alloc = PagedTokenToKVPoolAllocator(size=cfg["kv_size"], page_size=page, dtype=torch.bfloat16, device="cpu",
                                             kvcache=kv, need_sort=False)
     params = CacheInitParams(disable=False, req_to_token_pool=req_to_token, token_to_kv_pool_allocator=alloc,
-                             page_size=page, tree_components=(ComponentType.FULL,),
+                             page_size=page, tree_slots=(TreeSlot(component="FULL", family=TREE_TOKEN),),
                              enable_kv_cache_events=bool(cfg.get("kv_cache_events", False)),
                              eviction_policy=cfg.get("eviction_policy", "lru"))
     cache = UnifiedRadixCache(params=params)

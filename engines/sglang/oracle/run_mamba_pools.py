@@ -31,6 +31,7 @@ int64 tensor, {"value": name} a result bound by "as", {"pool": name.attr} an att
 Usage: python -I oracle/run_mamba_pools.py direct <sglang checkout> <sequence.json> <out.json>
 Environment as for oracle/run_cache_iface.py (ORACLE_LOCKFILE, ORACLE_MODEL_REVISION).
 """
+import dataclasses
 import json
 import os
 import sys
@@ -55,16 +56,24 @@ class Req:
     def __init__(self, rid, fields):
         from sglang.srt.managers.schedule_batch import ReqKvInfo
 
+        global KV_ALL
+        KV_ALL = {f.name for f in dataclasses.fields(ReqKvInfo)}
         self.rid = rid
-        self.kv = ReqKvInfo(**fields)
+        self.mamba_branching_seqlen = None
+        self.origin_input_ids = []
+        self.kv = ReqKvInfo(**{k: v for k, v in fields.items() if k in KV_ALL})
+        self.update({k: v for k, v in fields.items() if k not in KV_ALL})
 
     def update(self, fields):
         import dataclasses
 
         import torch
 
+        for k in [k for k in fields if k not in KV_ALL]:
+            setattr(self, k, fields[k])
         self.kv = dataclasses.replace(
-            self.kv, **{k: torch.tensor(v, dtype=torch.int64) if isinstance(v, list) else v for k, v in fields.items()})
+            self.kv, **{k: torch.tensor(v, dtype=torch.int64) if isinstance(v, list) else v
+                        for k, v in fields.items() if k in KV_ALL})
 
 
 def enc(x):
@@ -124,6 +133,21 @@ def pool_state(hybrid):
     return out
 
 
+def lifecycle_call(target, method, args):
+    """A scheduler-side request-pool call. At v0.5.23 the hybrid request table bound a request's
+    row and state slots in `alloc` and gave the state back in `free_mamba_cache`; at c4af57ff those
+    are the state storage's `acquire` (bound to rows by static_kv_storage.acquire_rows, as
+    allocation.py:331 reaches them) and `release`. The sequence names keep the v0.5.23 calls."""
+    if hasattr(target, "state") and method == "alloc":
+        from sglang.srt.mem_cache.static_kv_storage import acquire_rows
+
+        return acquire_rows(target, target.state, **args)
+    if hasattr(target, "state") and method == "free_mamba_cache":
+        return target.state.release(target, args["req"],
+                                    mamba_ping_pong_track_buffer_to_keep=args.get("mamba_ping_pong_track_buffer_to_keep"))
+    return getattr(target, method)(**args)
+
+
 def build_config(sq):
     import importlib
 
@@ -163,6 +187,8 @@ def mamba_budget(entry, cfg, K, scenario_args):
                                                       context_len=entry.get("context_len", 4096))
             self.spec_algorithm = spec
             self.extra_mamba_cache_bytes_per_req = 0
+            self.extra_mamba_cache_bytes_per_request_row = 0
+            self.allocate_intermediate_ssm = entry.get("allocate_intermediate_ssm", True)
 
         def fused_entry_bytes(self, name):
             return None
@@ -193,6 +219,7 @@ def drive(sglang_root: str, path: str) -> dict:
     os.environ.update(run_scheduler.KEPT_SGLANG_ENV)
     import torch
     from sglang.srt.mem_cache.kv_cache_configurator import KVCacheConfigurator as K
+    from sglang.srt.mem_cache.kv.state_storage import StateSlotsExhausted
     from sglang.srt.runtime_context import get_context
 
     with open(path) as f:
@@ -236,10 +263,10 @@ def drive(sglang_root: str, path: str) -> dict:
             touched = [n for n in sorted(reqs) if any(isinstance(a, Req) and a is reqs[n]
                        or isinstance(a, list) and reqs[n] in a for a in args.values())]
             try:
-                out = getattr(target, c["m"])(**args)
+                out = lifecycle_call(target, c["m"], args)
                 rec = {"on": c["on"], "m": c["m"], "ret": enc(out)}
-            except AssertionError as e:
-                rec = {"on": c["on"], "m": c["m"], "raises": "AssertionError", "message": str(e).split(".")[0]}
+            except (AssertionError, StateSlotsExhausted) as e:
+                rec = {"on": c["on"], "m": c["m"], "raises": type(e).__name__, "message": str(e).split(".")[0]}
                 out = None
             if "as" in c:
                 bound[c["as"]] = out

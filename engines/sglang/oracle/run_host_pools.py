@@ -64,8 +64,12 @@ def drive(sglang_root: str, path: str) -> dict:
     os.environ.update(run_scheduler.KEPT_SGLANG_ENV)
     import run_hicache
     from sglang.srt.mem_cache import memory_pool
-    from sglang.srt.mem_cache.hybrid_cache.hybrid_pool_assembler import _build_mha_mla_host_pool
-    from sglang.srt.mem_cache.pool_host.dsa import DSAIndexerPoolHost, make_dsa_indexer_pool_decl
+    from sglang.srt.mem_cache.hicache_storage import PoolName
+    from sglang.srt.mem_cache.hybrid_cache.host_pool_config import _host_pool_infos, _prepare_sidecar
+    from sglang.srt.mem_cache.hybrid_cache.hybrid_pool_assembler import (
+        _build_mha_mla_host_pool,
+        _build_sidecar_host_pool,
+    )
     from sglang.srt.server_args import ServerArgs, set_global_server_args_for_scheduler
 
     run_hicache.install_host_register_noop()
@@ -91,12 +95,21 @@ def drive(sglang_root: str, path: str) -> dict:
         summary.append(host_summary(entry["as"], host))
 
     for h in sq["hosts"]:
-        build(h, lambda h=h: _build_mha_mla_host_pool(pool=pools[h["pool"]], host_to_device_ratio=h["ratio"],
+        build(h, lambda h=h: _build_mha_mla_host_pool(pool=pools[h["pool"]],
+                                                      buffer_info=_host_pool_infos(pools[h["pool"]])[1][PoolName.KV].buffer_info,
+                                                      host_to_device_ratio=h["ratio"],
                                                       page_size=h["page_size"], layout=h["layout"],
                                                       allocator_type="default", pool_label="kv"))
+    def sidecar_host(pool, anchor):
+        """The indexer host pool as the assembler builds it: the config from the pool's own device
+        pool info, then _build_sidecar_host_pool over the anchor KV host pool."""
+        target = _host_pool_infos(pool)[1][PoolName.INDEXER]
+        config = _prepare_sidecar(target, (), model_layer_ids=tuple(pool.model_layer_ids),
+                                  owned_layer_range=(pool.start_layer, pool.end_layer), layer_mapping={})
+        return _build_sidecar_host_pool(config=config, root=pool, root_host_pool=anchor)
+
     for x in sq.get("indexers", []):
-        build(x, lambda x=x: DSAIndexerPoolHost(decl=make_dsa_indexer_pool_decl(pools[x["pool"]]),
-                                                anchor_host=hosts[x["anchor"]], allocator_type="default"))
+        build(x, lambda x=x: sidecar_host(pools[x["pool"]], hosts[x["anchor"]]))
     for h in hosts.values():
         h.destroy()
     return {"provenance": traces.provenance(TIER, sglang_root, path, sq, INPUTS), "kind": "direct",

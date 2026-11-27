@@ -88,7 +88,7 @@ def cell_size(entry: dict) -> int:
     kvc = types.SimpleNamespace(
         model_config=model_config, kv_cache_dtype=getattr(torch, entry["dtype"]),
         use_mla_backend=entry["use_mla_backend"], server_args=types.SimpleNamespace(enable_hisparse=False),
-        is_draft_worker=False, mambaish_config=None, kv_cache_dtype_str="auto",
+        is_draft_worker=False, mambaish_config=None, kv_cache_dtype_str="auto", modelslim_cache_layout=None, kv_shard_size=1,
         layer_info=types.SimpleNamespace(start_layer=0, end_layer=layers, num_effective_layers=layers))
 
     class Configurator:

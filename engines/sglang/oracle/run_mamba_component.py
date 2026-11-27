@@ -66,7 +66,9 @@ def drive(sglang_root: str, path: str) -> dict:
         os.environ.pop(name)
     os.environ.update(run_scheduler.KEPT_SGLANG_ENV)
     import torch
+    from sglang.srt.mem_cache.allocator.token import TokenToKVPoolAllocator
     from sglang.srt.mem_cache.base_prefix_cache import EvictParams, InsertParams, InsertResult
+    from sglang.srt.mem_cache.kv.state_storage import StateSlotsExhausted
     from sglang.srt.mem_cache.unified_cache.components.mamba import MambaComponent
     from sglang.srt.runtime_context import get_context
 
@@ -89,34 +91,51 @@ def drive(sglang_root: str, path: str) -> dict:
         if spec.get("tree_mamba_slots"):
             held = [int(s) for s in pool.mamba_allocator.alloc(spec["tree_mamba_slots"]).tolist()]
 
+        from sglang.srt.mem_cache.cache_init_params import CacheInitParams
+        from sglang.srt.mem_cache.kv.plan import TREE_STATE, TREE_TOKEN, TreeSlot
+        from sglang.srt.mem_cache.static_kv_storage import kv_storage_of
+
+        # The token allocator the request table and the tree sit on, built as run_cache_iface.build_cache
+        # builds it; the request table's state storage is bound to it as the KV cache configurator binds it.
+        kv = mod.MHATokenToKVPool(size=8, page_size=1, dtype=torch.bfloat16, head_num=1, head_dim=2, layer_num=1,
+                                  device="cpu", enable_memory_saver=False)
+        alloc = TokenToKVPoolAllocator(size=8, dtype=torch.bfloat16, device="cpu", kvcache=kv, need_sort=False)
+        alloc.state = pool.state
+        slots = (TreeSlot(component="FULL", family=TREE_TOKEN),
+                 TreeSlot(component="MAMBA", family=TREE_STATE, checkpoint_interval=spec.get("checkpoint_interval", 64)))
+        params = CacheInitParams(disable=False, req_to_token_pool=pool, token_to_kv_pool_allocator=alloc,
+                                 page_size=sq.get("page_size", 1), tree_slots=slots,
+                                 enable_mamba_extra_buffer=spec["extra_buffer"])
+
         class Cache:
             """What the lifecycle methods read of the unified radix cache."""
 
             req_to_token_pool = pool
             enable_mamba_extra_buffer = spec["extra_buffer"]
-            tree_components = ()
+            is_swa_enabled = False
+            tree_components = params.tree_components
 
-            def evict_for_alloc(self, params):
-                evictions.append({"m": "evict_for_alloc", "mamba_num": params.mamba_num, "num_tokens": params.num_tokens})
-                for _ in range(params.mamba_num):
+            def kv_storage(self):
+                return kv_storage_of(pool, alloc)
+
+            def evict_for_alloc(self, demand):
+                evictions.append({"m": "evict_for_alloc", "mamba_num": demand.state_slots,
+                                  "num_tokens": demand.full_tokens})
+                self._free_held(demand.state_slots)
+
+            def _free_held(self, n):
+                for _ in range(n):
                     if held:
                         pool.mamba_allocator.free(torch.tensor([held.pop(0)], dtype=torch.int64))
 
             def evict(self, params):
                 evictions.append({"m": "evict", "mamba_num": params.mamba_num, "num_tokens": params.num_tokens})
-                self.evict_for_alloc(params)
+                self._free_held(params.mamba_num)
 
             def dec_lock_ref(self, node, receipt):
                 evictions.append({"m": "dec_lock_ref"})
 
-        class Component(MambaComponent):
-            """MambaComponent without UnifiedRadixCache.__init__: its methods are SGLang's own, and
-            its cache is the stand-in above."""
-
-            def __init__(self, cache):  # noqa: D107 - deliberately not TreeComponent.__init__
-                self.cache = cache
-
-        bound["component"] = Component(Cache())
+        bound["component"] = MambaComponent(Cache(), params, slots[1])
         for c in sq["calls"]:
             op = c.get("op")
             if op == "req":
@@ -137,10 +156,10 @@ def drive(sglang_root: str, path: str) -> dict:
             touched = [n for n in sorted(reqs) if any(a is reqs[n] for a in args.values())]
             before = len(evictions)
             try:
-                out = getattr(target, c["m"])(**args)
+                out = P.lifecycle_call(target, c["m"], args)
                 rec = {"on": c["on"], "m": c["m"], "ret": P.enc(out)}
-            except AssertionError as e:
-                rec = {"on": c["on"], "m": c["m"], "raises": "AssertionError", "message": str(e).split(".")[0]}
+            except (AssertionError, StateSlotsExhausted) as e:
+                rec = {"on": c["on"], "m": c["m"], "raises": type(e).__name__, "message": str(e).split(".")[0]}
                 out = None
             if "as" in c:
                 bound[c["as"]] = out
