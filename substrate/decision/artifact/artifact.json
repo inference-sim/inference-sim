@@ -1,0 +1,180 @@
+{
+ "kind": "DecisionArtifact",
+ "schema_version": 2,
+ "epsilon": 0.05,
+ "training_data_hash": "sha256:b0017d303e10e72682272aa8713cce9ef48787f4e8583b6a0e622b0f234b768f",
+ "role_counts": {
+  "fit": 1547,
+  "select": 518,
+  "validate": 0
+ },
+ "writer_commit": "8939ac12ab8a298bf35d2f35b4a765fce65506bb",
+ "features": [
+  "dX",
+  "dI",
+  "dT",
+  "kind_a",
+  "kind_b",
+  "same_kind",
+  "d_tp",
+  "d_ep",
+  "d_dp",
+  "d_gpus",
+  "d_pd",
+  "d_spec",
+  "d_seqs",
+  "d_btok",
+  "d_pdfrac",
+  "lcr",
+  "lcm",
+  "m_tot",
+  "m_act",
+  "c_hbm",
+  "c_bw",
+  "c_fp8",
+  "d_hbm",
+  "d_bw",
+  "d_fp8",
+  "engine",
+  "lisl",
+  "losl",
+  "src"
+ ],
+ "fallback_masked_features": [
+  "dX",
+  "dI",
+  "dT"
+ ],
+ "chosen": {
+  "learner": "gradient-boosted trees, binary logistic, monotone in the simulator differences (simulator model only)",
+  "hyper_parameters_simulator_model": {
+   "XI": {
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "XT": {
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "IT": {
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "XIT": {
+    "max_depth": 4,
+    "n_estimators": 200
+   }
+  },
+  "hyper_parameters_fallback": {
+   "XI": {
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "XT": {
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "IT": {
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "XIT": {
+    "max_depth": 4,
+    "n_estimators": 200
+   }
+  },
+  "cross_fit_votes_simulator_model": {
+   "XI": {
+    "2": 43
+   },
+   "XT": {
+    "2": 43
+   },
+   "IT": {
+    "2": 41,
+    "1": 2
+   },
+   "XIT": {
+    "2": 43
+   }
+  },
+  "cross_fit_votes_fallback": {
+   "XI": {
+    "2": 43
+   },
+   "XT": {
+    "2": 43
+   },
+   "IT": {
+    "2": 42,
+    "1": 1
+   },
+   "XIT": {
+    "2": 43
+   }
+  },
+  "training": {
+   "model-XI": {
+    "rows": 53208,
+    "positive_rate": 0.11716283265674335,
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "fallback-XI": {
+    "rows": 77248,
+    "positive_rate": 0.1165337613918807,
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "model-XT": {
+    "rows": 53208,
+    "positive_rate": 0.06497143286723801,
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "fallback-XT": {
+    "rows": 77248,
+    "positive_rate": 0.08949099005799503,
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "model-IT": {
+    "rows": 53208,
+    "positive_rate": 0.36152458276950833,
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "fallback-IT": {
+    "rows": 77248,
+    "positive_rate": 0.3625077671913836,
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "model-XIT": {
+    "rows": 53208,
+    "positive_rate": 0.04339572996541873,
+    "max_depth": 4,
+    "n_estimators": 200
+   },
+   "fallback-XIT": {
+    "rows": 77248,
+    "positive_rate": 0.05359362054681027,
+    "max_depth": 4,
+    "n_estimators": 200
+   }
+  },
+  "ledger": {
+   "catalog": "v0.19.0",
+   "units_by_role": {
+    "fit": 1547,
+    "select": 518,
+    "not_in_ledger": 1153
+   },
+   "rows_dropped_held_or_anchor_or_undetermined": 1392,
+   "points_in_no_ledger_unit_kept": 628,
+   "validate_units_note": "a unit that is on no published list and no legacy side cannot be placed in select, validate or held without the seed: it is dropped, so no validate unit is counted"
+  },
+  "sources": "S40 decision points, other-version rows of the same corpus, the vLLM CI perf API and the SGLang nightly metrics (the last two are training-only sources)",
+  "features_not_inputs": "adjusted-TTFT, calibration-stage and engine-version columns; the simulator's other groups repeat dX, dI, dT under this base"
+ }
+}
