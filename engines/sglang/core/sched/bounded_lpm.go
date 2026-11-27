@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/managers/schedule_policy.py and python/sglang/srt/managers/lpm_opportunity.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/managers/schedule_policy.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/managers/lpm_opportunity.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 
 package sched
 

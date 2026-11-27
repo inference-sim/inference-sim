@@ -719,7 +719,7 @@ func (r *l2Replay) call(c cache.Call) error {
 	r.alloc.avail, r.alloc.allocs = nil, nil
 	for _, x := range r.within(c.Seq, cache.AllocatorIface) {
 		switch {
-		case x.Method == "available_size" && !r.under(x, cache.Interface(ControllerIface)):
+		case (x.Method == "available_size" || x.Method == "owner_available_size") && !r.under(x, cache.Interface(ControllerIface)):
 			v, err := decodeAs[int](x.Ret)
 			if err != nil {
 				return err
@@ -799,8 +799,8 @@ func (r *l2Replay) wantMade(c cache.Call) ([]l2Made, []l2Made, error) {
 			continue
 		}
 		switch x.Method {
-		case "available_size":
-			alloc = append(alloc, l2Made{"available_size", ""})
+		case "available_size", "owner_available_size", "target_window_pool":
+			alloc = append(alloc, l2Made{x.Method, ""})
 		case "free_segment":
 			var s []int64
 			var start int
@@ -1498,8 +1498,17 @@ func (r *l2Replay) answer(c cache.Call) error {
 		return wantInt(l.EvictableSize())
 	case "protected_size":
 		return wantInt(l.ProtectedSize())
-	case "swa_reprefill_tail_tokens":
+	case "window_reprefill_tail_tokens":
 		return wantInt(l.WindowReprefillTailTokens(nil))
+	case "retained_window_tokens":
+		return wantInt(l.RetainedWindowTokens())
+	case "retained_window_req_count":
+		return wantInt(l.RetainedWindowReqCount())
+	case "window_checkpoint_interval":
+		return wantInt(l.WindowCheckpointInterval())
+	case "lease_checkpoint_state_slots":
+		l.LeaseCheckpointStateSlots(nil)
+		return nil
 	case "supports_swa":
 		return wantBool(l.SupportsSWA())
 	case "supports_mamba":
@@ -1743,7 +1752,7 @@ func (r *l2Replay) entry(e seqEntry, span []cache.Call, bound map[string]cache.M
 			continue
 		}
 		switch {
-		case x.Method == "available_size" && !r.under(x, cache.Interface(ControllerIface)):
+		case (x.Method == "available_size" || x.Method == "owner_available_size") && !r.under(x, cache.Interface(ControllerIface)):
 			v, err := decodeAs[int](x.Ret)
 			if err != nil {
 				return err
@@ -1823,8 +1832,8 @@ func (r *l2Replay) entry(e seqEntry, span []cache.Call, bound map[string]cache.M
 			continue
 		}
 		switch x.Method {
-		case "available_size":
-			wantAlloc = append(wantAlloc, l2Made{"available_size", ""})
+		case "available_size", "owner_available_size", "target_window_pool":
+			wantAlloc = append(wantAlloc, l2Made{x.Method, ""})
 		case "free_segment":
 			var s []int64
 			var start int
@@ -1839,7 +1848,7 @@ func (r *l2Replay) entry(e seqEntry, span []cache.Call, bound map[string]cache.M
 	}
 	var gotAlloc []l2Made
 	for _, m := range r.alloc.made {
-		if m.m == "available_size" || m.m == "free_segment" {
+		if m.m == "available_size" || m.m == "owner_available_size" || m.m == "target_window_pool" || m.m == "free_segment" {
 			gotAlloc = append(gotAlloc, m)
 		}
 	}

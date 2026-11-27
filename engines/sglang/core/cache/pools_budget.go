@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/mem_cache/kv_cache_configurator.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/mem_cache/kv_cache_configurator.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 // Also derived from, at the same release: python/sglang/srt/model_executor/pool_configurator.py
 // (DefaultPoolConfigurator.calculate_pool_sizes and calculate_pool_sizes_from_max_tokens).
 

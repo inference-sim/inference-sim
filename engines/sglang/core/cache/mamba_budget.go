@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/mem_cache/kv_cache_configurator.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90):
-// _handle_max_mamba_cache (:3229-3411), _calculate_mamba_ratio (:3062-3088) and resolve_max_num_reqs (:3119-3175).
+// Derived from python/sglang/srt/mem_cache/kv_cache_configurator.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// It ports _handle_max_mamba_cache (:3229-3411), _calculate_mamba_ratio (:3062-3088) and resolve_max_num_reqs (:3119-3175).
 
 package cache
 
