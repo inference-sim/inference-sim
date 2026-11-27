@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/arg_groups/serving_hook.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/arg_groups/hicache_hook.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/arg_groups/pd_disaggregation_hook.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/arg_groups/parallel_hook.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/arg_groups/kv_cache_hook.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/arg_groups/model_path_hook.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/arg_groups/validation_hook.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/arg_groups/boundary_reduction.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/server_args.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/arg_groups/serving_hook.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/arg_groups/hicache_hook.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/arg_groups/pd_disaggregation_hook.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/arg_groups/parallel_hook.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/arg_groups/kv_cache_hook.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/arg_groups/model_path_hook.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/arg_groups/validation_hook.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/arg_groups/boundary_reduction.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/server_args.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 
 package config
 

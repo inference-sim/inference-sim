@@ -276,7 +276,7 @@ func TestTheEngineReadsItsEnvironmentFromTheEnvMap(t *testing.T) {
 		"NCCL_NVLS_ENABLE: '1'":            "NCCL_NVLS_ENABLE",
 		"SGLANG_RETRACT_DECODE_STEPS: 'x'": "SGLANG_RETRACT_DECODE_STEPS",
 		// read by the engine's scheduler settings, whose own refusal names it
-		"SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP: 'true'": "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP",
+		"SGLANG_DISABLE_OVERLAP_AFTER_PREFILL: 'true'": "SGLANG_DISABLE_OVERLAP_AFTER_PREFILL",
 	} {
 		if err := build(env); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("env {%s}: got %v, want a refusal naming %s", env, err, want)

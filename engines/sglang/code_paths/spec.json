@@ -2,9 +2,9 @@
   "_comment": "The closure of SGLang code that the engine-path costs depend on, for the release named below. People edit this file; gen_code_paths.py (blis-substrate tools/codepaths) refuses a function that is not in the source and hashes the rest into code_paths.json. host: the work host_admission_*, host_output_token, host_completion and host_step_per_request price. graphs: the launch work host_launch_* and host_replay_graph_per_step price. Add a function here when a cost starts to depend on it; its code then changes the path's CodeID.",
   "engine": {
     "kind": "sglang",
-    "version": "0.5.23",
-    "commit": "297e54fd105e974cdf401e5b4d20253a22c16f90",
-    "tag": "v0.5.23",
+    "version": "1.0.0+c4af57ff93f3",
+    "commit": "c4af57ff93f301846fa1da4c31f8523c08c7510d",
+    "tag": "c4af57ff93f3",
     "repo": "https://github.com/sgl-project/sglang"
   },
   "paths": {

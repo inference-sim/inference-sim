@@ -7,14 +7,10 @@
   "allocator:DSV4NPUTokenToKVPoolAllocator": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_allocator.py:104@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_allocator.py:102@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "allocator:DeepSeekV4HiSparseTokenToKVPoolAllocator": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "allocator:FloatMultiEndedAllocator": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
@@ -26,14 +22,10 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
-  "allocator:MultiEndedAllocator": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
   "allocator:NPUPagedTokenToKVPoolAllocator": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/allocator_npu.py:15@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/allocator_npu.py:16@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "allocator:PageInterleavePoolAllocator": {
@@ -62,23 +54,7 @@
     "core/cache/testdata/golden-pools/direct/token-allocator-sorted.trace.json"
    ]
   },
-  "allocator:UnifiedMambaSWATokenToKVPoolAllocator": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
   "allocator:UnifiedMambaSlotAllocator": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "allocator:UnifiedMambaTokenToKVPoolAllocator": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "allocator:UnifiedSWAAllocatorBase": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "allocator:UnifiedSWATokenToKVPoolAllocator": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
@@ -182,7 +158,7 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
-  "engine_setting:SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP": {
+  "engine_setting:SGLANG_DISABLE_OVERLAP_AFTER_PREFILL": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
@@ -499,7 +475,7 @@
   "hicache_option:hicache_io_backend=kernel_ascend": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/arg_groups/fields/memory.py:128@297e54fd",
+   "citation": "python/sglang/srt/arg_groups/fields/memory.py:139@c4af57ff",
    "why": "the Ascend NPU I/O kernel"
   },
   "hicache_option:hicache_mem_layout=layer_first": {
@@ -581,7 +557,7 @@
   "hicache_storage:npu_memcache": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/mem_cache/storage/backend_factory.py:244@297e54fd",
+   "citation": "python/sglang/srt/mem_cache/storage/backend_factory.py:243@c4af57ff",
    "why": "the Ascend NPU memcache store (npu_memcache_store)"
   },
   "hicache_storage:seaweedfs": {
@@ -769,7 +745,7 @@
   "kv_pool:DSV4NPUTokenToKVPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:258@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:387@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "kv_pool:DeepSeekV4IndexerPool": {
@@ -863,37 +839,37 @@
   "kv_pool:NPUDeepSeekV4IndexerPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:177@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:237@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "kv_pool:NPUDeepSeekV4SingleKVPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:40@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:46@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "kv_pool:NPUMHATokenToKOnlyPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:496@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:579@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "kv_pool:NPUMHATokenToKVPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:88@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:92@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "kv_pool:NPUMLATokenToKVPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:629@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:715@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "kv_pool:NPUMiniMaxSparseKVPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:603@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:689@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "kv_pool:NoOpMHATokenToKVPool": {
@@ -924,46 +900,10 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
-  "kv_pool:UnifiedDraftKVPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "kv_pool:UnifiedDraftMambaPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "kv_pool:UnifiedDraftSWAKVPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "kv_pool:UnifiedHybridLinearKVPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "kv_pool:UnifiedKVPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "kv_pool:UnifiedMHATokenToKVPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "kv_pool:UnifiedMLATokenToKVPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "kv_pool:UnifiedMambaPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
-  "kv_pool:UnifiedSWAKVPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
-  },
   "kv_pool:_DummyKVCache": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/mlx/model_runner_stub.py:43@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/mlx/model_runner_stub.py:43@c4af57ff",
    "why": "an Apple MLX class (hardware_backend/mlx); every target chip is CUDA"
   },
   "memory_budget:mm_reservation_gb": {
@@ -1610,10 +1550,6 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
-  "metric_family:sglang:startup_latency_breakdown_seconds_max": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
-  },
   "metric_family:sglang:startup_time_seconds": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
@@ -1677,13 +1613,7 @@
   "moe_a2a_backend:ascend_fuseep": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/layers/moe/utils.py:42@297e54fd",
-   "why": "an Ascend NPU all-to-all backend"
-  },
-  "moe_a2a_backend:ascend_tp": {
-   "status": "out_of_scope",
-   "reason": "hardware",
-   "citation": "python/sglang/srt/layers/moe/utils.py:43@297e54fd",
+   "citation": "python/sglang/srt/layers/moe/utils.py:42@c4af57ff",
    "why": "an Ascend NPU all-to-all backend"
   },
   "moe_a2a_backend:customized": {
@@ -1695,10 +1625,6 @@
    "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
   "moe_a2a_backend:deepep_v2": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
-  },
-  "moe_a2a_backend:flashinfer": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
   },
@@ -1754,7 +1680,7 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
-  "overlap_disabler:disable_overlap_for_batch": {
+  "overlap_disabler:process_after_prefill_early": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
   },
@@ -1781,7 +1707,7 @@
   "req_pool:DSV4NPUReqToTokenPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_req_to_token_pool.py:122@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_req_to_token_pool.py:151@c4af57ff",
    "why": "an Ascend NPU class (hardware_backend/npu); every target chip is CUDA"
   },
   "req_pool:DecodeReqToTokenPool": {
@@ -1799,7 +1725,7 @@
   "req_pool:MlxAuxiliaryStateReqToTokenPool": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/hardware_backend/mlx/kv_cache/auxiliary_state.py:218@297e54fd",
+   "citation": "python/sglang/srt/hardware_backend/mlx/kv_cache/auxiliary_state.py:242@c4af57ff",
    "why": "an Apple MLX class (hardware_backend/mlx); every target chip is CUDA"
   },
   "req_pool:ReqToTokenPool": {
@@ -1807,10 +1733,6 @@
    "evidence": [
     "core/cache/testdata/golden-fid5/recorded/tiny.trace.json.gz"
    ]
-  },
-  "req_pool:UnifiedHybridReqToTokenPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   "retraction_policy:length": {
    "status": "modelled",
@@ -1911,10 +1833,6 @@
    "issue": "https://github.com/inference-sim/inference-sim/issues/2351"
   },
   "scheduler_loop:event_loop_overlap_mlx": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
-  },
-  "scheduler_loop:event_loop_pdmux": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   },
@@ -2105,7 +2023,7 @@
   "transfer_backend:ascend": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/disaggregation/utils.py:685@297e54fd",
+   "citation": "python/sglang/srt/disaggregation/utils.py:1018@c4af57ff",
    "why": "the Ascend NPU transfer engine"
   },
   "transfer_backend:fake": {
@@ -2216,14 +2134,10 @@
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
   },
-  "tree_component:AUXILIARY_SWA": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
-  },
   "tree_component:C128": {
    "status": "out_of_scope",
    "reason": "hardware",
-   "citation": "python/sglang/srt/mem_cache/registry.py:172@297e54fd",
+   "citation": "python/sglang/srt/mem_cache/registry.py:212@c4af57ff",
    "why": "the C128 sidecar component is built only from the Ascend NPU DeepSeek-V4 request pool"
   },
   "tree_component:FULL": {
@@ -2265,6 +2179,186 @@
   "unified_cache_linker:mori": {
    "status": "refused",
    "issue": "https://github.com/inference-sim/inference-sim/issues/2445"
+  },
+  "hicache_storage:fast_file": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2342"
+  },
+  "eviction_policy:state_cost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "eviction_policy:joint_lru": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
+  },
+  "allocator:ChainAllocator": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "allocator:HiSparseAllocatorBase": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "host_pool:NPUModelSlimMXFP8KDynamicVPerChannelHost": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/mem_cache/pool_host/mha_mxfp8.py:307@c4af57ff",
+   "why": "an Ascend NPU class or backend; every target chip is CUDA"
+  },
+  "kv_pool:DSV41NPUIndexerPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:362@c4af57ff",
+   "why": "an Ascend NPU class or backend; every target chip is CUDA"
+  },
+  "kv_pool:DSV41NPUSingleKVPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsv4/dsv4_memory_pool.py:109@c4af57ff",
+   "why": "an Ascend NPU class or backend; every target chip is CUDA"
+  },
+  "kv_pool:Ernie5_5TokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:LayerSplitNPUMLATokenToKVPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/dsa_cache_layer_split.py:35@c4af57ff",
+   "why": "an Ascend NPU class or backend; every target chip is CUDA"
+  },
+  "kv_pool:NPUDSATokenToKVPool": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/hardware_backend/npu/memory_pool_npu.py:1638@c4af57ff",
+   "why": "an Ascend NPU class or backend; every target chip is CUDA"
+  },
+  "kv_pool:RoutedKVCache": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:UnlimitedOCRV2KVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "kv_pool:_LayerSubsetDSATokenToKVPool": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+  },
+  "hicache_option:hicache_mem_layout=layer_first_kv_split": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "hicache_option:hicache_mem_layout=page_unified": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2341"
+  },
+  "schedule_policy:uniboost": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "moe_a2a_backend:ascend_ops": {
+   "status": "out_of_scope",
+   "reason": "hardware",
+   "citation": "python/sglang/srt/layers/moe/utils.py:43@c4af57ff",
+   "why": "an Ascend NPU class or backend; every target chip is CUDA"
+  },
+  "moe_a2a_backend:flashinfer_nvlink_one_sided": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2357"
+  },
+  "metric_family:sglang:hicache_backup_storage_duration_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:hicache_storage_backup_failed_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_failures_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_finish_wait_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_forward_wait_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_hit_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_load_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_lookup_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_offload_duration_seconds": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_offload_tokens_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_offloads_in_flight": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:linker_prefetch_requests_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:max_total_num_tokens_window": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:prealloc_window_token_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:scheduler_iterations_total": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:window_available_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:window_evictable_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:window_token_usage": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "metric_family:sglang:window_used_tokens": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2451"
+  },
+  "extension_point:add_kv_cache_dtype_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:add_cp_kv_layout_choices": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:SRTPlatform.get_breakable_graph_backend_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+  },
+  "extension_point:SRTPlatform.get_moe_expert_executor_cls": {
+   "status": "refused",
+   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
   }
  }
 }

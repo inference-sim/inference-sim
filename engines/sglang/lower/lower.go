@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/utils/common.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/runtime_context.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/layers/moe/utils.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/utils/common.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/runtime_context.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/layers/moe/utils.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 
 // Package lower turns SGLang's resolved ServerArgs (package config) into what a decode step runs:
 // the parallel widths SGLang derives at publish, whether the step gathers tokens across

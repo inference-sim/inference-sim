@@ -99,7 +99,7 @@ FILES = {
             SGLANG_INIT_NEW_TOKEN_RATIO = EnvFloat(0.7)
             SGLANG_RETRACT_DECODE_STEPS = EnvInt(20)
             SGLANG_MAX_NEW_TOKENS_LIMIT = EnvInt(None)
-            SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP = EnvBool(False)
+            SGLANG_DISABLE_OVERLAP_AFTER_PREFILL = EnvBool(False)
             SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND = EnvStr("rust")
             SGLANG_MIN_NEW_TOKEN_RATIO_FACTOR = EnvFloat(0.14)
             SGLANG_NEW_TOKEN_RATIO_DECAY_STEPS = EnvInt(600)
@@ -128,10 +128,10 @@ FILES = {
                     self.result_queue.append((batch.copy(), result))
                     pop_and_process()
                     pop_and_process()
-            def is_disable_overlap_for_batch(self, batch):
-                disable_overlap_for_batch = envs.SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP.get() and extend
-                need_grammar_sync = batch and batch.grammar_needs_sync()
-                return disable_overlap_for_batch or need_grammar_sync
+            def should_process_last_batch_early(self, last_batch):
+                if envs.SGLANG_DISABLE_OVERLAP_AFTER_PREFILL.get():
+                    return True
+                return last_batch.grammar_needs_sync()
         def _dispatch_event_loop_once(scheduler):
             if scheduler.pp_size > 1:
                 scheduler.event_loop_pp()
@@ -240,9 +240,10 @@ FILES = {
         register_tree_core_backend("rust", _rust_tree_core_factory)
     """,
     "mem_cache/unified_cache/component_type.py": """
-        class ComponentType(int, Enum):
-            FULL = 0
-            SWA = 1
+        class ComponentType(int):
+            pass
+        ComponentType.FULL = ComponentType._create(0, "FULL")
+        ComponentType.SWA = ComponentType._create(1, "SWA")
     """,
     "mem_cache/unified_cache/linker_factory.py": """
         def create_unified_cache_linker(server_args, params, *, backend, config, components):
@@ -312,17 +313,9 @@ FILES = {
         class DecodeReqToTokenPool:
             pass
     """,
-    "mem_cache/unified_memory_pool.py": """
-        class UnifiedKVPool:
-            pass
-        def init_unified_swa_pools(cfg):
-            return UnifiedKVPool()
-    """,
     "mem_cache/allocator/mamba.py": """
         class MambaSlotAllocator:
             pass
-    """,
-    "mem_cache/unified_memory_pool_slots.py": """
         class UnifiedMambaSlotAllocator:
             pass
     """,
@@ -586,7 +579,6 @@ class TestItems(Base):
         by_id = {i["id"]: i for i in self.derive()}
         self.assertEqual(by_id["kv_pool:MLATokenToKVPool"]["built"], "mem_cache/kv_cache_configurator.py:8")
         self.assertEqual(by_id["req_pool:DecodeReqToTokenPool"]["built"], "mem_cache/kv_cache_configurator.py:4")
-        self.assertEqual(by_id["kv_pool:UnifiedKVPool"]["built"], "mem_cache/unified_memory_pool.py:4")
         self.assertNotIn("built", by_id["kv_pool:KVCache"])
 
     def test_a_collections_counter_is_not_a_metric_and_a_wrapper_is_allowed(self):
@@ -836,12 +828,12 @@ class TestParticulars(Base):
         self.assertEqual(by_id["overlap_depth:result_queue"]["queue_appends"], 1)
         self.assertEqual(by_id["overlap_depth:result_queue"]["drain_sites"], 2)
         self.assertEqual(sorted(i["name"] for i in self.derive() if i["category"] == "overlap_disabler"),
-                         ["disable_overlap_for_batch", "need_grammar_sync"])
+                         ["need_grammar_sync", "process_after_prefill_early"])
 
     def test_an_overlap_disabler_that_is_no_named_condition_fails(self):
         self.files["managers/scheduler.py"] = self.files["managers/scheduler.py"].replace(
-            "return disable_overlap_for_batch or need_grammar_sync", "return disable_overlap_for_batch or batch.x")
-        self.fails(r"is_disable_overlap_for_batch does not return an or of named conditions")
+            "return last_batch.grammar_needs_sync()", "return 7")
+        self.fails(r"should_process_last_batch_early is not an environment condition and a final grammar test")
 
     def test_the_memory_budget_records_each_formula_and_the_returned_bytes(self):
         by_id = self.by_id()

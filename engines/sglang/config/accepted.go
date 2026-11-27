@@ -122,7 +122,7 @@ var refusedFieldIssue = func() map[string]string {
 		switch {
 		case strings.HasPrefix(n, "speculative_dspark_"):
 			put("2454", n)
-		case strings.HasPrefix(n, "speculative_dflash_"):
+		case n == "speculative_dflash_draft_kv_ring":
 			put("2456", n)
 		case strings.HasPrefix(n, "speculative_"):
 			put("2355", n)

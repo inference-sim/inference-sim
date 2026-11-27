@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/arg_groups/pipeline.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
-// Derived from python/sglang/srt/arg_groups/overrides.py at SGLang v0.5.23 (297e54fd105e974cdf401e5b4d20253a22c16f90).
+// Derived from python/sglang/srt/arg_groups/pipeline.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/arg_groups/overrides.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 
 // Package config is SGLang's ServerArgs and its default resolution, ported from SGLang's own
 // resolution pipeline (python/sglang/srt/arg_groups/pipeline.py, run by ServerArgs.resolve_once).

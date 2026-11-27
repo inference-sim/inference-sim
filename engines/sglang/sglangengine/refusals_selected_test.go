@@ -228,14 +228,14 @@ func selectedBy(it surfaceItem) (selector, bool) {
 			return kvEvents(`{"publisher":"zmq"}`), true
 		case "SGLANG_MAX_NEW_TOKENS_LIMIT":
 			return envVar("the variable itself", it.Name, "100"), true
-		case "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP":
-			return envVar("scheduler.py:2152: the condition's variable", it.Name, "1"), true
+		case "SGLANG_DISABLE_OVERLAP_AFTER_PREFILL":
+			return envVar("scheduler.py:2327: the condition's variable", it.Name, "1"), true
 		case "SGLANG_HICACHE_NIXL_BACKEND_PLUGIN":
 			return envVar("the variable itself", it.Name, "UCX"), true
 		}
 	case "overlap_disabler":
-		if it.Name == "disable_overlap_for_batch" {
-			return envVar("scheduler.py:2152: the condition's variable", "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP", "1"), true
+		if it.Name == "process_after_prefill_early" {
+			return envVar("scheduler.py:2327: the condition's variable", "SGLANG_DISABLE_OVERLAP_AFTER_PREFILL", "1"), true
 		}
 	case "kv_pool":
 		switch it.Name {

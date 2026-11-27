@@ -91,7 +91,7 @@ under python/sglang/srt/; each item's "site" is the file and line it was read at
   scheduler_loop       each event loop Scheduler._dispatch_event_loop_once runs, with the condition that selects it.
   overlap_switch, overlap_depth, overlap_disabler
                        where the Scheduler sets enable_overlap, how many results the overlap loop holds
-                       (result_queue appends and drains), and each condition is_disable_overlap_for_batch ors.
+                       (result_queue appends and drains), and each condition should_process_last_batch_early tests.
   memory_budget        the assignments of KVCacheConfigurator._profile_available_bytes that make the KV budget.
   nixl_plugin          each NixlBackendSelection plugin, with its rank in auto selection.
   kv_event_hash        the functions that hash a block for an event or a storage key, with their seed tags.
@@ -145,7 +145,6 @@ LINKERS = "mem_cache/unified_cache/linker_factory.py"
 EVICTION = "mem_cache/utils.py"
 SCHED_POLICY = "managers/schedule_policy.py"
 CONFIGURATOR = "mem_cache/kv_cache_configurator.py"
-UNIFIED_POOL = "mem_cache/unified_memory_pool.py"
 SPEC_INFO = "speculative/spec_info.py"
 SPEC_REGISTRY = "speculative/spec_registry.py"
 MOE_UTILS = "layers/moe/utils.py"
@@ -207,7 +206,7 @@ SETTINGS = [
     ("running_requests", "arg", "schedule.py", "max_running_requests"),
     ("memory_budget", "arg", "schedule.py", "mem_fraction_static"),
     ("overlap", "arg", "schedule.py", "disable_overlap_schedule"),
-    ("overlap", "env", "SGLANG_DISABLE_CONSECUTIVE_PREFILL_OVERLAP"),
+    ("overlap", "env", "SGLANG_DISABLE_OVERLAP_AFTER_PREFILL"),
     ("kv_events", "arg", "schedule.py", "page_size"),
     ("kv_events", "arg", "observability.py", "kv_events_config"),
     ("storage_plugin", "getenv", NIXL, "SGLANG_HICACHE_NIXL_BACKEND_PLUGIN"),
@@ -244,14 +243,12 @@ POOL_ROOTS = {
 # its category. The configurator naming any other such class fails the generator.
 STANDALONE = {
     "DecodeReqToTokenPool": "req_pool",
-    "UnifiedKVPool": "kv_pool",
     "MambaSlotAllocator": "allocator",
     "UnifiedMambaSlotAllocator": "allocator",
 }
 LEVEL = {"kv_pool": "L1", "host_pool": "L2", "hicache_storage": "L3"}
 # The pool configurator: the class and module functions that choose and build pools and allocators.
-CONFIGURATOR_SCOPES = [(CONFIGURATOR, "class", "KVCacheConfigurator"),
-                       (UNIFIED_POOL, "prefix", "init_unified_")]
+CONFIGURATOR_SCOPES = [(CONFIGURATOR, "class", "KVCacheConfigurator")]
 POOL_NAME = re.compile(r"^[A-Z][A-Za-z0-9]*(Pool|Allocator)$")
 
 # The base classes of the KV frameworks (§7.6): (file, class).
@@ -1282,16 +1279,16 @@ def overlap_scheduler(src):
     pops = sum(1 for n in ast.walk(loop) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
                and n.func.id == "pop_and_process")
     out.append(item("overlap_depth", "result_queue", SCHEDULER, loop.lineno, queue_appends=appends, drain_sites=pops))
-    fn = method(cls, "is_disable_overlap_for_batch", SCHEDULER)
-    ret = [n for n in ast.walk(fn) if isinstance(n, ast.Return)]
-    if len(ret) != 1 or not (isinstance(ret[0].value, ast.BoolOp) and isinstance(ret[0].value.op, ast.Or)
-                             and all(isinstance(v, ast.Name) for v in ret[0].value.values)):
-        raise GenError("%s: is_disable_overlap_for_batch does not return an or of named conditions" % SCHEDULER)
-    for v in ret[0].value.values:
-        found = assigned_in(fn, v.id)
-        if len(found) != 1:
-            raise GenError("%s: is_disable_overlap_for_batch assigns %s %d times, want once" % (SCHEDULER, v.id, len(found)))
-        out.append(item("overlap_disabler", v.id, SCHEDULER, found[0][0], condition=found[0][1]))
+    # should_process_last_batch_early (c4af57ff) decides whether the last result goes before the next
+    # batch is formed: one environment condition (a prefill's result goes early), then the grammar's.
+    fn = method(cls, "should_process_last_batch_early", SCHEDULER)
+    envs_if = [n for n in fn.body if isinstance(n, ast.If) and "envs." in ast.unparse(n.test)]
+    ret = [n for n in fn.body if isinstance(n, ast.Return)]
+    if len(envs_if) != 1 or not ret or not isinstance(ret[-1].value, ast.Call):
+        raise GenError("%s: should_process_last_batch_early is not an environment condition and a final grammar test" % SCHEDULER)
+    out.append(item("overlap_disabler", "process_after_prefill_early", SCHEDULER, envs_if[0].lineno,
+                    condition=ast.unparse(envs_if[0].test)))
+    out.append(item("overlap_disabler", "need_grammar_sync", SCHEDULER, ret[-1].lineno, condition=ast.unparse(ret[-1].value)))
     return out
 
 
