@@ -128,8 +128,7 @@ jq -r '.items[] | [.category,.status] | @tsv' surface.json | sort | uniq -c
   these items as refused or `not_modelled` under #2355, and the lists are what this engine claims.
 - **HiCache is not in this tree, and metrics are ported, not run by the engine.** `core/metrics` is
   compared with its goldens. `core/hicache` was written against the previous pin; its replay no
-  longer equals SGLang at this pin and is left to a follow-up (branch `blis2/sglang-main-hicache`
-  keeps it). The engine refuses `enable_hierarchical_cache`, and nothing imports the package.
+  longer equals SGLang at this pin and is left to a follow-up. The engine refuses `enable_hierarchical_cache`, and nothing imports the package.
 - **The lists can lag the code.** The scheduler loops and the radix cache run in the engine and
   the scheduler goldens cover them, yet `surface.json` lists them as refused until their entries
   in `engines/sglang/tools/surface/status.json` gain trace evidence.

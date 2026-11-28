@@ -3,6 +3,7 @@
 package lower
 
 import (
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 	"reflect"
 	"sort"
 	"strings"
@@ -177,5 +178,36 @@ func TestMMAttentionBackendIsUnsetEquivalentOnlyWhereTheEngineIgnoresIt(t *testi
 		if err != nil || !reflect.DeepEqual(got, unset) {
 			t.Errorf("mm_attention_backend=%s: lowered plan differs from the unset one (error %v)", v, err)
 		}
+	}
+}
+
+// The bytes of one request's recurrent state, taken from the catalog graph's stated dimensions, equal
+// what SGLang's own state shape gives for the model's configuration (core/cache's port of
+// Mamba2CacheParams, whose sizes the pool oracle checks against SGLang's function): 60 layers, one in
+// four full attention, 16 key heads of 128, 64 value heads of 128, a convolution kernel of 4.
+func TestStatePerRequestBytesEqualsSGLangsStateShape(t *testing.T) {
+	g := graph(t, qwen35)
+	cfg := cache.LinearAttnConfig{NumHiddenLayers: 60, FullAttentionInterval: 4, KeyHeadDim: 128, NumKeyHeads: 16,
+		ValueHeadDim: 128, NumValueHeads: 64, ConvKernel: 4}
+	bf16, f16 := "bfloat16", "float16"
+	for _, tc := range []struct {
+		tp   int
+		flag *string
+		temp cache.DType
+	}{{1, nil, cache.Float32}, {2, nil, cache.Float32}, {4, nil, cache.Float32}, {8, nil, cache.Float32}, {8, &bf16, cache.BFloat16}, {4, &f16, cache.Float16}} {
+		want, err := cache.NewLinearStateParams(cfg, tc.tp, cache.BFloat16, tc.temp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := StatePerRequestBytes(g, tc.tp, tc.flag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want.PerReqBytes() {
+			t.Errorf("tp %d, flag %v: %d bytes, SGLang's state shape gives %d", tc.tp, tc.flag, got, want.PerReqBytes())
+		}
+	}
+	if _, err := StatePerRequestBytes(g, 32, nil); err == nil {
+		t.Error("a width above the 16 key groups pads them, which the graph does not state: it must be refused")
 	}
 }

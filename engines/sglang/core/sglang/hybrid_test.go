@@ -226,3 +226,29 @@ func TestHybridPoolPlanSharesTheBudgetAndCapsTheRequests(t *testing.T) {
 		t.Error("weights that leave nothing for the state pool must be refused")
 	}
 }
+
+// The state a request holds is what SGLang's state shape gives (convolution and temporal state), which
+// the host states from the model graph; the cost model's per-sequence bytes count the temporal state
+// alone. A stated size replaces the cost model's, and a larger state leaves fewer slots in the same budget.
+func TestHybridPoolPlanTakesTheStatedStateBytes(t *testing.T) {
+	const gib = int64(1 << 30)
+	k := hybridKernel{weights: 40 * gib, perToken: 1 << 20, fixedPerSeq: 3 * 64 << 20}
+	in := PoolInput{PreModelLoadGiB: 80, MemFractionStatic: 0.9, PageSize: 1, ContextLen: 8192, AttnDPSize: 1,
+		Mamba: &MambaPoolInput{Strategy: cache.MambaExtraBuffer, FullMemoryRatio: 0.9}}
+	fromKernel, err := PoolPlan(k, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Mamba.StatePerReqBytes = 64<<20 + 2<<20 // the kernel's 64 MiB per state, and 2 MiB it does not count
+	stated, err := PoolPlan(k, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stated.MambaSize >= fromKernel.MambaSize {
+		t.Errorf("a state of 66 MiB leaves %d slots, the kernel's 64 MiB %d: the stated size is not used", stated.MambaSize, fromKernel.MambaSize)
+	}
+	budget, slot := 32*float64(gib), float64(66<<20)
+	if want := int(budget * 0.9 / 1.9 / slot); stated.MambaSize < want-2 || stated.MambaSize > want {
+		t.Errorf("%d slots, want about %d (0.9/1.9 of 32 GiB over 66 MiB)", stated.MambaSize, want)
+	}
+}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine"
 	"github.com/inference-sim/inference-sim/substrate/contracts/kernel"
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
 	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
 	"github.com/inference-sim/inference-sim/engines/sglang/config"
@@ -25,8 +26,10 @@ type Pool struct {
 	// PreModelLoadGiB is the device's free memory before the weights load.
 	PreModelLoadGiB float64
 	ContextLen      int
-	EOSTokenIDs     []int64
-	VocabSize       int
+	// Graph is the pool's model graph: a hybrid model's state per request is read from its dimensions.
+	Graph       *model.Graph
+	EOSTokenIDs []int64
+	VocabSize   int
 	// Args are the pool's ServerArgs fields by SGLang's names, as the host lowered the pool with
 	// them (the engine block with the pool's tensor- and data-parallel widths: lower.Args). Nil
 	// reads the spec's engine block alone.
@@ -114,7 +117,13 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 		if a.MambaFullMemoryRatio != nil {
 			ratio = *a.MambaFullMemoryRatio
 		}
-		in.Mamba = &sglang.MambaPoolInput{Strategy: cache.MambaStrategy(a.MambaRadixCacheStrategy),
+		var perReq int64
+		if pool.Graph != nil {
+			if perReq, err = lower.StatePerRequestBytes(pool.Graph, max(a.TpSize, 1), a.MambaSsmDtype); err != nil {
+				return nil, err
+			}
+		}
+		in.Mamba = &sglang.MambaPoolInput{StatePerReqBytes: perReq, Strategy: cache.MambaStrategy(a.MambaRadixCacheStrategy),
 			DisableOverlap: a.DisableOverlapSchedule, MaxMambaCacheSize: a.MaxMambaCacheSize, FullMemoryRatio: ratio}
 		sa.MambaStrategy = a.MambaRadixCacheStrategy
 	}

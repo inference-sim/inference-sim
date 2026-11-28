@@ -235,6 +235,10 @@ type MambaPoolInput struct {
 	// --mamba-full-memory-ratio resolved (0.9 unset).
 	MaxMambaCacheSize *int
 	FullMemoryRatio   float64
+	// StatePerReqBytes is mamba_cache_per_req on a rank: the convolution and the temporal state of every
+	// recurrent layer. Zero takes it from the cost model's per-sequence bytes, which count the temporal
+	// state alone.
+	StatePerReqBytes int64
 }
 
 // PoolPlan sizes the pools as SGLang's KV cache configurator does from the memory the kernel's
@@ -315,7 +319,10 @@ func hybridPoolPlan(k kernel.Kernel, in PoolInput, m MambaPoolInput, budget int6
 	if m.Strategy == cache.MambaExtraBuffer || m.Strategy == cache.MambaExtraBufferLazy {
 		held += int64(cache.MambaTrackingSlots(true, !m.DisableOverlap, m.Strategy == cache.MambaExtraBufferLazy))
 	}
-	perReq := k.SequenceFixedBytes() / held
+	perReq := m.StatePerReqBytes
+	if perReq <= 0 {
+		perReq = k.SequenceFixedBytes() / held
+	}
 	size, restGiB, err := cache.MambaCacheSize(cache.MambaBudget{TotalRestGiB: float64(budget) / gib, PerReqBytes: perReq,
 		MaxRunningRequests: in.MaxRunningRequests, MaxMambaCacheSize: m.MaxMambaCacheSize, AttnDPSize: 1,
 		FullMemoryRatio: m.FullMemoryRatio, Strategy: m.Strategy, DisableOverlap: m.DisableOverlap})

@@ -6,6 +6,7 @@
 package lower
 
 import (
+	"fmt"
 	"github.com/inference-sim/inference-sim/substrate/contracts/engine/plan"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
@@ -90,4 +91,57 @@ func lowerRecurrent(a *config.ServerArgs, g *model.Graph, c *plan.CacheFormat, n
 		return &NotLowered{Name: "the mamba radix cache (strategy " + a.MambaRadixCacheStrategy + ")", Issue: issueHybrid}
 	}
 	return nil
+}
+
+// StatePerRequestBytes is mamba_cache_per_req (Mamba2CacheParams.mamba_cache_per_req, configs/mamba_utils.py)
+// of a Gated-DeltaNet model on one rank: for every recurrent layer, its convolution state (the
+// layer's intermediate width over tp, by the kernel less one, in bfloat16) and its temporal state
+// (value heads over tp, by the head width squared, in the temporal dtype). The graph states the
+// dimensions of the whole model; the head and width counts must divide by tp (SGLang pads the key
+// groups when they do not; a graph that states no group count is taken to have the 16 of the catalog's
+// Gated-DeltaNet models, so a width above 16 is refused). A recurrent family other than
+// Gated DeltaNet is refused by name. mambaSsmDtype is --mamba-ssm-dtype, nil when unset.
+func StatePerRequestBytes(g *model.Graph, tp int, mambaSsmDtype *string) (int64, error) {
+	if tp < 1 {
+		return 0, fmt.Errorf("lower: tensor parallel width %d", tp)
+	}
+	kinds := map[string]*model.LayerKind{}
+	for i := range g.LayerKinds {
+		kinds[g.LayerKinds[i].ID] = &g.LayerKinds[i]
+	}
+	var total int64
+	for _, id := range g.Stack.Expand() {
+		k, ok := kinds[id]
+		if !ok {
+			continue
+		}
+		for _, n := range k.Nodes {
+			if n.Op != model.OpRecurrentUpdate {
+				continue
+			}
+			if n.RecurrentKind != model.RecurrentGDN {
+				return 0, &NotLowered{Name: "the state of recurrent family " + string(n.RecurrentKind), Issue: issueHybrid}
+			}
+			if n.IntermediateSize%tp != 0 || n.NumHeads%tp != 0 || (n.NumGroups > 0 && n.NumGroups%tp != 0) || (n.NumGroups == 0 && tp > 16) {
+				return 0, &NotLowered{Name: fmt.Sprintf("a state of %d channels and %d heads at tensor parallel width %d", n.IntermediateSize, n.NumHeads, tp), Issue: issueHybrid}
+			}
+			temporal := n.StateDType
+			if temporal == "" {
+				temporal = model.DTypeFP32
+			}
+			if mambaSsmDtype != nil {
+				switch *mambaSsmDtype {
+				case "float32":
+					temporal = model.DTypeFP32
+				case "bfloat16":
+					temporal = model.DTypeBF16
+				case "float16":
+					temporal = model.DTypeFP16
+				}
+			}
+			conv := int64(n.IntermediateSize/tp) * int64(n.ConvKernel-1) * 2
+			total += conv + int64(float64(n.NumHeads/tp*n.StateSize*n.StateSize)*temporal.Bytes())
+		}
+	}
+	return total, nil
 }

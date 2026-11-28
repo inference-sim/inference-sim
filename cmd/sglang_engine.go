@@ -125,7 +125,7 @@ func (h sglangHost) Open(s engine.Spec) (sglangengine.Pool, error) {
 	return sglangengine.Pool{
 		Kernel: k, Chip: chip, Model: facts, Args: args,
 		PreModelLoadGiB: in.Chip.MemoryGiB - overhead,
-		ContextLen:      ctx, VocabSize: in.Model.Global.VocabSize,
+		ContextLen:      ctx, VocabSize: in.Model.Global.VocabSize, Graph: in.Model,
 		// The catalog carries no tokenizer. The simulator assigns each request its output and ends
 		// it at the script's end (engine.Request.Output), so the end-of-sequence id is one no script
 		// holds: the first id past the vocabulary.
