@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/inference-sim/inference-sim/sim"
 	"github.com/inference-sim/inference-sim/substrate/contracts/metrics"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
@@ -482,7 +483,8 @@ func frontPointOf(r *result.Result) (decision.Point, string) {
 // configure sets the configuration features from the Result's deployment. The layout kind is
 // pd when the deployment has prefill and decode pools; else dpa for data-parallel attention
 // (dp above 1 with expert parallelism), ep for expert parallelism, tp otherwise. For a pd
-// layout the parallel degrees are the decode pool's, as the stage's training data states them.
+// layout the parallel degrees are the decode pool's, and the GPU counts are those of all the pools'
+// workers (frontPoolGPUs), as the stage's training data states them.
 func configure(p *decision.Point, r *result.Result) {
 	nan := math.NaN()
 	gpn := r.Input.Scenario.Cluster.GPUsPerNode
@@ -494,9 +496,10 @@ func configure(p *decision.Point, r *result.Result) {
 	prefill, total := 0, 0
 	for i := range pools {
 		pl := &pools[i]
-		total += pl.Nodes * gpn
+		g := frontPoolGPUs(pl, gpn, r.Input.Options)
+		total += g
 		if pl.Role == deployment.RolePrefill {
-			prefill += pl.Nodes * gpn
+			prefill += g
 		}
 		if main == nil || pl.Role == deployment.RoleDecode {
 			main = pl
@@ -545,6 +548,33 @@ func configure(p *decision.Point, r *result.Result) {
 			p.Spec = 1
 		}
 	}
+}
+
+// instanceOption is the option that states how many instances (replicas) a pool runs.
+var instanceOption = map[deployment.Role]string{
+	deployment.RoleColocated: "num-instances",
+	deployment.RolePrefill:   "prefill-instances",
+	deployment.RoleDecode:    "decode-instances",
+}
+
+// frontPoolGPUs is the GPUs a pool occupies, as the stage's training data counts them: all the pool's
+// workers, each tp x pp x dp. The instance count is a command-line option, not a pool field, so it
+// is read from the Result's options; a pool whose count is not stated is counted by the nodes it
+// holds. Two deployments that differ only in their instance count therefore differ in GPUs, as the
+// training points do (the prefill and decode worker counts of a PD point are in its GPU count).
+func frontPoolGPUs(pl *deployment.Pool, gpn int, opts []result.Option) int {
+	name := instanceOption[pl.Role]
+	for _, o := range opts {
+		if o.Name != name {
+			continue
+		}
+		var n int
+		if _, err := fmt.Sscanf(o.Value, "%d", &n); err == nil && n > 0 {
+			par := pl.Parallel
+			return n * sim.GPUsPerInstance(par.TP, par.PP, par.PCP, par.DP)
+		}
+	}
+	return pl.Nodes * gpn
 }
 
 func hasRoles(pools []deployment.Pool, roles ...deployment.Role) bool {

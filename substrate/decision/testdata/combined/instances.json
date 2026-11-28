@@ -1,0 +1,136 @@
+[
+ {
+  "case": "dsv4|gb200|fp4|agentic",
+  "points": [
+   {
+    "config": "dynamo-vllm|PD[1xP:tp8ep8dpa+1xD:tp8ep8dpa]|mtp",
+    "decode_ep": 8,
+    "decode_tp": 8,
+    "decode_workers": 1,
+    "ep": 2.0794415416798357,
+    "gpus": 2.772588722239781,
+    "id": "439846",
+    "kind": 3,
+    "num_decode_gpu": 8,
+    "num_prefill_gpu": 8,
+    "pd": 1.0,
+    "pdfrac": 0.5,
+    "prefill_tp": 8,
+    "prefill_workers": 1,
+    "tp": 2.0794415416798357
+   },
+   {
+    "config": "dynamo-vllm|PD[2xP:tp8ep8dpa+1xD:tp8ep8dpa]|mtp",
+    "decode_ep": 8,
+    "decode_tp": 8,
+    "decode_workers": 1,
+    "ep": 2.0794415416798357,
+    "gpus": 3.1780538303479458,
+    "id": "439843",
+    "kind": 3,
+    "num_decode_gpu": 8,
+    "num_prefill_gpu": 16,
+    "pd": 1.0,
+    "pdfrac": 0.6666666666666666,
+    "prefill_tp": 8,
+    "prefill_workers": 2,
+    "tp": 2.0794415416798357
+   }
+  ]
+ },
+ {
+  "case": "glm5.2|h200|fp8|agentic",
+  "points": [
+   {
+    "config": "dynamo-sglang|PD[1xP:tp1ep1+1xD:tp8ep1dpa]|mtp|offload",
+    "decode_ep": 1,
+    "decode_tp": 8,
+    "decode_workers": 1,
+    "ep": 0.0,
+    "gpus": 2.772588722239781,
+    "id": "442060",
+    "kind": 3,
+    "num_decode_gpu": 8,
+    "num_prefill_gpu": 8,
+    "pd": 1.0,
+    "pdfrac": 0.5,
+    "prefill_tp": 1,
+    "prefill_workers": 1,
+    "tp": 2.0794415416798357
+   },
+   {
+    "config": "dynamo-sglang|PD[2xP:tp1ep1+2xD:tp8ep1dpa]|mtp",
+    "decode_ep": 1,
+    "decode_tp": 8,
+    "decode_workers": 2,
+    "ep": 0.0,
+    "gpus": 3.4657359027997265,
+    "id": "440274",
+    "kind": 3,
+    "num_decode_gpu": 16,
+    "num_prefill_gpu": 16,
+    "pd": 1.0,
+    "pdfrac": 0.5,
+    "prefill_tp": 1,
+    "prefill_workers": 2,
+    "tp": 2.0794415416798357
+   }
+  ]
+ },
+ {
+  "case": "kimik3|gb300|fp4|agentic",
+  "points": [
+   {
+    "config": "dynamo-vllm|PD[1xP:tp8ep1+1xD:tp8ep1]|mtp|offload",
+    "decode_ep": 1,
+    "decode_tp": 8,
+    "decode_workers": 1,
+    "ep": 0.0,
+    "gpus": 2.772588722239781,
+    "id": "439997",
+    "kind": 3,
+    "num_decode_gpu": 8,
+    "num_prefill_gpu": 8,
+    "pd": 1.0,
+    "pdfrac": 0.5,
+    "prefill_tp": 8,
+    "prefill_workers": 1,
+    "tp": 2.0794415416798357
+   },
+   {
+    "config": "dynamo-vllm|PD[1xP:tp8ep1+2xD:tp8ep1]|mtp|offload",
+    "decode_ep": 1,
+    "decode_tp": 8,
+    "decode_workers": 2,
+    "ep": 0.0,
+    "gpus": 3.1780538303479458,
+    "id": "441058",
+    "kind": 3,
+    "num_decode_gpu": 16,
+    "num_prefill_gpu": 8,
+    "pd": 1.0,
+    "pdfrac": 0.3333333333333333,
+    "prefill_tp": 8,
+    "prefill_workers": 1,
+    "tp": 2.0794415416798357
+   },
+   {
+    "config": "dynamo-vllm|PD[1xP:tp8ep1+3xD:tp8ep1]|mtp|offload",
+    "decode_ep": 1,
+    "decode_tp": 8,
+    "decode_workers": 3,
+    "ep": 0.0,
+    "gpus": 3.4657359027997265,
+    "id": "441057",
+    "kind": 3,
+    "num_decode_gpu": 24,
+    "num_prefill_gpu": 8,
+    "pd": 1.0,
+    "pdfrac": 0.25,
+    "prefill_tp": 8,
+    "prefill_workers": 1,
+    "tp": 2.0794415416798357
+   }
+  ]
+ }
+]

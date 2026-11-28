@@ -7,12 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/inference-sim/inference-sim/substrate/contracts/spec/deployment"
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/result"
 	"github.com/inference-sim/inference-sim/substrate/decision"
 )
@@ -438,6 +440,97 @@ func TestFrontsPairsAmongSimulatedPointsAreTheSameWithAnEstimatedPointPresent(t 
 	for _, p := range plain.Pairs {
 		if q, ok := got[key(p)]; !ok || q.ADominatesB != p.ADominatesB || q.BDominatesA != p.BDominatesA || q.Basis != "simulator" {
 			t.Errorf("pair %+v became %+v", p, q)
+		}
+	}
+}
+
+// instancesFixture is substrate/decision/testdata/combined/instances.json: real PD points of the
+// decision cases that differ only in their prefill or decode worker counts, with the training
+// pipeline's own GPU count (log), prefill share and layout kind for each. The pipeline counts the
+// workers of every pool in the GPUs, so two such points differ in GPUs.
+type instancesFixture []struct {
+	Case   string `json:"case"`
+	Points []struct {
+		ID             string  `json:"id"`
+		PrefillWorkers int     `json:"prefill_workers"`
+		DecodeWorkers  int     `json:"decode_workers"`
+		PrefillGPUs    int     `json:"num_prefill_gpu"`
+		DecodeGPUs     int     `json:"num_decode_gpu"`
+		GPUs           float64 `json:"gpus"`
+		PDFrac         float64 `json:"pdfrac"`
+		Kind           float64 `json:"kind"`
+	} `json:"points"`
+}
+
+// pdResultOf builds the Result a PD point states: a prefill and a decode pool, each worker the
+// per-worker GPUs of the point's columns, the pools in nodes of 32 GPUs (so a node count says
+// nothing of the workers), and the worker counts as the options --prefill-instances and
+// --decode-instances.
+func pdResultOf(t *testing.T, base *result.Result, id string, pw, dw, pg, dg int) *result.Result {
+	t.Helper()
+	b, _ := result.Marshal(base, result.FormatJSON)
+	var r result.Result
+	if err := result.Unmarshal(b, &r); err != nil {
+		t.Fatal(err)
+	}
+	r.Name = id
+	r.Input.Scenario.Cluster.GPUsPerNode = 32
+	r.Input.Packaging = nil
+	pool := func(role deployment.Role, workers, gpus int) deployment.Pool {
+		return deployment.Pool{Role: role, Nodes: 1, Parallel: deployment.Parallelism{TP: gpus / workers, PP: 1, DP: 1}}
+	}
+	r.Input.Deployment.Pools = []deployment.Pool{pool(deployment.RolePrefill, pw, pg), pool(deployment.RoleDecode, dw, dg)}
+	r.Input.Options = []result.Option{
+		{Name: "decode-instances", Value: strconv.Itoa(dw), Source: "command_line"},
+		{Name: "prefill-instances", Value: strconv.Itoa(pw), Source: "command_line"},
+	}
+	return &r
+}
+
+func TestFrontReadsInstancesIntoTheGPUsAsTheTrainingPipelineDoes(t *testing.T) {
+	base, _ := aRealResult(t, "4")
+	raw, err := os.ReadFile("../substrate/decision/testdata/combined/instances.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fx instancesFixture
+	if err := json.Unmarshal(raw, &fx); err != nil {
+		t.Fatal(err)
+	}
+	if len(fx) < 3 {
+		t.Fatalf("the fixture holds %d groups of points that differ only in their worker counts", len(fx))
+	}
+	for _, g := range fx {
+		seen := map[float64]bool{}
+		for _, p := range g.Points {
+			r := pdResultOf(t, base, p.ID, p.PrefillWorkers, p.DecodeWorkers, p.PrefillGPUs, p.DecodeGPUs)
+			pt, _ := frontPointOf(r)
+			if math.Abs(pt.GPUs-p.GPUs) > 1e-9 || math.Abs(pt.PDFrac-p.PDFrac) > 1e-9 || float64(pt.Kind) != p.Kind {
+				t.Errorf("%s %s (%dP+%dD): gpus %v pdfrac %v kind %v; the pipeline has %v %v %v", g.Case, p.ID, p.PrefillWorkers, p.DecodeWorkers,
+					pt.GPUs, pt.PDFrac, pt.Kind, p.GPUs, p.PDFrac, p.Kind)
+			}
+			seen[pt.GPUs] = true
+		}
+		if len(seen) != len(g.Points) {
+			t.Errorf("%s: %d points that differ only in worker counts gave %d distinct GPU counts", g.Case, len(g.Points), len(seen))
+		}
+	}
+}
+
+func TestFrontCountsAColocatedPoolsInstances(t *testing.T) {
+	base, _ := aRealResult(t, "4")
+	var gpus []float64
+	for _, n := range []string{"1", "2", "4"} {
+		r := variant(t, base, "n"+n, 100, 10, 100)
+		r.Input.Options = append(r.Input.Options, result.Option{Name: "num-instances", Value: n, Source: "command_line"})
+		sort.Slice(r.Input.Options, func(i, j int) bool { return r.Input.Options[i].Name < r.Input.Options[j].Name })
+		pt, _ := frontPointOf(r)
+		gpus = append(gpus, pt.GPUs)
+	}
+	tp := float64(base.Input.Deployment.Pools[0].Parallel.TP)
+	for i, n := range []float64{1, 2, 4} {
+		if math.Abs(gpus[i]-math.Log(n*tp)) > 1e-9 {
+			t.Errorf("%v instances of tp %v: log gpus %v", n, tp, gpus[i])
 		}
 	}
 }
