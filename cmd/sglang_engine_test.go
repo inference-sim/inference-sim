@@ -27,7 +27,7 @@ func sglangTestSpec(t *testing.T, scenario string) (engine.Spec, *load.Data) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return engine.Spec{Kind: engineKindSGLang, UpstreamVersion: "0.5.23", Roots: contractRoots(path), Seed: 1}, data
+	return engine.Spec{Kind: engineKindSGLang, UpstreamVersion: "1.0.0+c4af57ff93f3", Roots: contractRoots(path), Seed: 1}, data
 }
 
 // A SGLang scenario selects the sglang engine, which builds over the run's data, reports its own
@@ -36,7 +36,7 @@ func sglangTestSpec(t *testing.T, scenario string) (engine.Spec, *load.Data) {
 func TestSGLangScenarioRunsEndToEnd(t *testing.T) {
 	spec, data := sglangTestSpec(t, "glm-5-h200-fp8-sglang-tp8.yaml")
 	ref, err := selectEngine(spec.Roots["scenario"])
-	if err != nil || ref.Kind != "sglang" || ref.Version != "0.5.23" {
+	if err != nil || ref.Kind != "sglang" || ref.Version != "1.0.0+c4af57ff93f3" {
 		t.Fatalf("selectEngine = %v, %v", ref, err)
 	}
 	e, err := newContractEngine(spec, data)
@@ -47,8 +47,16 @@ func TestSGLangScenarioRunsEndToEnd(t *testing.T) {
 	for _, f := range e.Fields().Fields {
 		status[f.Name] = f.Status
 	}
-	if status["mem_fraction_static"] != fields.StatusModelled || status["enable_flashinfer_allreduce_fusion"] != fields.StatusModelled {
-		t.Errorf("the recipe's fields are not classified modelled: %v %v", status["mem_fraction_static"], status["enable_flashinfer_allreduce_fusion"])
+	// SGLang main removed enable_flashinfer_allreduce_fusion for flashinfer_allreduce_fusion_backend,
+	// which a recipe leaves at its default; the list carries the new name and not the removed one.
+	if status["mem_fraction_static"] != fields.StatusModelled {
+		t.Errorf("the recipe's field mem_fraction_static is not classified modelled: %v", status["mem_fraction_static"])
+	}
+	if _, ok := status["enable_flashinfer_allreduce_fusion"]; ok {
+		t.Error("the field list still names enable_flashinfer_allreduce_fusion, which SGLang main removed")
+	}
+	if status["flashinfer_allreduce_fusion_backend"] == "" {
+		t.Error("the field list does not name flashinfer_allreduce_fusion_backend")
 	}
 	if err := e.Add(engine.Request{ID: "a", Prompt: make([]int32, 1000), Output: []int32{5, 6, 7, 8}}, 0); err != nil {
 		t.Fatal(err)
@@ -142,8 +150,8 @@ func TestSGLangRunAndReplayAreOneResult(t *testing.T) {
 	for leg, out := range map[string]string{"run": runOut, "replay": repOut} {
 		doc := sglangResult(t, out)
 		eng, _ := doc["engine"].(map[string]any)
-		if eng["kind"] != "sglang" || eng["version"] != "0.5.23" {
-			t.Errorf("%s: Result engine = %v, want sglang 0.5.23", leg, eng)
+		if eng["kind"] != "sglang" || eng["version"] != "1.0.0+c4af57ff93f3" {
+			t.Errorf("%s: Result engine = %v, want sglang 1.0.0+c4af57ff93f3", leg, eng)
 		}
 		reports, _ := doc["reports"].(map[string]any)
 		kern, _ := reports["kernel"].(map[string]any)
@@ -412,7 +420,7 @@ func TestSGLangPreModelLoadMemoryIsTheChipsOwn(t *testing.T) {
 				return s
 			})
 			_, data := sglangTestSpec(t, name)
-			spec := engine.Spec{Kind: engineKindSGLang, UpstreamVersion: "0.5.23", Roots: contractRoots(filepath.Join(dir, name)), Seed: 1}
+			spec := engine.Spec{Kind: engineKindSGLang, UpstreamVersion: "1.0.0+c4af57ff93f3", Roots: contractRoots(filepath.Join(dir, name)), Seed: 1}
 			pool, err := sglangHost{data: data}.Open(spec)
 			if err != nil {
 				t.Fatalf("opening the pool on %s: %v", tc.chip, err)
@@ -437,7 +445,7 @@ func TestSGLangChipWithoutPreModelLoadFigureIsRefused(t *testing.T) {
 		return strings.Replace(s, "hardware: h200", "hardware: a100-80", 1)
 	})
 	_, data := sglangTestSpec(t, name)
-	spec := engine.Spec{Kind: engineKindSGLang, UpstreamVersion: "0.5.23", Roots: contractRoots(filepath.Join(dir, name)), Seed: 1}
+	spec := engine.Spec{Kind: engineKindSGLang, UpstreamVersion: "1.0.0+c4af57ff93f3", Roots: contractRoots(filepath.Join(dir, name)), Seed: 1}
 	_, err := sglangHost{data: data}.Open(spec)
 	if err == nil || !strings.Contains(err.Error(), "not lowered") || !strings.Contains(err.Error(), "a100") {
 		t.Fatalf("an unlisted chip must be refused by name; got %v", err)

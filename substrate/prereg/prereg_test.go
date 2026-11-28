@@ -272,7 +272,7 @@ func TestVerifyRefuses(t *testing.T) {
 			f.edit(f.rec(vllm), "host: 1226cbf6", "host: 2226cbf6")
 		}, "engine_code_ids.json states"},
 		"an engine-path record has no engine code": {func(f *fixture) {
-			f.edit(f.rec(sglang), "engine_code_ids:\n  sglang:\n    host: 6771194bbf4376753254d570aa150303edd8b438a726a5e55b59ba56f234e096\n    graphs: e0368a9b8797515769f8c5dc0910a3713afaeb4e63fa9dd4440311424eba1074\n", "")
+			f.edit(f.rec(sglang), "engine_code_ids:\n  sglang:\n    host: 633f073b5ee057417583d09b720db20df2545a8ff841c478d713743fc6bbe40a\n    graphs: ddea61b29bbff8a0106f156182383a143609b269ca1c4db051b6508b019e6dc4\n", "")
 		}, "engine_code_ids: exactly"},
 		"a target lane is for no target engine": {func(f *fixture) {
 			f.edit(f.rec(vllm), "  - {engine: vllm}", "  - {engine: sglang}")
