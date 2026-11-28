@@ -364,13 +364,13 @@ func (p *HybridRequestPool) PingPongMap() [][]int64 {
 // allocation of every slot the batch needs finds too few (kv/state_storage.py:155-161@c4af57ff).
 var ErrMambaExhausted = fmt.Errorf("not enough space for mamba cache or its ping pong idx, try to increase --mamba-full-memory-ratio or --max-mamba-cache-size")
 
-// Alloc is acquire_rows (static_kv_storage.py:98-127@c4af57ff) over HybridReqToTokenPool: rows as
+// AcquireRows is acquire_rows (static_kv_storage.py:98-127@c4af57ff) over HybridReqToTokenPool: rows as
 // the request pool gives them, then every slot the batch needs from one allocation (state.acquire,
 // kv/state_storage.py:121-185). The first slots are the working slots of the requests that hold
 // none, in request order; the rest are the tracking slots of the requests with no ping-pong
 // buffer, each its initial count in turn. If the slots run out, the rows taken go back before
 // the exhaustion surfaces, so a failure leaves no request bound.
-func (p *HybridRequestPool) Alloc(reqs []*Req) ([]int, error) {
+func (p *HybridRequestPool) AcquireRows(reqs []*Req) ([]int, error) {
 	fresh := make([]bool, len(reqs))
 	for i, r := range reqs {
 		fresh[i] = r.KV.ReqPoolIdx == nil
@@ -423,6 +423,94 @@ func (p *HybridRequestPool) Alloc(reqs []*Req) ([]int, error) {
 		}
 	}
 	return rows, nil
+}
+
+// Alloc is ReqToTokenPool.Alloc over the hybrid pool: AcquireRows, with the rows' shortage and the state
+// slots' exhaustion both reported as false (the scheduler's caller raises what SGLang raises, that
+// alloc_req_slots ran out of memory).
+func (p *HybridRequestPool) Alloc(reqs []*Req) ([]int, bool) {
+	rows, err := p.AcquireRows(reqs)
+	return rows, err == nil && rows != nil
+}
+
+// TrackSlot is the ping-pong slot a row holds at position (the request_index_to_mamba_ping_pong
+// mapping the batch gathers its track indices from); position -1 has no slot and reads the reserved
+// slot 0 (_gather_mamba_track_indices, schedule_batch.py:1780).
+func (p *HybridRequestPool) TrackSlot(row, position int) int64 {
+	if position < 0 {
+		return 0
+	}
+	return p.pingPongMap[row][position]
+}
+
+// ExtraBuffer reports whether requests carry tracking slots; Lazy whether a second slot is taken
+// only at a boundary.
+func (p *HybridRequestPool) ExtraBuffer() bool { return p.extraBuffer }
+
+// Lazy is enable_mamba_extra_buffer_lazy.
+func (p *HybridRequestPool) Lazy() bool { return p.lazy }
+
+// TrackingAdvance is TrackingAdvance (kv/advance.py:20-29@c4af57ff): the completed forward's
+// checkpoint and the next forward's destination. A boundary is set only when HasBoundary.
+type TrackingAdvance struct {
+	HasBoundary      bool
+	Boundary         int
+	LastPosition     *int
+	NextPosition     *int
+	PreservePrevious bool
+	ReleasePositions []int
+}
+
+// AdvanceTracking is advance_tracking (kv/advance.py:32-44@c4af57ff) for a request that holds a row:
+// the positions to release give their slot back, then the previous checkpoint length, the
+// checkpoint length and the two positions move as the update says.
+func (p *HybridRequestPool) AdvanceTracking(r *Req, u TrackingAdvance) {
+	m := r.KV.Mamba
+	for _, pos := range u.ReleasePositions {
+		if !m.PingPongEmpty[pos] {
+			p.ReleaseTrackingSlot(*r.KV.ReqPoolIdx, m, pos)
+		}
+	}
+	if u.PreservePrevious {
+		m.PrevTrackSeqlen = m.LastTrackSeqlen
+	}
+	if u.HasBoundary {
+		b := u.Boundary
+		m.LastTrackSeqlen = &b
+	}
+	if u.LastPosition != nil {
+		v := *u.LastPosition
+		m.LastTrackIdx = &v
+	}
+	if u.NextPosition != nil {
+		v := *u.NextPosition
+		m.NextTrackIdx = &v
+	}
+}
+
+// ReleaseTrackingSlot is release_tracking_slot (static_kv_storage.py:604-609@c4af57ff): the slot at
+// position goes back to the state allocator and the position is emptied.
+func (p *HybridRequestPool) ReleaseTrackingSlot(row int, m *MambaKV, position int) {
+	p.Mamba.Free([]int64{m.PingPongBuffer[position]})
+	p.SetPingPongSlot(row, m, position, -1)
+}
+
+// TakeTrackingSlot is take_tracking_slot (static_kv_storage.py:595-602@c4af57ff): a free state slot
+// fills the position, or false when none is free.
+func (p *HybridRequestPool) TakeTrackingSlot(r *Req, position int) bool {
+	slot, ok := p.Mamba.Alloc(1)
+	if !ok {
+		return false
+	}
+	p.SetPingPongSlot(*r.KV.ReqPoolIdx, r.KV.Mamba, position, slot[0])
+	return true
+}
+
+// ReleaseStateSlot is release_state_slot (static_kv_storage.py:611-615@c4af57ff): the working slot a
+// request took before its KV goes back.
+func (p *HybridRequestPool) ReleaseStateSlot(r *Req) {
+	p.Mamba.Free([]int64{*r.KV.Mamba.PoolIdx})
+	r.KV.Mamba.PoolIdx = nil
 }
 
 // handOutTracking is _hand_out_tracking (kv/state_storage.py:235-258@c4af57ff): the request's

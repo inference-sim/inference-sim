@@ -97,7 +97,12 @@ type Config struct {
 	// of the EAGLE family at top-k 1 (a chain: num_draft_tokens is steps+1). Zero draft tokens is
 	// no speculation. A verify pass feeds the request's pending token and SpecNumDraftTokens-1
 	// drafts.
-	SpecNumSteps       int `json:"speculative_num_steps,omitempty"`
+	SpecNumSteps int `json:"speculative_num_steps,omitempty"`
+	// Mamba is the recurrent-state settings of a hybrid model; nil is a model with none.
+	Mamba *MambaConfig `json:"mamba,omitempty"`
+	// MambaChunkGrid is mamba_prefill_chunk_grid (schedule_policy.py:1031): the grid a truncated prefill cut
+	// lands on, 1 to leave the cut alone. Only 1 is modelled.
+	MambaChunkGrid     int `json:"mamba_chunk_grid,omitempty"`
 	SpecNumDraftTokens int `json:"speculative_num_draft_tokens,omitempty"`
 }
 
@@ -144,6 +149,8 @@ type Scheduler struct {
 	tree   cache.PrefixCache
 	alloc  cache.Allocator
 	pool   cache.ReqToTokenPool
+	// hybrid is pool when it is the hybrid model's request pool, which holds the state slots.
+	hybrid *cache.HybridRequestPool
 
 	waiting       []*Req
 	running       *Batch
@@ -217,6 +224,17 @@ func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.R
 	s := &Scheduler{cfg: cfg, policy: p, tree: tree, alloc: alloc, pool: pool, sampledToken: sampledToken,
 		running: &Batch{}}
 	s.newTokenRatio.current = cfg.NewTokenRatio.Init
+	if hp, ok := pool.(*cache.HybridRequestPool); ok {
+		if cfg.Mamba == nil {
+			return nil, fmt.Errorf("sched: a hybrid request pool needs the mamba settings")
+		}
+		s.hybrid = hp
+	} else if cfg.Mamba != nil {
+		return nil, fmt.Errorf("sched: the mamba settings need the hybrid request pool")
+	}
+	if cfg.MambaChunkGrid > 1 {
+		return nil, refused("a mamba prefill chunk grid above 1")
+	}
 	s.stream = NewStream(int64(cfg.RandomSeed), "sched/random-policy/waiting-queue")
 	return s, nil
 }
@@ -240,13 +258,13 @@ func validateSpec(cfg Config) error {
 
 // matchKVCache is match_kv_cache (mem_cache/common.py:221-268): match tokenIDs, up to maxPrefix,
 // and adopt the hit as the request's prefix.
-func (s *Scheduler) matchKVCache(r *Req, tokenIDs []int64, maxPrefix *int) cache.MatchResult {
+func (s *Scheduler) matchKVCache(r *Req, tokenIDs []int64, maxPrefix *int, cowMamba bool) cache.MatchResult {
 	toks := tokenIDs
 	if maxPrefix != nil && *maxPrefix < len(toks) {
 		toks = toks[:*maxPrefix]
 	}
 	res := s.tree.MatchPrefix(cache.MatchPrefixParams{
-		Key: cache.Key{Tokens: slices.Clone(toks), ExtraKey: r.C.ExtraKey, CacheSalt: r.C.CacheSalt}, Req: &r.C})
+		Key: cache.Key{Tokens: slices.Clone(toks), ExtraKey: r.C.ExtraKey, CacheSalt: r.C.CacheSalt}, CowMamba: cowMamba, Req: &r.C})
 	r.C.PrefixLen = res.DevicePrefixLen
 	last := res.LastDeviceNode
 	r.C.LastNode = &last
@@ -254,6 +272,10 @@ func (s *Scheduler) matchKVCache(r *Req, tokenIDs []int64, maxPrefix *int) cache
 		panic(refused("a host-tier hit"))
 	}
 	r.NumMatchedPrefixTokens = min(r.C.PrefixLen, r.ComputeMaxPrefixLen(len(tokenIDs)))
+	// A probe match keeps what it did not report; a new round resets it (common.py:214-217).
+	if res.MambaBranchingSeqlen != nil {
+		r.C.MambaBranchingSeqlen = res.MambaBranchingSeqlen
+	}
 	if res.CacheProtectedLen != nil {
 		r.C.KV.CacheProtectedLen = *res.CacheProtectedLen
 	}
@@ -266,7 +288,10 @@ func (s *Scheduler) initNextRoundInput(r *Req, withTree bool) {
 	r.RefreshFillIDs()
 	if withTree {
 		limit := r.ComputeMaxPrefixLen(r.InputLen())
-		res := s.matchKVCache(r, r.C.FillIDs, &limit)
+		// A hybrid model's request takes its own copy of the matched state (cow_mamba defaults to
+		// supports_mamba, schedule_batch.py:1215).
+		res := s.matchKVCache(r, r.C.FillIDs, &limit, s.tree.SupportsMamba())
+		r.C.MambaBranchingSeqlen = res.MambaBranchingSeqlen
 		if res.CacheProtectedLen == nil {
 			r.C.KV.CacheProtectedLen = r.C.PrefixLen
 		}
@@ -539,6 +564,10 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 		// is skipped for a temporary prerequisite, so the fallback batch is never exposed.
 		candidates = slices.Clone(s.bounded.members)
 	}
+	if s.hybrid != nil {
+		// Take the state slots the matches will need ahead, one pass over the queue (scheduler.py:4784-4786).
+		s.hybrid.Mamba.AllocGroupBegin(len(s.waiting))
+	}
 	for _, r := range candidates {
 		// A spent pass budget admits no one, even before the first candidate: the resumed chunk or
 		// the mixed decode rows can spend it.
@@ -565,8 +594,15 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 				// Set batch_is_full after making sure there are requests that can be served.
 				running.BatchIsFull = len(a.canRunList) > 0 || !running.IsEmpty()
 			}
+			// Revert the matched state slot to avoid a leak, if the request is not added.
+			if n := len(a.canRunList); n == 0 || a.canRunList[n-1] != r {
+				s.dropUnadmittedMatch(r)
+			}
 			break
 		}
+	}
+	if s.hybrid != nil {
+		s.hybrid.Mamba.AllocGroupEnd()
 	}
 	// Update waiting queue.
 	if len(a.canRunList) == 0 {
@@ -616,7 +652,7 @@ func (s *Scheduler) getNewBatchPrefill(running *Batch) (*Batch, *Batch) {
 		// this step and decode on the next decode step, which fits them.
 		if !running.IsEmpty() && running.CheckDecodeMem(s, nil) {
 			running.PrepareForDecode(s)
-			nb.MixWithRunning(running)
+			nb.MixWithRunning(s, running)
 			nb.DecodingReqs = slices.Clone(running.Reqs)
 			running = &Batch{BatchIsFull: running.BatchIsFull}
 		}
@@ -676,6 +712,8 @@ type Forward struct {
 	Chunked         *string  `json:"chunked"`
 	Decoding        []string `json:"decoding"`
 	AvailableTokens int      `json:"available_tokens"`
+	// Mamba is the tracking arrays of the pass, under a hybrid model.
+	Mamba *MambaBatch `json:"mamba_batch,omitempty"`
 }
 
 // RunningReq is a running request as the state records it.
@@ -700,6 +738,8 @@ type State struct {
 	NewTokenRatio   float64      `json:"new_token_ratio"`
 	ForwardCt       int          `json:"forward_ct"`
 	ProcessedTokens int          `json:"processed_tokens"`
+	// Mamba is the recurrent state held, under a hybrid model.
+	Mamba *MambaState `json:"mamba,omitempty"`
 }
 
 // StepRecord is one loop iteration.
@@ -734,6 +774,9 @@ func (s *Scheduler) runBatch(b *Batch) Forward {
 		AvailableTokens: s.alloc.AvailableSize()}
 	for _, r := range b.Reqs {
 		f.RIDs = append(f.RIDs, r.RID())
+	}
+	if s.hybrid != nil {
+		f.Mamba = b.Mamba.record()
 	}
 	if b.Mode == Extend || b.Mode == Mixed {
 		f.ExtendSeqLens = slices.Clone(b.ExtendLens)
@@ -792,7 +835,7 @@ func (s *Scheduler) processDecode(b *Batch) {
 		return
 	}
 	s.alloc.FreeGroupBegin()
-	for _, r := range b.Reqs {
+	for i, r := range b.Reqs {
 		if r.Finished() || r.IsRetracted {
 			// A row that finished (or was retracted) while this pass ran reappears for one tick;
 			// release_kv_cache already freed its over-allocated tokens (:1022-1027). Without
@@ -801,6 +844,7 @@ func (s *Scheduler) processDecode(b *Batch) {
 		}
 		r.C.OutputIDs = append(r.C.OutputIDs, s.tokenFor(r))
 		r.UpdateFinishState(s.cfg.EOSTokenIDs)
+		s.mambaDecodeResult(b, i, r)
 		if r.Finished() {
 			s.noteFinished(r)
 			s.releaseKVCache(r, true)
@@ -900,6 +944,9 @@ func (s *Scheduler) State() State {
 	for _, r := range s.running.Reqs {
 		st.Running = append(st.Running, RunningReq{r.RID(), len(r.C.OutputIDs), r.C.KV.KVCommittedLen,
 			r.C.KV.KVAllocatedLen, r.C.PrefixLen})
+	}
+	if s.hybrid != nil {
+		st.Mamba = s.mambaState()
 	}
 	return st
 }

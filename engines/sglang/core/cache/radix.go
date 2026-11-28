@@ -593,6 +593,10 @@ func (c *RadixCache) EvictableSize() int     { return c.core.EvictableSize() }
 func (c *RadixCache) ProtectedSize() int     { return c.core.FullProtectedSize() } // protected_size is full_protected_size (unified_radix_cache.py:4946@c4af57ff)
 func (c *RadixCache) FullEvictableSize() int { return c.core.FullEvictableSize() }
 func (c *RadixCache) FullProtectedSize() int { return c.core.FullProtectedSize() }
+
+// MambaEvictableSize and MambaProtectedSize are the state component's ledgers (zero without one).
+func (c *RadixCache) MambaEvictableSize() int { return c.core.MambaEvictableSize() }
+func (c *RadixCache) MambaProtectedSize() int { return c.core.MambaProtectedSize() }
 func (c *RadixCache) TotalSize() (int, int)  { return c.core.TotalSize() }
 func (c *RadixCache) TakeEvents() []Event    { return c.core.TakeEvents() }
 

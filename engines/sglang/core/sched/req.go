@@ -56,7 +56,9 @@ type Req struct {
 	WaitQueueEntryStep int
 	AlreadyComputed    int
 	CachedTokens       int
-	RetractionCount    int
+	// DecodeBatchIdx counts the decode batches the request has been in (decode_batch_idx).
+	DecodeBatchIdx  int
+	RetractionCount int
 }
 
 // Finished is Req.finished (schedule_batch.py:1657).
@@ -141,6 +143,9 @@ func (r *Req) ResetForRetract() {
 		panic("expect it is already released")
 	}
 	r.C.KV.KVCommittedLen = 0
+	r.DecodeBatchIdx = 0
+	r.C.MambaBranchingSeqlen = nil
+	r.C.KV.Mamba = nil
 }
 
 // Arrival is a request as the tokenizer hands it to the scheduler.

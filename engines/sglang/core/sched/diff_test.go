@@ -140,6 +140,11 @@ func replay(sc scenario, cfg Config, steps int, tr *trace) ([]StepRecord, error)
 	if err != nil {
 		return nil, err
 	}
+	return runScenario(s, sc, steps, tr)
+}
+
+// runScenario steps a scheduler through a scenario's arrivals.
+func runScenario(s *Scheduler, sc scenario, steps int, tr *trace) ([]StepRecord, error) {
 	var out []StepRecord
 	for i := 0; i < steps; i++ {
 		if tr != nil {
@@ -165,6 +170,12 @@ func replay(sc scenario, cfg Config, steps int, tr *trace) ([]StepRecord, error)
 	return out, nil
 }
 
+// asJSON prints a record the way the trace holds it, so that what a pointer holds shows.
+func asJSON(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
 func finishedOf(st traceStep) []string {
 	out := []string{}
 	for _, o := range st.Outputs {
@@ -183,14 +194,14 @@ func compare(want traceStep, got StepRecord) string {
 		w.Decoding = normalize(w.Decoding)
 		g.Decoding = normalize(g.Decoding)
 		if !reflect.DeepEqual(w, g) {
-			return fmt.Sprintf("forward %d: SGLang %+v, port %+v", i, w, g)
+			return fmt.Sprintf("forward %d: SGLang %s, port %s", i, asJSON(w), asJSON(g))
 		}
 	}
 	if wf, gf := finishedOf(want), append([]string{}, got.Finished...); !reflect.DeepEqual(wf, gf) {
 		return fmt.Sprintf("finished: SGLang %v, port %v", wf, gf)
 	}
 	if want.After != nil && !reflect.DeepEqual(*want.After, got.After) {
-		return fmt.Sprintf("state after the step: SGLang %+v, port %+v", *want.After, got.After)
+		return fmt.Sprintf("state after the step:\nSGLang %s\nport   %s", asJSON(*want.After), asJSON(got.After))
 	}
 	return ""
 }

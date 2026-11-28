@@ -107,7 +107,7 @@ func (s *Scheduler) calcPriority(queue []*Req, running *Batch) {
 	}
 	if !policy.cacheAware() && s.tree.SupportsFastMatchPrefix() {
 		for _, r := range queue {
-			s.matchKVCache(r, r.allIDs(), nil)
+			s.matchKVCache(r, r.allIDs(), nil, false)
 		}
 	}
 	switch {
@@ -365,7 +365,7 @@ func (s *Scheduler) computePrefixMatches(queue []*Req) map[string]bool {
 	var candidates []candidate
 	for _, r := range queue {
 		ids := r.allIDs()
-		s.matchKVCache(r, ids, nil)
+		s.matchKVCache(r, ids, nil, false)
 		if r.C.PrefixLen <= s.cfg.InBatchPrefixCheckThreshold {
 			candidates = append(candidates, candidate{r, ids[:pySliceEnd(len(ids), s.cfg.InBatchPrefixDeprioritizeThreshold)]})
 		}

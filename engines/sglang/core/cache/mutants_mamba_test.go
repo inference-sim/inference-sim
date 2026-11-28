@@ -187,7 +187,7 @@ func TestFreeMambaCacheKeepsOnlyAValidEntry(t *testing.T) {
 	}{{true, 0, true}, {true, 1, true}, {true, 2, false}, {true, -1, false}, {false, 0, true}, {false, 1, false}} {
 		p := NewHybridRequestPool(2, 8, 16, true, false, tc.overlap)
 		r := &Req{ID: "r"}
-		if _, err := p.Alloc([]*Req{r}); err != nil {
+		if _, err := p.AcquireRows([]*Req{r}); err != nil {
 			t.Fatal(err)
 		}
 		keep := tc.keep
@@ -318,7 +318,7 @@ func TestARunningRequestsCheckpointIsDeferredBelowLevelThree(t *testing.T) {
 			t.Fatal(err)
 		}
 		req := &Req{ID: "r", OriginInputIDs: make([]int64, 100), MambaBranchingSeqlen: tc.branch}
-		if _, err := pool.Alloc([]*Req{req}); err != nil {
+		if _, err := pool.AcquireRows([]*Req{req}); err != nil {
 			t.Fatal(err)
 		}
 		seq := 64

@@ -40,6 +40,8 @@ type Batch struct {
 	ContainsLastPrefillChunk bool
 	// Prefill is the adder's accounting, for the metrics reporter (nil for a decode batch).
 	Prefill *PrefillStats
+	// Mamba is the batch's recurrent-state tracking arrays (a hybrid model).
+	Mamba mambaTrack
 }
 
 func (b *Batch) Size() int     { return len(b.Reqs) }
@@ -81,6 +83,8 @@ func (b *Batch) keepIndices(keep []int) {
 	}
 	b.ReqPoolIndices = pick(b.ReqPoolIndices)
 	b.SeqLens = pick(b.SeqLens)
+	// A filter that keeps some but not all of the requests drops every mamba field (:3435-3447).
+	b.Mamba = mambaTrack{}
 }
 
 // MergeBatch is merge_batch (:3922-3990): other's requests follow this batch's.
@@ -88,6 +92,7 @@ func (b *Batch) MergeBatch(other *Batch) {
 	b.ReqPoolIndices = append(b.ReqPoolIndices, other.ReqPoolIndices...)
 	b.SeqLens = append(b.SeqLens, other.SeqLens...)
 	b.Reqs = append(b.Reqs, other.Reqs...)
+	b.Mamba.dropTracks()
 }
 
 // allocator-facing helpers (mem_cache/allocation.py@297e54fd) -----------------------------------
@@ -131,6 +136,7 @@ func (s *Scheduler) allocForExtend(b *Batch) {
 	for i, r := range b.Reqs {
 		creqs[i] = &r.C
 	}
+	s.ensureMambaCapacity(reqsOf(b))
 	rows, ok := s.pool.Alloc(creqs)
 	if !ok {
 		panic("alloc_req_slots runs out of memory. Please set a smaller number for `--max-running-requests`.")
@@ -187,7 +193,10 @@ func (b *Batch) PrepareForExtend(s *Scheduler) {
 		}
 		r.IsRetracted = false
 	}
+	b.prepareMambaForExtend(s)
 }
+
+func reqsOf(b *Batch) []*Req { return b.Reqs }
 
 // newTokensRequiredNextDecode is new_tokens_required_next_decode (:3403-3419) without
 // speculation: a page for each request about to start one.
@@ -261,6 +270,10 @@ func (b *Batch) PrepareForDecode(s *Scheduler) {
 		r.C.KV.KVCommittedLen++
 		b.SeqLens[i]++
 	}
+	for _, r := range b.Reqs {
+		r.DecodeBatchIdx++
+	}
+	b.prepareMambaForDecode(s)
 }
 
 // prepareForSpecDecode is eagle_prepare_for_decode (speculative/eagle_utils.py@297e54fd) with
@@ -309,7 +322,7 @@ func (b *Batch) prepareForSpecDecode(s *Scheduler) {
 
 // MixWithRunning is mix_with_running (:3267-3365): the running requests decode in the prefill
 // pass, each as an extend of one token after the sequence it has.
-func (b *Batch) MixWithRunning(running *Batch) {
+func (b *Batch) MixWithRunning(s *Scheduler, running *Batch) {
 	b.Mode = Mixed
 	prefixes := make([]int, len(running.Reqs))
 	for i, r := range running.Reqs {
@@ -318,7 +331,7 @@ func (b *Batch) MixWithRunning(running *Batch) {
 		r.ExtendEnd = prefixes[i] + 1
 	}
 	n := len(running.Reqs)
-	b.MergeBatch(running)
+	b.mixMamba(s, running, func() { b.MergeBatch(running) })
 	b.PrefixLens = append(b.PrefixLens, prefixes...)
 	for range n {
 		b.ExtendLens = append(b.ExtendLens, 1)
@@ -372,6 +385,10 @@ func retractionOrder(reqs []*Req, policy string, lowFirst bool) []int {
 // releaseKVCache is release_kv_cache (mem_cache/common.py:400-444) for a request in no session.
 func (s *Scheduler) releaseKVCache(r *Req, checkpoint bool) {
 	if r.C.KV.ReqPoolIdx == nil {
+		// A mamba-capable cache may take the state slot before the KV (release_kv_cache, common.py:381-393).
+		if s.hybrid != nil && r.C.KV.Mamba.HoldsMamba() {
+			s.hybrid.ReleaseStateSlot(&r.C)
+		}
 		return
 	}
 	owned := r.OwnedKVLen()

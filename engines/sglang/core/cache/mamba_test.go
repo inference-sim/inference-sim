@@ -458,5 +458,5 @@ func allocOrAssert(p *HybridRequestPool, reqs []*Req) (rows []int, err error) {
 			err = fmt.Errorf("%v", r)
 		}
 	}()
-	return p.Alloc(reqs)
+	return p.AcquireRows(reqs)
 }

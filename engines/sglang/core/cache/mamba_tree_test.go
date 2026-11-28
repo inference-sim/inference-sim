@@ -479,7 +479,7 @@ func (r *mtReplay) allocReqs(c Call) error {
 		}
 		reqs = append(reqs, q)
 	}
-	rows, err := r.pool.Alloc(reqs)
+	rows, err := r.pool.AcquireRows(reqs)
 	if err != nil {
 		return err
 	}
