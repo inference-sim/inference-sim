@@ -48,6 +48,8 @@ __pycache__/*
 !specs/**/*.json
 !cmd/testdata/**/*.json
 !sim/workload/testdata/agentx/*.json
+!substrate/decision/artifact/*.json
+!substrate/decision/testdata/**/*.json
 data/
 *.txt
 !testdata/bytegate/cases.txt
