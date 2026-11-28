@@ -12,7 +12,7 @@ import (
 // (the mutation sweep of the M3.1 train): each fails on one generated mutant of treecore.go, radix.go
 // or events.go that the golden traces do not reach. The package's own tests have no host tier, so
 // tcTier is a synchronous one: it takes host slots from a counter, commits them to the tree, and
-// completes every backup when the test settles it, as core/hicache's L2 does with a controller.
+// completes every backup when the test settles it, as a hierarchical cache does with a controller.
 
 type tcPending struct {
 	publish []NodeID

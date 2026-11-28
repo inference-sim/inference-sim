@@ -126,8 +126,10 @@ jq -r '.items[] | [.category,.status] | @tsv' surface.json | sort | uniq -c
   is checked against SGLang's own resolution, and the engine builds a draft chain from it
   (`TestTheFactoryBuildsAnEagleChain`), but no golden records a speculative pass. The lists carry
   these items as refused or `not_modelled` under #2355, and the lists are what this engine claims.
-- **HiCache and metrics are ported, not run by the engine.** `core/hicache` and `core/metrics` are
-  compared with their goldens; the engine refuses `enable_hierarchical_cache`.
+- **HiCache is not in this tree, and metrics are ported, not run by the engine.** `core/metrics` is
+  compared with its goldens. `core/hicache` was written against the previous pin; its replay no
+  longer equals SGLang at this pin and is left to a follow-up (branch `blis2/sglang-main-hicache`
+  keeps it). The engine refuses `enable_hierarchical_cache`, and nothing imports the package.
 - **The lists can lag the code.** The scheduler loops and the radix cache run in the engine and
   the scheduler goldens cover them, yet `surface.json` lists them as refused until their entries
   in `engines/sglang/tools/surface/status.json` gain trace evidence.
@@ -141,7 +143,7 @@ jq -r '.items[] | [.category,.status] | @tsv' surface.json | sort | uniq -c
 
 | Path | What |
 |---|---|
-| `core/sched`, `core/cache`, `core/hicache`, `core/metrics`, `core/sglang` | the scheduler, the radix and pool caches, the hierarchical cache, the metrics, and the engine that ties them together |
+| `core/sched`, `core/cache`, `core/metrics`, `core/sglang` | the scheduler, the radix and pool caches, the metrics, and the engine that ties them together |
 | `config/` | `ServerArgs` resolution and validation |
 | `rules/` | SGLang v0.5.23's engine rules: the answers a cost model and a validator ask of the engine release |
 | `lower/` | lowering a model to kernel implementations |
