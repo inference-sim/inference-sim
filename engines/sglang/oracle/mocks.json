@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/10+7d012d459dd6",
+  "version": "gpu-mock/11+f249785dd1c5",
   "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds, and in `covers` the platform reads, clock reads and thread starts each accounts for (oracle/gen_platform_reads.py lists them, FID-1). No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
@@ -292,28 +292,12 @@
       ]
     },
     {
-      "symbol": "sglang.srt.utils.common device probes in a ServerArgs case",
+      "symbol": "sglang.srt.utils.device probes in a ServerArgs case",
       "kind": "platform",
-      "how": "the probes ServerArgs resolution calls report the case's chip, in utils.common and where sglang.srt.utils re-exports them: get_device is cuda, is_cuda is true, is_sm90_supported and is_sm100_supported, get_device_capability and get_device_sm the chip's; get_device_memory_capacity and get_nvgpu_memory_capacity the MiB nvidia-smi reports as memory.total (what get_nvgpu_memory_capacity reads on a GPU, utils/common.py@297e54fd), handle_gpu_memory_settings's input (arg_groups/memory_hook.py:78@297e54fd); is_flashinfer_available is true, as on SGLang's CUDA image, which installs flashinfer (utils/common.py:388-395@297e54fd).",
+      "how": "the probes ServerArgs resolution calls report the case's chip, where utils/device.py defines them and in every loaded sglang module that bound one by import: get_device is cuda, is_cuda is true, is_sm90_supported and is_sm100_supported, get_device_capability and get_device_sm the chip's; get_device_memory_capacity and get_nvgpu_memory_capacity the MiB nvidia-smi reports as memory.total (what get_nvgpu_memory_capacity reads on a GPU, utils/device.py), handle_gpu_memory_settings's input (arg_groups/memory_hook.py:78@297e54fd); is_flashinfer_available is true, as on SGLang's CUDA image, which installs flashinfer (utils/device.py).",
       "sites": [
-        "run_serverargs.py:common.get_device",
-        "run_serverargs.py:common.get_device_capability",
-        "run_serverargs.py:common.get_device_memory_capacity",
-        "run_serverargs.py:common.get_device_sm",
-        "run_serverargs.py:common.get_nvgpu_memory_capacity",
-        "run_serverargs.py:common.is_cuda",
-        "run_serverargs.py:common.is_flashinfer_available",
-        "run_serverargs.py:common.is_sm100_supported",
-        "run_serverargs.py:common.is_sm90_supported",
-        "run_serverargs.py:srt_utils.get_device",
-        "run_serverargs.py:srt_utils.get_device_capability",
-        "run_serverargs.py:srt_utils.get_device_memory_capacity",
-        "run_serverargs.py:srt_utils.get_device_sm",
-        "run_serverargs.py:srt_utils.get_nvgpu_memory_capacity",
-        "run_serverargs.py:srt_utils.is_cuda",
-        "run_serverargs.py:srt_utils.is_flashinfer_available",
-        "run_serverargs.py:srt_utils.is_sm100_supported",
-        "run_serverargs.py:srt_utils.is_sm90_supported"
+        "run_serverargs.py:dev.?",
+        "run_serverargs.py:mod.?"
       ]
     },
     {
@@ -669,6 +653,15 @@
       "sites": [
         "run_metrics.py:events.ts",
         "run_metrics.py:events.attn_dp_rank"
+      ]
+    },
+    {
+      "symbol": "TokenToKVPoolAllocator.state in a hybrid-cache sequence",
+      "kind": "platform",
+      "how": "the KV cache configurator binds the request table's state storage to the token allocator (allocator.state = req_to_token_pool.state, mem_cache/kv_cache_configurator.py) when it builds a hybrid model's pools; the direct sequences of oracle/run_mamba_component.py and oracle/run_mamba_tree.py build the pools by their own constructors, without the configurator, and make the same binding. Nothing the cache decides is replaced.",
+      "sites": [
+        "run_mamba_component.py:alloc.state",
+        "run_mamba_tree.py:alloc.state"
       ]
     }
   ]
