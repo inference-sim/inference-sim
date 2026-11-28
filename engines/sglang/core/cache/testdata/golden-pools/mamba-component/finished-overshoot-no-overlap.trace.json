@@ -181,14 +181,14 @@
  ],
  "kind": "direct",
  "provenance": {
-  "blis_sglang_commit": "cd719c269af186c8f342844451001a724a3dc057",
+  "blis_sglang_commit": "7c4f4b11745ac494cdfb5a76281eee8a8bc34a98",
   "lockfile_sha256": "6e08f237723633701d731058a3358d19c93e36841ae681ac8f19e58a1b6c7d77",
-  "mock_version": "gpu-mock/10+7d012d459dd6",
+  "mock_version": "gpu-mock/12+321bd53ce346",
   "model": "qwen2.5-0.5b",
   "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
   "oracle_inputs": {
    "oracle/harness.json": "a616a3a535dc670cba483de6102f925d9d45054931c49e0561abe765b71ab2d8",
-   "oracle/mocks.json": "0e43d9a6fcea6735bbb2228a858cee3c5af9a2b2534b9c3e4f5231533a5c7959",
+   "oracle/mocks.json": "96a2177996bd9e9ed033d08469dbc7626c4c9a90b74847f1e969c049c33b88bd",
    "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
    "oracle/run_mamba_component.py": "efa7e09d4421e48f388e9b5c47a3e4ec75f1d8ac45b7b2a3d870210b04fae392",
    "oracle/run_mamba_pools.py": "5d5467ebbd2c9cfd08bd5964f254f1364383d844c3a95bb69e06bba5ff6cbe43",

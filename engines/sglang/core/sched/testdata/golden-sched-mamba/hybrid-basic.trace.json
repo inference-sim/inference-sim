@@ -98,7 +98,7 @@
   "max_total_num_tokens": 4096
  },
  "provenance": {
-  "blis_sglang_commit": "89aa88d4f463c72e77b4fb78c4d16ee26f7b4af5",
+  "blis_sglang_commit": "7c4f4b11745ac494cdfb5a76281eee8a8bc34a98",
   "lockfile_sha256": "6e08f237723633701d731058a3358d19c93e36841ae681ac8f19e58a1b6c7d77",
   "mock_version": "gpu-mock/12+321bd53ce346",
   "model": "Qwen/Qwen3.5-397B-A17B (reduced)",
