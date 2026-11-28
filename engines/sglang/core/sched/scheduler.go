@@ -232,6 +232,11 @@ func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.R
 	} else if cfg.Mamba != nil {
 		return nil, fmt.Errorf("sched: the mamba settings need the hybrid request pool")
 	}
+	if cfg.Mamba != nil && cfg.speculative() {
+		// A verify pass moves the state tracking by the tokens it accepts (mamba_lazy_spec_prepare, the
+		// spec update of the result): not modelled.
+		return nil, refusedAt("speculative decoding on a hybrid model's state cache", SpecRefusal)
+	}
 	if cfg.Mamba != nil && cfg.EnableMetrics {
 		// The reporter's state-pool gauges (mamba_usage, mamba_used_tokens, ...) are not modelled.
 		return nil, refusedAt("the metrics of a hybrid model's state pool", "inference-sim/inference-sim#2451")

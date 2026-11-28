@@ -101,3 +101,19 @@ func TestHybridSchedulerWithMetricsIsRefusedByName(t *testing.T) {
 		t.Fatalf("got %v, want a refusal naming the state pool's metrics and #2451", err)
 	}
 }
+
+// A verify pass would move the tracked lengths by the tokens it accepts, which the scheduler does not
+// model: speculation on a hybrid model's state cache is refused by name, not run as plain decoding.
+func TestHybridSchedulerWithSpeculationIsRefusedByName(t *testing.T) {
+	files, err := testgz.Glob(filepath.Join(MambaGoldenDir, "hybrid-basic.trace.json"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("no hybrid-basic trace: %v", err)
+	}
+	var tr trace
+	readJSON(t, files[0], &tr)
+	tr.Config.SpecNumSteps, tr.Config.SpecNumDraftTokens = 3, 4
+	_, err = buildHybrid(tr.Config, 13)
+	if err == nil || !strings.Contains(err.Error(), "speculative decoding on a hybrid") || !strings.Contains(err.Error(), SpecRefusal) {
+		t.Fatalf("got %v, want a refusal naming speculation on the state cache and %s", err, SpecRefusal)
+	}
+}
