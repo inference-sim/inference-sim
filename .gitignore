@@ -47,6 +47,8 @@ __pycache__/*
 !testdata/bytegate/golden/*.json
 !specs/**/*.json
 !cmd/testdata/**/*.json
+# The SGLang engine's oracle scenarios, goldens, field lists and test data are JSON the tests read.
+!engines/sglang/**/*.json
 !sim/workload/testdata/agentx/*.json
 data/
 *.txt
