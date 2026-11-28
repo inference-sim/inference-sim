@@ -10,6 +10,7 @@ import (
 
 	blissglang "github.com/inference-sim/inference-sim/engines/sglang"
 	"github.com/inference-sim/inference-sim/engines/sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 	"github.com/inference-sim/inference-sim/engines/sglang/core/sglang"
 	"github.com/inference-sim/inference-sim/engines/sglang/lower"
 )
@@ -106,6 +107,17 @@ func newFromDocument(h Host, s engine.Spec) (engine.Engine, error) {
 	in := sglang.PoolInput{PreModelLoadGiB: pool.PreModelLoadGiB, MemFractionStatic: *a.MemFractionStatic,
 		PageSize: sa.PageSize, MaxTotalTokens: a.MaxTotalTokens, MaxRunningRequests: a.MaxRunningRequests,
 		ContextLen: pool.ContextLen, AttnDPSize: max(a.AttnDpSize, 1)}
+	if a.UsesMambaRadixCache {
+		// A hybrid model that keeps the states of cached prefixes: its state pool shares the cache
+		// budget (mamba_full_memory_ratio, 0.9 unset: arg_groups/fields/schedule.py:261-268).
+		ratio := 0.9
+		if a.MambaFullMemoryRatio != nil {
+			ratio = *a.MambaFullMemoryRatio
+		}
+		in.Mamba = &sglang.MambaPoolInput{Strategy: cache.MambaStrategy(a.MambaRadixCacheStrategy),
+			DisableOverlap: a.DisableOverlapSchedule, MaxMambaCacheSize: a.MaxMambaCacheSize, FullMemoryRatio: ratio}
+		sa.MambaStrategy = a.MambaRadixCacheStrategy
+	}
 	rt, err := sglang.PoolPlan(pool.Kernel, in)
 	if err != nil {
 		return nil, err
@@ -148,6 +160,10 @@ func refuseUnmodelled(a *config.ServerArgs) error {
 		return fmt.Errorf("sglangengine: pipeline parallelism is not modelled by the engine (inference-sim/inference-sim#2358)")
 	case a.DisaggregationMode != "null":
 		return fmt.Errorf("sglangengine: P/D disaggregation is not modelled by the engine (inference-sim/inference-sim#2351)")
+	case a.UsesMambaRadixCache && a.SpeculativeAlgorithm != nil:
+		return fmt.Errorf("sglangengine: speculative decoding on a hybrid model's state cache is not modelled by the engine (inference-sim/inference-sim#2355)")
+	case a.UsesMambaRadixCache && a.EnableInt8MambaCheckpoint:
+		return fmt.Errorf("sglangengine: int8 mamba checkpoints are not modelled by the engine (inference-sim/inference-sim#2460)")
 	case a.EnableHierarchicalCache:
 		return fmt.Errorf("sglangengine: HiCache is not modelled by the engine (inference-sim/inference-sim#2341)")
 	}
@@ -174,6 +190,8 @@ func schedArgs(a *config.ServerArgs, seed int64) (sglang.SchedArgs, error) {
 		PrefillMaxRequests: a.PrefillMaxRequests, RetractionPolicy: a.RetractionPolicy, AllowAutoTruncate: a.AllowAutoTruncate,
 		RandomSeed: rs, DisaggregationMode: a.DisaggregationMode, PPSize: a.PpSize, PPMaxMicroBatchSize: a.PpMaxMicroBatchSize,
 		RadixEvictionPolicy: a.RadixEvictionPolicy, EnableMetrics: a.EnableMetrics, DecodeLogInterval: a.DecodeLogInterval,
+		HybridCacheCheckpointsLevel: a.HybridCacheCheckpointsLevel, MambaTrackInterval: a.MambaTrackInterval,
+		MambaMaxStatesPerPath:     a.MambaMaxStatesPerPath,
 		SpeculativeNumSteps:       specValue(a.SpeculativeAlgorithm, a.SpeculativeNumSteps),
 		SpeculativeNumDraftTokens: specValue(a.SpeculativeAlgorithm, a.SpeculativeNumDraftTokens),
 	}, nil

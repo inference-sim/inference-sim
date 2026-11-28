@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright 2023-2024 SGLang Team
-// Derived from python/sglang/srt/managers/schedule_batch.py, scheduler.py and
-// scheduler_components/batch_result_processor.py at SGLang v1.0.0+c4af57ff93f3
-// (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/managers/schedule_batch.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/managers/scheduler.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/managers/scheduler_components/batch_result_processor.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
+// Derived from python/sglang/srt/mem_cache/allocation.py at SGLang v1.0.0+c4af57ff93f3 (c4af57ff93f301846fa1da4c31f8523c08c7510d).
 
 package sched
 

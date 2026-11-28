@@ -777,8 +777,11 @@
    "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   "kv_pool:HybridLinearKVPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/mamba/sizing.trace.json",
+    "core/cache/testdata/golden-pools/mamba/budget.trace.json"
+   ]
   },
   "kv_pool:KVCache": {
    "status": "refused",
@@ -817,8 +820,11 @@
    "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   "kv_pool:MambaPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/mamba/sizing-tp1.trace.json",
+    "core/cache/testdata/golden-pools/mamba/sizing-bf16.trace.json"
+   ]
   },
   "kv_pool:MiniMaxM3Nvfp4IndexKPool": {
    "status": "refused",
@@ -1719,8 +1725,13 @@
    "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
   },
   "req_pool:HybridReqToTokenPool": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/mamba/req-pool-extra-buffer.trace.json",
+    "core/cache/testdata/golden-pools/mamba/req-pool-no-buffer.trace.json",
+    "core/cache/testdata/golden-pools/mamba/req-pool-exhaustion.trace.json",
+    "core/sched/testdata/golden-sched-mamba/hybrid-basic.trace.json"
+   ]
   },
   "req_pool:MlxAuxiliaryStateReqToTokenPool": {
    "status": "out_of_scope",
@@ -2145,8 +2156,13 @@
    "issue": "https://github.com/inference-sim/inference-sim/issues/2449"
   },
   "tree_component:MAMBA": {
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-mamba-tree/insert-and-match.trace.json.gz",
+    "core/cache/testdata/golden-mamba-tree/cow-match.trace.json.gz",
+    "core/cache/testdata/golden-mamba-tree/evict-state-then-tokens.trace.json.gz",
+    "core/cache/testdata/golden-mamba-tree/finished-donates-tracked-state.trace.json.gz"
+   ]
   },
   "tree_component:SWA": {
    "status": "refused",

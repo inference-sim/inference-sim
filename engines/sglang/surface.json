@@ -7,9 +7,9 @@
  },
  "sites_under": "python/sglang/srt/",
  "counts": {
-  "modelled": 20,
+  "modelled": 24,
   "out_of_scope": 23,
-  "refused": 521
+  "refused": 517
  },
  "items": [
   {
@@ -324,8 +324,13 @@
    "category": "tree_component",
    "name": "MAMBA",
    "site": "mem_cache/unified_cache/component_type.py:99",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2460"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-mamba-tree/insert-and-match.trace.json.gz",
+    "core/cache/testdata/golden-mamba-tree/cow-match.trace.json.gz",
+    "core/cache/testdata/golden-mamba-tree/evict-state-then-tokens.trace.json.gz",
+    "core/cache/testdata/golden-mamba-tree/finished-donates-tracked-state.trace.json.gz"
+   ]
   },
   {
    "id": "tree_component:C128",
@@ -895,8 +900,11 @@
    "site": "mem_cache/memory_pool.py:4258",
    "built": "mem_cache/kv_cache_configurator.py:949",
    "level": "L1",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/mamba/sizing.trace.json",
+    "core/cache/testdata/golden-pools/mamba/budget.trace.json"
+   ]
   },
   {
    "id": "kv_pool:KVCache",
@@ -995,8 +1003,11 @@
    "name": "MambaPool",
    "site": "mem_cache/memory_pool.py:524",
    "level": "L1",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/mamba/sizing-tp1.trace.json",
+    "core/cache/testdata/golden-pools/mamba/sizing-bf16.trace.json"
+   ]
   },
   {
    "id": "kv_pool:MiniMaxM3Nvfp4IndexKPool",
@@ -1261,8 +1272,13 @@
    "name": "HybridReqToTokenPool",
    "site": "mem_cache/memory_pool.py:1422",
    "built": "mem_cache/kv_cache_configurator.py:1763",
-   "status": "refused",
-   "issue": "https://github.com/inference-sim/inference-sim/issues/2343"
+   "status": "modelled",
+   "evidence": [
+    "core/cache/testdata/golden-pools/mamba/req-pool-extra-buffer.trace.json",
+    "core/cache/testdata/golden-pools/mamba/req-pool-no-buffer.trace.json",
+    "core/cache/testdata/golden-pools/mamba/req-pool-exhaustion.trace.json",
+    "core/sched/testdata/golden-sched-mamba/hybrid-basic.trace.json"
+   ]
   },
   {
    "id": "req_pool:MlxAuxiliaryStateReqToTokenPool",

@@ -259,13 +259,18 @@ func TestUnmodelledAllocatorsAndPoolsAreRefusedByName(t *testing.T) {
 	if err := CheckPoolSelection("PagedTokenToKVPoolAllocator", "DSATokenToKVPool", "ReqToTokenPool"); err != nil {
 		t.Errorf("a modelled selection is refused: %v", err)
 	}
+	// A hybrid model's pools are modelled (the request pool that holds the state slots, the state pool and
+	// the full-attention KV pool it sits beside): its selection starts.
+	if err := CheckPoolSelection("TokenToKVPoolAllocator", "HybridLinearKVPool", "HybridReqToTokenPool"); err != nil {
+		t.Errorf("a hybrid model's selection is refused: %v", err)
+	}
 	for _, c := range []struct {
 		kind  PoolKind
 		class string
 	}{
 		{AllocatorKind, "SWATokenToKVPoolAllocator"}, {AllocatorKind, "PageInterleavePoolAllocator"},
-		{KVPoolKind, "DeepSeekV4TokenToKVPool"}, {KVPoolKind, "HybridLinearKVPool"}, {KVPoolKind, "MLATokenToKVPoolFP4"},
-		{ReqPoolKind, "HybridReqToTokenPool"}, {ReqPoolKind, "MambaPool"},
+		{KVPoolKind, "DeepSeekV4TokenToKVPool"}, {KVPoolKind, "MLATokenToKVPoolFP4"},
+		{ReqPoolKind, "HybridMambaDecodeReqToTokenPool"},
 	} {
 		err := CheckPoolClass(c.kind, c.class)
 		var ref *PoolRefusal

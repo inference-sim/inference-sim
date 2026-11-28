@@ -72,7 +72,13 @@ var acceptedFields = map[string][]any{
 	// radix cache, the dtype of its SSM states, and the vision tower's attention backend.
 	"mamba_radix_cache_strategy": {"auto", "no_buffer", "extra_buffer", "extra_buffer_lazy"},
 	"mamba_ssm_dtype":            {nil, "float32", "bfloat16", "float16"},
-	"mm_attention_backend":       {nil, "sdpa", "fa3", "fa4", "triton_attn", "flashinfer_cudnn"},
+	// The sizes and cadence of the hybrid model's state pool and checkpoints, which the scheduler
+	// reads (core/sglang plan.go mambaConfig, PoolPlan) and its oracle covers (oracle/scenarios-sched-mamba).
+	"max_mamba_cache_size":           nil,
+	"mamba_full_memory_ratio":        nil,
+	"mamba_track_interval":           nil,
+	"hybrid_cache_checkpoints_level": {2, 3},
+	"mm_attention_backend":           {nil, "sdpa", "fa3", "fa4", "triton_attn", "flashinfer_cudnn"},
 	// The scheduler's queue, priority, truncation and retraction settings: each is read by the
 	// scheduler port (core/sched) and covered by its oracle goldens (fields/status.json cites them);
 	// no resolution step reads any of them (CheckServerArgs carries the two start-up rules).

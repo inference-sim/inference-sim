@@ -85,3 +85,19 @@ func TestHybridStepsEqualSGLangs(t *testing.T) {
 		})
 	}
 }
+
+// The reporter's gauges of the state pool are not modelled: a hybrid scheduler with metrics on is
+// refused by name, never run with those gauges missing.
+func TestHybridSchedulerWithMetricsIsRefusedByName(t *testing.T) {
+	files, err := testgz.Glob(filepath.Join(MambaGoldenDir, "hybrid-basic.trace.json"))
+	if err != nil || len(files) != 1 {
+		t.Fatalf("no hybrid-basic trace: %v", err)
+	}
+	var tr trace
+	readJSON(t, files[0], &tr)
+	tr.Config.EnableMetrics = true
+	_, err = buildHybrid(tr.Config, 13)
+	if err == nil || !strings.Contains(err.Error(), "#2451") || !strings.Contains(err.Error(), "state pool") {
+		t.Fatalf("got %v, want a refusal naming the state pool's metrics and #2451", err)
+	}
+}

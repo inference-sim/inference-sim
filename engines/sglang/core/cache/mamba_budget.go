@@ -29,8 +29,11 @@ const (
 // MaxMambaCacheSize nil are unset; FullMemoryRatio is the resolved --mamba-full-memory-ratio
 // (0.9 when unset, schedule.py:221-226).
 type MambaBudget struct {
-	TotalRestGiB       float64
-	State              LinearStateParams
+	TotalRestGiB float64
+	State        LinearStateParams
+	// PerReqBytes, when positive, is the bytes of one request's state slot (mamba_cache_per_req) in
+	// place of State's: a host that prices the model by its graph states it without the layer shapes.
+	PerReqBytes        int64
 	MaxRunningRequests *int
 	MaxMambaCacheSize  *int
 	DisableRadixCache  bool
@@ -82,10 +85,13 @@ func pyFloorDiv(a, b float64) float64 {
 // GiB. A speculative pool also reserves the per-draft intermediate state, which the solve
 // charges against the same budget.
 func MambaCacheSize(b MambaBudget) (size int, restGiB float64, err error) {
-	if b.AttnDPSize < 1 || len(b.State.Layers) == 0 {
+	if b.AttnDPSize < 1 || (len(b.State.Layers) == 0 && b.PerReqBytes <= 0) {
 		return 0, 0, fmt.Errorf("mamba budget: attention dp %d, %d linear layers", b.AttnDPSize, len(b.State.Layers))
 	}
-	perReq := b.State.PerReqBytes()
+	perReq := b.PerReqBytes
+	if perReq <= 0 {
+		perReq = b.State.PerReqBytes()
+	}
 	hasSpec := b.SpecDraftTokens > 0
 	if hasSpec && b.MaxRunningRequests == nil {
 		return 0, 0, fmt.Errorf("speculative decoding needs max_running_requests (kv_cache_configurator.py:3299)")

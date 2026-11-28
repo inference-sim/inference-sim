@@ -597,8 +597,8 @@ func (c *RadixCache) FullProtectedSize() int { return c.core.FullProtectedSize()
 // MambaEvictableSize and MambaProtectedSize are the state component's ledgers (zero without one).
 func (c *RadixCache) MambaEvictableSize() int { return c.core.MambaEvictableSize() }
 func (c *RadixCache) MambaProtectedSize() int { return c.core.MambaProtectedSize() }
-func (c *RadixCache) TotalSize() (int, int)  { return c.core.TotalSize() }
-func (c *RadixCache) TakeEvents() []Event    { return c.core.TakeEvents() }
+func (c *RadixCache) TotalSize() (int, int)   { return c.core.TotalSize() }
+func (c *RadixCache) TakeEvents() []Event     { return c.core.TakeEvents() }
 
 // DFSWeightOrder is dfs_weight_order (:3972-3973): the tree core's, over node handles.
 func (c *RadixCache) DFSWeightOrder(handles []NodeID) []int { return c.core.DFSWeightOrder(handles) }

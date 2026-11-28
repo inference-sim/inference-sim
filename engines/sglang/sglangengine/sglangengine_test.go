@@ -375,3 +375,44 @@ func TestTheFactoryBuildsAnEagleChain(t *testing.T) {
 		}
 	}
 }
+
+// hybridKernel adds what a hybrid model's cost model states: the bytes of the recurrent state a
+// request holds (its working state and the tracking slots of the extra buffer).
+type hybridKernel struct{ fakeKernel }
+
+func (hybridKernel) SequenceFixedBytes() int64 { return 3 * 64 << 20 }
+
+// A hybrid model with its radix cache on is built with the request pool that holds the state slots,
+// and a running request is charged the state slots its strategy keeps (extra_buffer with overlap: a
+// base of 3 and 2 tracking slots, 5 in all): a state pool of 40 slots admits 8 requests, however many
+// are waiting.
+func TestTheFactoryBuildsAHybridEngineWhoseStatePoolBoundsTheBatch(t *testing.T) {
+	h := fakeHost{k: fakeKernel{lastPad: new(int)}, arch: "Qwen3_5MoeForConditionalGeneration"}
+	hk := hybridHost{fakeHost: h}
+	e, err := FactoryFor(hk).New(specOf(t, "model_path: m\nmax_mamba_cache_size: 40\nmax_running_requests: 64\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("r%d", i)
+		if err := e.Add(engine.Request{ID: id, Prompt: make([]int32, 100+i), Output: []int32{5, 6, 7, 8}}, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := e.Schedule(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(b.Reqs); got != 8 {
+		t.Fatalf("the first pass holds %d requests, want 8 (40 state slots over 5 a request)", got)
+	}
+}
+
+// hybridHost is a host whose pool's cost model states a recurrent state.
+type hybridHost struct{ fakeHost }
+
+func (h hybridHost) Open(s engine.Spec) (Pool, error) {
+	p, err := h.fakeHost.Open(s)
+	p.Kernel = hybridKernel{fakeKernel: h.fakeHost.k}
+	return p, err
+}

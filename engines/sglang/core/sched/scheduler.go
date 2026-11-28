@@ -232,6 +232,10 @@ func New(cfg Config, tree cache.PrefixCache, alloc cache.Allocator, pool cache.R
 	} else if cfg.Mamba != nil {
 		return nil, fmt.Errorf("sched: the mamba settings need the hybrid request pool")
 	}
+	if cfg.Mamba != nil && cfg.EnableMetrics {
+		// The reporter's state-pool gauges (mamba_usage, mamba_used_tokens, ...) are not modelled.
+		return nil, refusedAt("the metrics of a hybrid model's state pool", "inference-sim/inference-sim#2451")
+	}
 	if cfg.MambaChunkGrid > 1 {
 		return nil, refused("a mamba prefill chunk grid above 1")
 	}

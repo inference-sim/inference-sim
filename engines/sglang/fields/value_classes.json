@@ -5983,6 +5983,43 @@
     ]
    }
   },
+  "hybrid_cache_checkpoints_level": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "3"
+    ],
+    "values": [
+     "2",
+     "3"
+    ]
+   },
+   "basis": {
+    "name": "hybrid_cache_checkpoints_level",
+    "kind": "enumerated",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:278",
+      "op": "Lt",
+      "values": [
+       3
+      ],
+      "expr": "cfg.hybrid_cache_checkpoints_level < 3"
+     }
+    ],
+    "stated": [
+     {
+      "value": 3,
+      "trace": "oracle/scenarios-sched-mamba/hybrid-level-three.json"
+     },
+     {
+      "value": 3,
+      "trace": "oracle/scenarios-mamba-tree/running-checkpoint-level-three.json"
+     }
+    ],
+    "classes": []
+   }
+  },
   "kv_cache_dtype": {
    "value_classes": {
     "type": "enumerated",
@@ -7220,6 +7257,191 @@
     ]
    }
   },
+  "mamba_full_memory_ratio": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "mamba_full_memory_ratio",
+    "kind": "numeric",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/glm5_next.py:20",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.mamba_full_memory_ratio is None"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/inkling.py:72",
+      "op": "Is",
+      "values": [
+       null
+      ],
+      "expr": "cfg.mamba_full_memory_ratio is None"
+     }
+    ],
+    "stated": [
+     {
+      "value": 0.9,
+      "trace": "oracle/scenarios-mamba-pools/budget.json"
+     },
+     {
+      "value": 0.2,
+      "trace": "oracle/scenarios-mamba-pools/budget.json"
+     }
+    ],
+    "numeric_type": "float",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/scenarios-mamba-pools/budget.json"
+      ]
+     }
+    ]
+   }
+  },
+  "mamba_radix_cache_strategy": {
+   "value_classes": {
+    "type": "enumerated",
+    "covered": [
+     "extra_buffer",
+     "extra_buffer_lazy",
+     "no_buffer"
+    ],
+    "values": [
+     "auto",
+     "no_buffer",
+     "extra_buffer",
+     "extra_buffer_lazy"
+    ]
+   },
+   "basis": {
+    "name": "mamba_radix_cache_strategy",
+    "kind": "enumerated",
+    "sites": [
+     {
+      "at": "python/sglang/srt/arg_groups/mamba_hook.py:128",
+      "op": "Eq",
+      "values": [
+       "extra_buffer_lazy"
+      ],
+      "expr": "view.mamba_radix_cache_strategy == 'extra_buffer_lazy'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_override_base.py:289",
+      "op": "In",
+      "values": [
+       "extra_buffer",
+       "extra_buffer_lazy"
+      ],
+      "expr": "cfg.mamba_radix_cache_strategy in ('extra_buffer', 'extra_buffer_lazy')"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/glm5_next.py:25",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ],
+      "expr": "cfg.mamba_radix_cache_strategy == 'auto'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/inkling.py:84",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ],
+      "expr": "cfg.mamba_radix_cache_strategy == 'auto'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:144",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ],
+      "expr": "cfg.mamba_radix_cache_strategy == 'auto'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:270",
+      "op": "Eq",
+      "values": [
+       "extra_buffer_lazy"
+      ],
+      "expr": "cfg.mamba_radix_cache_strategy == 'extra_buffer_lazy'"
+     },
+     {
+      "at": "python/sglang/srt/arg_groups/overrides.py:495",
+      "op": "Eq",
+      "values": [
+       "auto"
+      ],
+      "expr": "view.mamba_radix_cache_strategy == 'auto'"
+     }
+    ],
+    "stated": [
+     {
+      "value": "extra_buffer",
+      "trace": "oracle/scenarios-sched-mamba/hybrid-basic.json"
+     },
+     {
+      "value": "extra_buffer_lazy",
+      "trace": "oracle/scenarios-sched-mamba/hybrid-lazy.json"
+     },
+     {
+      "value": "no_buffer",
+      "trace": "oracle/scenarios-sched-mamba/hybrid-no-buffer.json"
+     }
+    ],
+    "classes": [
+     {
+      "values": [
+       "auto"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/model_overrides/glm5_next.py:25",
+       "python/sglang/srt/arg_groups/model_overrides/inkling.py:84",
+       "python/sglang/srt/arg_groups/model_overrides/nemotron_h.py:144",
+       "python/sglang/srt/arg_groups/overrides.py:495"
+      ],
+      "covered_by": []
+     },
+     {
+      "values": [
+       "extra_buffer"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/model_override_base.py:289"
+      ],
+      "covered_by": [
+       "oracle/scenarios-sched-mamba/hybrid-basic.json"
+      ]
+     },
+     {
+      "values": [
+       "extra_buffer_lazy"
+      ],
+      "compared_at": [
+       "python/sglang/srt/arg_groups/mamba_hook.py:128",
+       "python/sglang/srt/arg_groups/model_override_base.py:289",
+       "python/sglang/srt/arg_groups/overrides.py:270"
+      ],
+      "covered_by": [
+       "oracle/scenarios-sched-mamba/hybrid-lazy.json"
+      ]
+     }
+    ]
+   }
+  },
   "mamba_ssm_dtype": {
    "value_classes": {
     "type": "enumerated",
@@ -8037,6 +8259,98 @@
       ],
       "covered_by": [
        "config/testdata/serverargs.json"
+      ]
+     }
+    ]
+   }
+  },
+  "mamba_track_interval": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "mamba_track_interval",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": 64,
+      "trace": "oracle/scenarios-sched-mamba/hybrid-decode-boundary.json"
+     },
+     {
+      "value": 64,
+      "trace": "oracle/scenarios-sched-mamba/hybrid-lazy.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/scenarios-sched-mamba/hybrid-decode-boundary.json",
+       "oracle/scenarios-sched-mamba/hybrid-lazy.json"
+      ]
+     }
+    ]
+   }
+  },
+  "max_mamba_cache_size": {
+   "value_classes": {
+    "type": "numeric",
+    "covered_classes": [
+     0
+    ]
+   },
+   "basis": {
+    "name": "max_mamba_cache_size",
+    "kind": "numeric",
+    "sites": [],
+    "stated": [
+     {
+      "value": 16,
+      "trace": "oracle/scenarios-sched-mamba/hybrid-basic.json"
+     },
+     {
+      "value": 96,
+      "trace": "oracle/scenarios-mamba-pools/budget.json"
+     },
+     {
+      "value": 96,
+      "trace": "oracle/scenarios-mamba-pools/budget.json"
+     },
+     {
+      "value": 0,
+      "trace": "oracle/scenarios-mamba-pools/budget.json"
+     },
+     {
+      "value": 128,
+      "trace": "oracle/scenarios-mamba-pools/budget.json"
+     },
+     {
+      "value": 96,
+      "trace": "oracle/scenarios-mamba-pools/budget.json"
+     }
+    ],
+    "numeric_type": "int",
+    "classes": [
+     {
+      "lo": null,
+      "hi": null,
+      "lo_closed": false,
+      "hi_closed": false,
+      "compared_at": [],
+      "uncut": true,
+      "covered_by": [
+       "oracle/scenarios-mamba-pools/budget.json",
+       "oracle/scenarios-sched-mamba/hybrid-basic.json"
       ]
      }
     ]

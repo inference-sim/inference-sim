@@ -46,6 +46,16 @@ type SchedArgs struct {
 	// speculative_num_draft_tokens of an EAGLE-family algorithm at top-k 1; zero is no speculation.
 	SpeculativeNumSteps       int
 	SpeculativeNumDraftTokens int
+	// MambaStrategy is the resolved mamba radix cache strategy (no_buffer, extra_buffer or
+	// extra_buffer_lazy) of a hybrid model that keeps its states in the radix cache; empty for any
+	// other model, whose state (if any) is the one latest state a request holds.
+	MambaStrategy string
+	// HybridCacheCheckpointsLevel, MambaTrackInterval and MambaMaxStatesPerPath are the settings of the
+	// same names. MambaStateChunkSize is the model's mamba_chunk_size, 0 for the kernel's default (64).
+	HybridCacheCheckpointsLevel int
+	MambaTrackInterval          int
+	MambaMaxStatesPerPath       *int
+	MambaStateChunkSize         int
 }
 
 // Env is the environment variables the scheduler's settings read (environ.py@297e54fd).
@@ -74,6 +84,9 @@ type Runtime struct {
 	ContextLen         int
 	EOSTokenIDs        []int64
 	VocabSize          int
+	// MambaSize is the state slots of a hybrid model's pool (max_mamba_cache_size after the solve of
+	// _handle_max_mamba_cache); 0 is a model with none.
+	MambaSize int
 }
 
 // requestRowLen is the request pool's row length: the context length plus the headroom of
@@ -138,7 +151,12 @@ func SchedConfig(a SchedArgs, rt Runtime, env Env) (sched.Config, error) {
 	if mode == "" {
 		mode = "null"
 	}
+	mamba, err := mambaConfig(a, rt)
+	if err != nil {
+		return sched.Config{}, err
+	}
 	return sched.Config{
+		Mamba:               mamba,
 		PageSize:            a.PageSize,
 		Policy:              policy,
 		MaxTotalNumTokens:   rt.MaxTotalNumTokens,
@@ -203,6 +221,20 @@ type PoolInput struct {
 	ContextLen         int
 	// AttnDPSize above one (DP attention) is refused until S35.
 	AttnDPSize int
+	// Mamba is a hybrid model whose states live in the radix cache; nil is any other model.
+	Mamba *MambaPoolInput
+}
+
+// MambaPoolInput is what sizes the state pool of a hybrid model (_handle_max_mamba_cache,
+// kv_cache_configurator.py): the strategy, the two settings that bound the pool, and the cost
+// model's bytes for the state a request holds.
+type MambaPoolInput struct {
+	Strategy       cache.MambaStrategy
+	DisableOverlap bool
+	// MaxMambaCacheSize is --max-mamba-cache-size, nil when unset; FullMemoryRatio is
+	// --mamba-full-memory-ratio resolved (0.9 unset).
+	MaxMambaCacheSize *int
+	FullMemoryRatio   float64
 }
 
 // PoolPlan sizes the pools as SGLang's KV cache configurator does from the memory the kernel's
@@ -226,10 +258,81 @@ func PoolPlan(k kernel.Kernel, in PoolInput) (Runtime, error) {
 	// bytes come in pages is not rounded to zero.
 	const span = 4096
 	cell := (k.SequenceVariableBytes(span) + span - 1) / span
+	if m := in.Mamba; m != nil {
+		return hybridPoolPlan(k, in, *m, budget, cell)
+	}
 	tokens, err := cache.TokenCapacity(budget, cell, in.PageSize, in.MaxTotalTokens, in.ContextLen)
 	if err != nil {
 		return Runtime{}, err
 	}
 	reqs := cache.MaxNumReqs(tokens, in.ContextLen, in.MaxRunningRequests, 1)
 	return Runtime{MaxTotalNumTokens: tokens, ReqPoolSize: reqs, MaxRunningRequests: reqs, ContextLen: in.ContextLen}, nil
+}
+
+// mambaConfig is the recurrent-state settings the scheduler reads for a hybrid model whose states
+// live in the radix cache (get_exec().mamba, HybridReqToTokenPool.__init__, memory_pool.py:1380-1425,
+// and mamba_path_state_cap_of, arg_groups/overrides.py:274-278@c4af57ff); nil for any other model.
+func mambaConfig(a SchedArgs, rt Runtime) (*sched.MambaConfig, error) {
+	if a.MambaStrategy == "" {
+		return nil, nil
+	}
+	extra := a.MambaStrategy == string(cache.MambaExtraBuffer) || a.MambaStrategy == string(cache.MambaExtraBufferLazy)
+	lazy := a.MambaStrategy == string(cache.MambaExtraBufferLazy)
+	overlap := !a.DisableOverlapSchedule
+	level := a.HybridCacheCheckpointsLevel
+	if level == 0 {
+		level = 2
+	}
+	cap := 1
+	if level >= 3 {
+		cap = -1
+	}
+	if a.MambaMaxStatesPerPath != nil && *a.MambaMaxStatesPerPath != cap {
+		return nil, fmt.Errorf("sglang: mamba_max_states_per_path=%d is not modelled: the tree's cap is checked at 1 (checkpoint level 2) and none (level 3) (inference-sim/inference-sim#2366)", *a.MambaMaxStatesPerPath)
+	}
+	chunk := a.MambaStateChunkSize
+	if chunk == 0 {
+		chunk = 64
+	}
+	if hi, lo := max(chunk, a.PageSize), min(chunk, a.PageSize); hi%lo != 0 {
+		return nil, fmt.Errorf("sglang: for SSM models, either chunk_size or page_size must be divisible by the other, got chunk_size=%d, page_size=%d", chunk, a.PageSize)
+	}
+	return &sched.MambaConfig{ExtraBuffer: extra, Lazy: lazy, PathStateCap: cap, CheckpointsLevel: level,
+		MambaSize: rt.MambaSize, PingPongSize: cache.MambaTrackingSlots(true, overlap, false),
+		InitialTrackingSlots: cache.MambaTrackingSlots(extra, overlap, lazy), TrackInterval: a.MambaTrackInterval,
+		StateChunkSize: chunk, TreeSlotInterval: max(chunk, a.PageSize)}, nil
+}
+
+// hybridPoolPlan sizes the pools of a hybrid model that keeps its states in the radix cache: the
+// state pool takes its share of the budget (MambaCacheSize), the full-attention KV pool the rest, and
+// the request pool is capped by the state slots a running request is charged (MaxNumReqsMamba,
+// resolve_max_num_reqs; kv_cache_configurator.py:3119-3175, 3229-3411@297e54fd). One state a request
+// holds is the cost model's per-sequence fixed bytes over the states the plan keeps it in (its working
+// state and the tracking slots).
+func hybridPoolPlan(k kernel.Kernel, in PoolInput, m MambaPoolInput, budget int64, cell int64) (Runtime, error) {
+	const gib = float64(1 << 30)
+	held := int64(1)
+	if m.Strategy == cache.MambaExtraBuffer || m.Strategy == cache.MambaExtraBufferLazy {
+		held += int64(cache.MambaTrackingSlots(true, !m.DisableOverlap, m.Strategy == cache.MambaExtraBufferLazy))
+	}
+	perReq := k.SequenceFixedBytes() / held
+	size, restGiB, err := cache.MambaCacheSize(cache.MambaBudget{TotalRestGiB: float64(budget) / gib, PerReqBytes: perReq,
+		MaxRunningRequests: in.MaxRunningRequests, MaxMambaCacheSize: m.MaxMambaCacheSize, AttnDPSize: 1,
+		FullMemoryRatio: m.FullMemoryRatio, Strategy: m.Strategy, DisableOverlap: m.DisableOverlap})
+	if err != nil {
+		return Runtime{}, err
+	}
+	tokens, err := cache.TokenCapacity(int64(restGiB*gib), cell, in.PageSize, in.MaxTotalTokens, in.ContextLen)
+	if err != nil {
+		return Runtime{}, err
+	}
+	ratio, err := cache.MambaRatio(false, m.Strategy, m.DisableOverlap)
+	if err != nil {
+		return Runtime{}, err
+	}
+	reqs, err := cache.MaxNumReqsMamba(tokens, in.ContextLen, in.MaxRunningRequests, 1, size, ratio)
+	if err != nil {
+		return Runtime{}, err
+	}
+	return Runtime{MaxTotalNumTokens: tokens, ReqPoolSize: reqs, MaxRunningRequests: reqs, ContextLen: in.ContextLen, MambaSize: size}, nil
 }

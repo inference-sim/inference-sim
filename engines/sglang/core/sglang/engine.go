@@ -91,13 +91,23 @@ func Build(cfg sched.Config, sampled int64) (*sched.Scheduler, error) {
 	} else {
 		alloc = cache.NewPagedAllocator(cfg.MaxTotalNumTokens, cfg.PageSize, nil, cfg.NeedSort)
 	}
-	pool := cache.NewRequestPool(cfg.ReqPoolSize, cfg.MaxContextLen)
+	var pool cache.ReqToTokenPool = cache.NewRequestPool(cfg.ReqPoolSize, cfg.MaxContextLen)
 	policy := cfg.RadixEvictionPolicy
 	if policy == "" {
 		policy = "lru"
 	}
-	tree, err := cache.NewRadixCache(cache.RadixConfig{PageSize: cfg.PageSize, Disable: cfg.Disable, EvictionPolicy: policy,
-		KVCacheEvents: cfg.EnableKVEvents, DynamoFormat: cfg.KVEventsDynamo}, alloc, pool)
+	rc := cache.RadixConfig{PageSize: cfg.PageSize, Disable: cfg.Disable, EvictionPolicy: policy,
+		KVCacheEvents: cfg.EnableKVEvents, DynamoFormat: cfg.KVEventsDynamo}
+	treePool := pool
+	if m := cfg.Mamba; m != nil {
+		// A hybrid model's request pool holds the state slots, and the radix cache keeps states in the
+		// same slots (HybridReqToTokenPool, memory_pool.py:1355-1880; the state component of the tree).
+		hp := cache.NewHybridRequestPool(cfg.ReqPoolSize, m.MambaSize, cfg.MaxContextLen, m.ExtraBuffer, m.Lazy, cfg.EnableOverlap)
+		pool, treePool = hp, hp.RequestPool
+		rc.Mamba = &cache.MambaTreeConfig{CheckpointInterval: m.TreeSlotInterval, PathStateCap: m.PathStateCap,
+			CheckpointsLevel: m.CheckpointsLevel, Pool: hp}
+	}
+	tree, err := cache.NewRadixCache(rc, alloc, treePool)
 	if err != nil {
 		return nil, err
 	}

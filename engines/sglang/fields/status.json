@@ -3350,12 +3350,14 @@
    }
   },
   "config:mamba_full_memory_ratio": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/inference-sim#2366"
+    "traces": [
+     "oracle/scenarios-mamba-pools/budget.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:mamba_max_states_per_path": {
@@ -3368,12 +3370,16 @@
    }
   },
   "config:mamba_radix_cache_strategy": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/inference-sim#2366"
+    "traces": [
+     "oracle/scenarios-sched-mamba/hybrid-basic.json",
+     "oracle/scenarios-sched-mamba/hybrid-lazy.json",
+     "oracle/scenarios-sched-mamba/hybrid-no-buffer.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:mamba_ssm_dtype": {
@@ -3389,12 +3395,15 @@
    }
   },
   "config:mamba_track_interval": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/inference-sim#2366"
+    "traces": [
+     "oracle/scenarios-sched-mamba/hybrid-decode-boundary.json",
+     "oracle/scenarios-sched-mamba/hybrid-lazy.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:max_ep_size": {
@@ -3443,12 +3452,15 @@
    }
   },
   "config:max_mamba_cache_size": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/inference-sim#2366"
+    "traces": [
+     "oracle/scenarios-sched-mamba/hybrid-basic.json",
+     "oracle/scenarios-mamba-pools/budget.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:max_prefill_tokens": {
@@ -15001,12 +15013,15 @@
    }
   },
   "config:hybrid_cache_checkpoints_level": {
-   "status": "not_modelled",
+   "status": "modelled",
    "evidence": {
-    "issue": "inference-sim/inference-sim#2366"
+    "traces": [
+     "oracle/scenarios-sched-mamba/hybrid-level-three.json",
+     "oracle/scenarios-mamba-tree/running-checkpoint-level-three.json"
+    ]
    },
    "estimation": {
-    "rule": "none"
+    "rule": "leave_unset"
    }
   },
   "config:indexer_kv_cache_dtype": {

@@ -174,7 +174,7 @@
    "class": "HybridLinearKVPool",
    "kind": "kv_pool",
    "site": "mem_cache/memory_pool.py:4258",
-   "status": "refused",
+   "status": "modelled",
    "selected_by": "a hybrid linear-attention model"
   },
   {
@@ -412,14 +412,14 @@
    "class": "HybridReqToTokenPool",
    "kind": "req_to_token",
    "site": "mem_cache/memory_pool.py:1422",
-   "status": "refused",
+   "status": "modelled",
    "selected_by": "a hybrid linear-attention model"
   },
   {
    "class": "MambaPool",
    "kind": "req_to_token",
    "site": "mem_cache/memory_pool.py:524",
-   "status": "refused",
+   "status": "modelled",
    "selected_by": "a hybrid linear-attention model"
   },
   {

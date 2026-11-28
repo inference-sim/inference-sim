@@ -17840,12 +17840,25 @@
     {
       "name": "hybrid_cache_checkpoints_level",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2366"
+        "traces": [
+          "oracle/scenarios-sched-mamba/hybrid-level-three.json",
+          "oracle/scenarios-mamba-tree/running-checkpoint-level-three.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "2",
+          "3"
+        ],
+        "covered": [
+          "3"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -18412,12 +18425,20 @@
     {
       "name": "mamba_full_memory_ratio",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2366"
+        "traces": [
+          "oracle/scenarios-mamba-pools/budget.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -18434,12 +18455,30 @@
     {
       "name": "mamba_radix_cache_strategy",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2366"
+        "traces": [
+          "oracle/scenarios-sched-mamba/hybrid-basic.json",
+          "oracle/scenarios-sched-mamba/hybrid-lazy.json",
+          "oracle/scenarios-sched-mamba/hybrid-no-buffer.json"
+        ]
+      },
+      "value_classes": {
+        "type": "enumerated",
+        "values": [
+          "auto",
+          "no_buffer",
+          "extra_buffer",
+          "extra_buffer_lazy"
+        ],
+        "covered": [
+          "extra_buffer",
+          "extra_buffer_lazy",
+          "no_buffer"
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -18472,12 +18511,21 @@
     {
       "name": "mamba_track_interval",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2366"
+        "traces": [
+          "oracle/scenarios-sched-mamba/hybrid-decode-boundary.json",
+          "oracle/scenarios-sched-mamba/hybrid-lazy.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {
@@ -18538,12 +18586,21 @@
     {
       "name": "max_mamba_cache_size",
       "source": "config",
-      "status": "not_modelled",
+      "status": "modelled",
       "evidence": {
-        "issue": "inference-sim/inference-sim#2366"
+        "traces": [
+          "oracle/scenarios-sched-mamba/hybrid-basic.json",
+          "oracle/scenarios-mamba-pools/budget.json"
+        ]
+      },
+      "value_classes": {
+        "type": "numeric",
+        "covered_classes": [
+          0
+        ]
       },
       "estimation": {
-        "rule": "none"
+        "rule": "leave_unset"
       }
     },
     {

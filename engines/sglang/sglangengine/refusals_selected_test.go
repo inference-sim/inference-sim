@@ -302,8 +302,17 @@ func deferredBy(it surfaceItem) (deferral, bool) {
 	switch it.Category {
 	case "drafter_arch":
 		if arch, ok := runDrafters[it.Name]; ok {
+			args := map[string]any{}
+			for k, v := range specAlgo("NEXTN", nil).args {
+				args[k] = v
+			}
+			if arch == "Qwen3_5MoeForConditionalGeneration" {
+				// A hybrid model's state cache under speculation is not modelled (#2355): the pool that
+				// runs the draft states disable_radix_cache.
+				args["disable_radix_cache"] = true
+			}
 			return deferral{"accepted", arch + " is an accepted architecture whose MTP draft ships in its own checkpoint (config/speculative.go eagleDraftInTarget): Resolve models its speculative decoding",
-				&selector{arch: arch, args: specAlgo("NEXTN", nil).args}}, true
+				&selector{arch: arch, args: args}}, true
 		}
 		return deferral{"unselected", "selected by a list of architectures (MIMO_V2_MODEL_ARCHS), not one the allowlist names", nil}, true
 	case "scheduler_loop", "overlap_switch", "overlap_depth":

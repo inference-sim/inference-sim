@@ -3,7 +3,6 @@
 package lower
 
 import (
-	"errors"
 	"reflect"
 	"sort"
 	"strings"
@@ -40,14 +39,37 @@ func TestHybridPoolLowersWithTheRadixCacheOff(t *testing.T) {
 	}
 }
 
-// With the radix cache on, SGLang keeps the cached states of a prefix in the mamba pool by the
-// strategy it resolves; the plan cannot state that yet, so the pool is refused by name, never
-// priced as a latest-state-only cache.
-func TestHybridPoolWithTheRadixCacheIsRefusedByName(t *testing.T) {
-	_, err := lowerPool(t, qwen35, 8, "mem_fraction_static: 0.8\n")
-	var nl *NotLowered
-	if !errors.As(err, &nl) || !strings.Contains(nl.Name, "mamba radix cache") || !strings.Contains(nl.Name, "extra_buffer") {
-		t.Fatalf("got %v, want a refusal naming the mamba radix cache strategy", err)
+// With the radix cache on, SGLang keeps the cached states of prefixes in the mamba pool by the
+// strategy it resolves. The extra buffer gives each request tracking slots beside its working slot
+// (get_mamba_tracking_slots: 2 with the overlap schedule, 1 without it or on the lazy buffer), which
+// the plan states as the tracked word. (no_buffer needs the overlap schedule off, which Resolve does
+// not yet accept: inference-sim/inference-sim#2451.)
+func TestHybridPoolWithTheRadixCacheStatesItsTrackingSlots(t *testing.T) {
+	base := "mem_fraction_static: 0.8\n"
+	for _, tc := range []struct {
+		name, extra string
+		word        plan.RecurrentStates
+		slots       int
+	}{
+		{"the default strategy with overlap", "", plan.RecurrentTracked, 2},
+		{"extra_buffer stated", "mamba_radix_cache_strategy: extra_buffer\n", plan.RecurrentTracked, 2},
+		{"extra_buffer_lazy", "mamba_radix_cache_strategy: extra_buffer_lazy\n", plan.RecurrentTracked, 1},
+	} {
+		low, err := lowerPool(t, qwen35, 8, base+tc.extra)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if c := low.Plan.Cache; c.Recurrent != tc.word || c.TrackingSlots != tc.slots {
+			t.Errorf("%s: recurrent %q with %d tracking slots, want %q with %d", tc.name, c.Recurrent, c.TrackingSlots, tc.word, tc.slots)
+		}
+	}
+}
+
+// A state the engine cannot hold is refused by name, never priced as another.
+func TestHybridPoolWithInt8CheckpointsIsRefused(t *testing.T) {
+	_, err := lowerPool(t, qwen35, 8, "mem_fraction_static: 0.8\nenable_int8_mamba_checkpoint: true\n")
+	if err == nil || !strings.Contains(err.Error(), "enable_int8_mamba_checkpoint") {
+		t.Fatalf("got %v, want a refusal naming enable_int8_mamba_checkpoint", err)
 	}
 }
 
@@ -111,15 +133,20 @@ func TestMambaSsmDtypeIsListedModelledBecauseTheLoweringReadsIt(t *testing.T) {
 	}
 }
 
-func TestMambaRadixCacheStrategyIsListedUnderTheIssueItsRefusalCites(t *testing.T) {
-	_, err := lowerPool(t, qwen35, 8, "mem_fraction_static: 0.8\n")
-	var nl *NotLowered
-	if !errors.As(err, &nl) {
-		t.Fatalf("got %v, want the radix-cache refusal", err)
+func TestMambaRadixCacheStrategyIsListedModelledBecauseTheLoweringReadsIt(t *testing.T) {
+	eb, err := lowerPool(t, qwen35, 8, "mem_fraction_static: 0.8\nmamba_radix_cache_strategy: extra_buffer\n")
+	if err != nil {
+		t.Fatal(err)
 	}
-	f := listed(t, "mamba_radix_cache_strategy")
-	if f.Status != fields.StatusNotModelled || f.Evidence.Issue != nl.Issue {
-		t.Errorf("mamba_radix_cache_strategy is listed %s under %q; the refusal that stops a run stating it cites %q", f.Status, f.Evidence.Issue, nl.Issue)
+	lazy, err := lowerPool(t, qwen35, 8, "mem_fraction_static: 0.8\nmamba_radix_cache_strategy: extra_buffer_lazy\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if eb.Plan.Cache.TrackingSlots == lazy.Plan.Cache.TrackingSlots {
+		t.Fatal("the lowering no longer turns the strategy into tracking slots; this law needs a field it reads")
+	}
+	if f := listed(t, "mamba_radix_cache_strategy"); f.Status != fields.StatusModelled {
+		t.Errorf("mamba_radix_cache_strategy sets the plan's recurrent word and is listed %s, want modelled", f.Status)
 	}
 }
 

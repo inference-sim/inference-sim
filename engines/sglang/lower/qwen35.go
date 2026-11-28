@@ -10,6 +10,7 @@ import (
 	"github.com/inference-sim/inference-sim/substrate/contracts/spec/model"
 
 	"github.com/inference-sim/inference-sim/engines/sglang/config"
+	"github.com/inference-sim/inference-sim/engines/sglang/core/cache"
 )
 
 // issueHybrid is the issue that models the hybrid (Gated DeltaNet plus attention) model's cache.
@@ -68,11 +69,25 @@ func lowerRecurrent(a *config.ServerArgs, g *model.Graph, c *plan.CacheFormat, n
 		}
 	}
 	c.StateElementBytes = temporal.Bytes()
-	if !a.DisableRadixCache {
-		return &NotLowered{Name: "the mamba radix cache (strategy " + a.MambaRadixCacheStrategy + ")", Issue: issueHybrid}
-	}
-	c.Recurrent = plan.RecurrentLatest
 	note("recurrent_state_width", string(temporal),
 		"the temporal state's dtype (mamba_ssm_dtype); the bfloat16 convolution state is priced at the same width")
+	if a.DisableRadixCache {
+		c.Recurrent = plan.RecurrentLatest
+		return nil
+	}
+	if a.EnableInt8MambaCheckpoint {
+		return &NotLowered{Name: "int8 mamba checkpoints", Issue: "inference-sim/inference-sim#2460"}
+	}
+	switch a.MambaRadixCacheStrategy {
+	case "extra_buffer", "extra_buffer_lazy":
+		c.Recurrent = plan.RecurrentTracked
+		c.TrackingSlots = cache.MambaTrackingSlots(true, !a.DisableOverlapSchedule, a.MambaRadixCacheStrategy == "extra_buffer_lazy")
+	case "no_buffer":
+		// The cached states of prefixes are slots of the same pool, which the engine sizes; a request
+		// itself holds its working state alone.
+		c.Recurrent = plan.RecurrentLatest
+	default:
+		return &NotLowered{Name: "the mamba radix cache (strategy " + a.MambaRadixCacheStrategy + ")", Issue: issueHybrid}
+	}
 	return nil
 }
