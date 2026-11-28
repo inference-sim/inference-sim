@@ -1,5 +1,5 @@
 {
-  "version": "gpu-mock/11+f249785dd1c5",
+  "version": "gpu-mock/12+321bd53ce346",
   "description": "Every replacement the oracle harness makes in SGLang's code, by kind (gpu, clock, transport, environment, platform, external-service, transcription), with the sites oracle/check_mocks.py finds, and in `covers` the platform reads, clock reads and thread starts each accounts for (oracle/gen_platform_reads.py lists them, FID-1). No entry is a transcription: the event loops run as released.",
   "mocks": [
     {
@@ -662,6 +662,23 @@
       "sites": [
         "run_mamba_component.py:alloc.state",
         "run_mamba_tree.py:alloc.state"
+      ]
+    },
+    {
+      "symbol": "arg_groups.mamba_hook._platform_supports_mamba_cache_extra_buffer in a hybrid-model scheduler run",
+      "kind": "platform",
+      "how": "SGLang accepts the extra_buffer mamba strategy only on a platform that can snapshot a recurrent state (CUDA, MUSA, NPU, ROCm, XPU: arg_groups/mamba_hook.py:107-117@c4af57ff); the oracle's base platform is none of them, so oracle/run_sched_mamba.py answers true, as the CUDA image of SGLang does. The snapshot is a kernel the mocked model runner does not run; nothing the scheduler decides reads the answer after validation. The runner also names the scenario's model directory (oracle/models/, configuration only) in ORACLE_MODEL, the variable oracle/run_scheduler.py reads for the model path.",
+      "sites": [
+        "run_sched_mamba.py:mamba_hook._platform_supports_mamba_cache_extra_buffer",
+        "run_sched_mamba.py:os.environ[]"
+      ]
+    },
+    {
+      "symbol": "torch.Tensor.pin_memory in a hybrid-model scheduler run",
+      "kind": "gpu",
+      "how": "ScheduleBatch.prepare_for_decode pins the tracking mask of a hybrid model's decode batch for an asynchronous host-to-device copy (managers/schedule_batch.py:3373@c4af57ff). Page-locked memory needs an accelerator, which the oracle's CPU runner has not; a pinned tensor holds the values of the tensor it pins, so pin_memory returns the tensor, and the copy after it is the mocked device's.",
+      "sites": [
+        "run_sched_mamba.py:torch.Tensor.pin_memory"
       ]
     }
   ]

@@ -169,8 +169,8 @@ def drive(sglang_root: str, path: str) -> dict:
             if op == "lock":
                 q = reqs[c["req"]]
                 n = bound[c["node"]]
-                q.last_node = getattr(n, "last_device_node", n)
-                q.lock = cache.lock(q.last_node)
+                last = getattr(n, "last_device_node", n)
+                q.update({"last_node": last, "lock": cache.lock(last)})
                 continue
             t, m = targets[c["on"]], c["m"]
             if c["on"] == "pool" and m == "alloc":

@@ -329,6 +329,11 @@ jobs:
           for s in oracle/scenarios-mamba-tree/*.json; do
             python -I oracle/run_mamba_tree.py direct sglang-source "$s" "shard-out/oracle-traces-mamba-pools/tree/$(basename "$s" .json).trace.json"
           done
+          # The scheduler over a hybrid model's configuration (oracle/run_sched_mamba.py).
+          mkdir -p shard-out/oracle-traces-mamba-pools/sched
+          for s in oracle/scenarios-sched-mamba/*.json; do
+            python -I oracle/run_sched_mamba.py sglang-source "$s" "shard-out/oracle-traces-mamba-pools/sched/$(basename "$s" .json).trace.json"
+          done
       # FID-5 (design §7.6) for HiCache: the controller, layer counter, L2 transfer, host pool and
       # storage interfaces traced as SGLang's own classes answer them, the controller's threads and
       # device events run by the step-driven runner (oracle/step_runner.py, FID-1). Recorded: each
@@ -530,6 +535,9 @@ jobs:
       - name: every mamba tree golden is SGLang's own output
         if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
         run: python -I oracle/compare_goldens.py traces/oracle-traces-mamba-pools/tree "${{ steps.pin.outputs.commit }}" oracle/scenarios-mamba-tree core/cache/testdata/golden-mamba-tree
+      - name: every hybrid-model scheduler golden is SGLang's own output
+        if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
+        run: python -I oracle/compare_goldens.py traces/oracle-traces-mamba-pools/sched "${{ steps.pin.outputs.commit }}" oracle/scenarios-sched-mamba core/sched/testdata/golden-sched-mamba
       - name: every metrics golden is SGLang's own output
         if: ${{ !cancelled() && steps.dl.outcome == 'success' }}
         run: python -I oracle/compare_goldens.py traces/oracle-traces-metrics "${{ steps.pin.outputs.commit }}" oracle/scenarios-metrics core/metrics/testdata/golden-metrics
