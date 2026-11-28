@@ -69,6 +69,9 @@ func TestAnArtifactWithADifferentEpsilonOrABadFieldIsRefused(t *testing.T) {
 		{"a repeated feature", func(m map[string]any) {
 			m["features"] = append(m["features"].([]any), "dX")
 		}, DefaultEpsilon, "listed twice"},
+		{"features that lack dX", func(m map[string]any) {
+			m["features"] = m["features"].([]any)[1:]
+		}, DefaultEpsilon, `feature "dX", a simulator difference the stage is monotone in, is missing`},
 		{"wrong kind", func(m map[string]any) { m["kind"] = "Other" }, DefaultEpsilon, "kind"},
 		{"an unknown field", func(m map[string]any) { m["extra"] = 1 }, DefaultEpsilon, "unknown field"},
 		{"feature count differs from the models'", func(m map[string]any) {

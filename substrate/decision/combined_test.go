@@ -91,8 +91,8 @@ func TestTheShippedArtifactLoadsWithItsFallback(t *testing.T) {
 	if a.SchemaVersion != ArtifactVersionFallback || len(s.Models) != 4 || len(s.Fallback) != 4 || !s.HasFallback() {
 		t.Fatalf("stage %+v artifact %+v", s, a)
 	}
-	if len(a.Features) != len(PairFeatureNames) || a.RoleCounts.Fit < 1 || a.Epsilon != DefaultEpsilon || len(s.masked) != 3 {
-		t.Errorf("artifact %+v masked %v", a, s.masked)
+	if len(a.Features) != len(PairFeatureNames) || a.RoleCounts.Fit < 1 || a.Epsilon != DefaultEpsilon {
+		t.Errorf("artifact %+v", a)
 	}
 	// The directory form reads the same artifact.
 	d, _, err := LoadStage("artifact", DefaultEpsilon)
@@ -109,9 +109,14 @@ func TestTheShippedArtifactLoadsWithItsFallback(t *testing.T) {
 func TestTheCombinedStageMatchesTheTrainingPipelineOnRealPoints(t *testing.T) {
 	s := loadShippedStage(t)
 	fx := loadCombinedFixture(t)
-	refused, compared := 0, 0
+	refused, partial, compared := 0, 0, 0
 	for k, c := range fx.Cases {
 		pts := fx.points(k)
+		for _, p := range pts {
+			if p.Answered(FrontXI) && !p.Answered(FrontXIT) {
+				partial++
+			}
+		}
 		for _, f := range Fronts {
 			want := c.Fronts[f]
 			m, pi, err := s.Front(f, pts)
@@ -146,7 +151,10 @@ func TestTheCombinedStageMatchesTheTrainingPipelineOnRealPoints(t *testing.T) {
 	if refused == 0 {
 		t.Error("the fixture has no point the simulator refused: the fallback is not exercised")
 	}
-	t.Logf("%d ordered pairs compared, %d point-front answers from the fallback", compared, refused)
+	if partial == 0 {
+		t.Error("the fixture has no point the simulator answered on X and I but not T")
+	}
+	t.Logf("%d ordered pairs compared, %d point-front answers from the fallback, %d partly answered points", compared, refused, partial)
 }
 
 // refuse returns a copy of the points with the simulator's predictions removed from the points picked.
@@ -220,23 +228,86 @@ func TestAPointTheSimulatorRefusedIsPlacedByTheFallbackAndLabelledEstimated(t *t
 	}
 }
 
-// DEC-3 at the pair: what the fallback says about a pair does not depend on any prediction of the
-// simulator, only on the configurations and the case.
-func TestTheFallbackIgnoresTheSimulatorsPredictions(t *testing.T) {
+// DEC-3 at the fallback: what the fallback model says about two points the simulator answered in
+// full does not change when the simulator's predictions of either point move by large amounts.
+func TestTheFallbackModelIgnoresTheSimulatorsPredictionsOfPointsItAnswered(t *testing.T) {
 	s := loadShippedStage(t)
 	r := rand.New(rand.NewSource(11))
 	for trial := 0; trial < 50; trial++ {
 		pts := randomCombined(t, r, 2, 0)
-		pts[1].LogX, pts[1].LogI, pts[1].LogT = math.NaN(), math.NaN(), math.NaN() // the simulator refused the second
-		moved := append([]Point(nil), pts...)
-		moved[0].LogX, moved[0].LogI, moved[0].LogT = 5*r.NormFloat64(), 5*r.NormFloat64(), 5*r.NormFloat64()
 		for _, f := range Fronts {
-			a, b, basis, err := s.Combined(f, pts[0], pts[1])
-			c, d, _, _ := s.Combined(f, moved[0], moved[1])
-			if err != nil || basis != BasisFallback || a != c || b != d {
-				t.Fatalf("front %s: (%v,%v) became (%v,%v), basis %s, err %v", f, a, b, c, d, basis, err)
+			want, err := s.RawFallback(f, pts[0], pts[1])
+			if err != nil || math.IsNaN(want) {
+				t.Fatalf("front %s: %v, %v", f, want, err)
+			}
+			shifted := func(p Point, dx, di, dt float64) Point {
+				p.LogX += dx
+				p.LogI += di
+				p.LogT += dt
+				return p
+			}
+			for name, pair := range map[string][2]Point{
+				"first moved":  {shifted(pts[0], 4, -4, 4), pts[1]},
+				"second moved": {pts[0], shifted(pts[1], -4, 4, -4)},
+				"both moved":   {shifted(pts[0], 4, -4, 4), shifted(pts[1], 2, 3, -5)},
+			} {
+				got, err := s.RawFallback(f, pair[0], pair[1])
+				if err != nil || math.IsNaN(got) || got != want {
+					t.Fatalf("front %s, %s: %v became %v (err %v)", f, name, want, got, err)
+				}
 			}
 		}
+	}
+}
+
+// DEC-3 and DEC-4 where the fallback answers a pair: its two estimates are normalised together
+// (one half each when both say 0.88), and asking in the other order swaps the two numbers.
+func TestTheFallbacksTwoEstimatesOfAPairAreNormalisedTogetherAndSwapWithTheOrder(t *testing.T) {
+	// A fallback that thinks each point dominates the other (0.88 each way, missing or not).
+	both := oneSplit(t, -1e9, 0, 2, false)
+	s := &Stage{Epsilon: DefaultEpsilon, Features: []string{"dX"}, Models: map[Front]*Model{FrontXI: both}, Fallback: map[Front]*Model{FrontXI: both}}
+	p, q := Point{ID: "p", LogX: math.NaN(), LogI: 1}, Point{ID: "q", LogX: 0, LogI: 0}
+	a, b, basis, err := s.Combined(FrontXI, p, q)
+	if err != nil || basis != BasisFallback || math.Abs(a-0.5) > 1e-12 || math.Abs(b-0.5) > 1e-12 {
+		t.Errorf("got %v, %v from %s (err %v), want one half each from the fallback", a, b, basis, err)
+	}
+	c, d, _, _ := s.Combined(FrontXI, q, p)
+	if math.Abs(c-b) > 1e-12 || math.Abs(d-a) > 1e-12 {
+		t.Errorf("swapped: %v, %v", c, d)
+	}
+
+	// A fallback on dI whose two estimates differ: 0.88 for a gain of one, 0.27 for a loss, a sum above one.
+	skew := oneSplit(t, 0, -1, 2, false)
+	s = &Stage{Epsilon: DefaultEpsilon, Features: []string{"dI"}, Models: map[Front]*Model{FrontXI: skew}, Fallback: map[Front]*Model{FrontXI: skew}}
+	hi, lo := sigmoid(2), sigmoid(-1)
+	a, b, _, _ = s.Combined(FrontXI, p, q)
+	if math.Abs(a-hi/(hi+lo)) > 1e-12 || math.Abs(b-lo/(hi+lo)) > 1e-12 {
+		t.Errorf("got %v, %v, want %v, %v", a, b, hi/(hi+lo), lo/(hi+lo))
+	}
+	c, d, _, _ = s.Combined(FrontXI, q, p)
+	if math.Abs(c-b) > 1e-12 || math.Abs(d-a) > 1e-12 {
+		t.Errorf("swapped: %v, %v want %v, %v", c, d, b, a)
+	}
+}
+
+// The fallback does not read the features the artifact masks: a fallback that splits on dX gives
+// the value of a missing dX, whatever the two points' predictions are.
+func TestTheFallbackReadsAMaskedFeatureAsMissing(t *testing.T) {
+	// One split on dX at 0: left leaf -3, right leaf +3, a missing value goes right.
+	m := oneSplit(t, 0, -3, 3, false)
+	s := &Stage{Epsilon: DefaultEpsilon, Features: []string{"dX"}, Models: map[Front]*Model{FrontXI: m}, Fallback: map[Front]*Model{FrontXI: m}}
+	s.setMasked([]string{"dX"})
+	p, q := Point{LogX: 0, LogI: 0}, Point{LogX: 1, LogI: 0} // dX = -1: the split alone would give sigmoid(-3)
+	if got, err := s.RawFallback(FrontXI, p, q); err != nil || math.Abs(got-sigmoid(3)) > 1e-12 {
+		t.Errorf("masked dX = -1: %v (err %v), want %v, the value of a missing dX", got, err, sigmoid(3))
+	}
+	if got, _ := s.RawFallback(FrontXI, q, p); math.Abs(got-sigmoid(3)) > 1e-12 {
+		t.Errorf("masked dX = +1: %v, want %v", got, sigmoid(3))
+	}
+	// Unmasked, the same model reads dX: the stub is sensitive to the difference the mask hides.
+	s.setMasked(nil)
+	if got, _ := s.RawFallback(FrontXI, p, q); math.Abs(got-sigmoid(-3)) > 1e-12 {
+		t.Errorf("unmasked dX = -1: %v, want %v", got, sigmoid(-3))
 	}
 }
 
@@ -303,31 +374,29 @@ func TestCombinedPairProbabilitiesSumToAtMostOneAndDoNotDependOnOrder(t *testing
 }
 
 // DEC-4 for the combined rule: where the simulator answers both points, a larger predicted advantage
-// of the first never lowers the probability that it dominates (X and I up, T down).
-func TestCombinedALargerPredictedAdvantageNeverLowersTheProbabilityItDominates(t *testing.T) {
+// of the first in any one objective, the others held, never lowers the probability that it dominates
+// and never raises the probability that the other dominates it, raw or normalised.
+func TestCombinedALargerPredictedAdvantageInOneObjectiveNeverLowersTheProbabilityItDominates(t *testing.T) {
 	s := loadShippedStage(t)
 	r := rand.New(rand.NewSource(23))
 	for trial := 0; trial < 200; trial++ {
 		pts := randomCombined(t, r, 2, 0)
 		for _, f := range Fronts {
-			x, i, tt := f.uses()
-			base, _, _, _ := s.Combined(f, pts[0], pts[1])
-			better := pts[0]
-			step := 0.05 + r.Float64()
-			if x {
-				better.LogX += step
-			}
-			if i {
-				better.LogI += step
-			}
-			if tt {
-				better.LogT -= step
-			}
-			after, _, basis, _ := s.Combined(f, better, pts[1])
-			rawBase, _ := s.Raw(f, pts[0], pts[1])
-			rawAfter, _ := s.Raw(f, better, pts[1])
-			if basis != BasisSimulator || rawAfter < rawBase-1e-12 {
-				t.Fatalf("front %s: advantage grew by %v and the raw probability fell from %v to %v (basis %s; normalised %v to %v)", f, step, rawBase, rawAfter, basis, base, after)
+			for _, o := range []byte(f) {
+				step := 0.05 + r.Float64()
+				better := improveOne(pts[0], o, step)
+				pq0, qp0, _, _ := s.Combined(f, pts[0], pts[1])
+				pq1, qp1, basis, _ := s.Combined(f, better, pts[1])
+				raw0, _ := s.Raw(f, pts[0], pts[1])
+				raw1, _ := s.Raw(f, better, pts[1])
+				rev0, _ := s.Raw(f, pts[1], pts[0])
+				rev1, _ := s.Raw(f, pts[1], better)
+				if basis != BasisSimulator || raw1 < raw0-1e-12 || rev1 > rev0+1e-12 {
+					t.Fatalf("front %s objective %c up by %v: raw %v to %v, the other's raw %v to %v (basis %s)", f, o, step, raw0, raw1, rev0, rev1, basis)
+				}
+				if pq1 < pq0-1e-12 || qp1 > qp0+1e-12 {
+					t.Fatalf("front %s objective %c up by %v: normalised %v to %v, the other's %v to %v", f, o, step, pq0, pq1, qp0, qp1)
+				}
 			}
 		}
 	}

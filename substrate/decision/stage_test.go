@@ -1,6 +1,7 @@
 package decision
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"path/filepath"
@@ -118,30 +119,62 @@ func TestThePairProbabilitiesSumToAtMostOneAndDoNotDependOnOrder(t *testing.T) {
 	}
 }
 
-// DEC-4: a larger predicted advantage of the first point never lowers the probability that it
-// dominates (X and I up, T down).
-func TestAFirstPointsLargerPredictedAdvantageNeverLowersItsRawProbability(t *testing.T) {
+// oneSplit is a model of one tree with one split on feature 0: a value below cond takes the left
+// leaf, any other value the right leaf, and a missing value the side defaultLeft names. Its raw
+// estimate is the logistic of the leaf.
+func oneSplit(t testing.TB, cond, left, right float64, defaultLeft bool) *Model {
+	t.Helper()
+	d := 0
+	if defaultLeft {
+		d = 1
+	}
+	m, err := ParseModel([]byte(fmt.Sprintf(`{"learner":{"learner_model_param":{"base_score":"5E-1","num_class":"0","num_feature":"1","num_target":"1"},
+	 "objective":{"name":"binary:logistic"},"gradient_booster":{"name":"gbtree","model":{"gbtree_model_param":{"num_trees":"1"},"tree_info":[0],
+	 "trees":[{"left_children":[1,-1,-1],"right_children":[2,-1,-1],"split_indices":[0,0,0],
+	 "split_conditions":[%v,%v,%v],"default_left":[%d,0,0]}]}}}}`, cond, left, right, d)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// improveOne returns p with only the objective o better by step: X or I up, T down.
+func improveOne(p Point, o byte, step float64) Point {
+	switch o {
+	case 'X':
+		p.LogX += step
+	case 'I':
+		p.LogI += step
+	case 'T':
+		p.LogT -= step
+	}
+	return p
+}
+
+// DEC-4: a larger predicted advantage of the first point in any one objective, the others held,
+// never lowers the probability that it dominates and never raises the probability that the other
+// dominates it, raw or normalised.
+func TestAFirstPointsLargerPredictedAdvantageInOneObjectiveNeverLowersItsProbability(t *testing.T) {
 	s := loadArtifactStage(t)
 	r := rand.New(rand.NewSource(3))
 	for trial := 0; trial < 200; trial++ {
 		pts := randomPoints(t, r, 2)
 		for _, f := range Fronts {
-			x, i, tt := f.uses()
-			base, _ := s.Raw(f, pts[0], pts[1])
-			better := pts[0]
-			step := 0.05 + r.Float64()
-			if x {
-				better.LogX += step
-			}
-			if i {
-				better.LogI += step
-			}
-			if tt {
-				better.LogT -= step
-			}
-			after, _ := s.Raw(f, better, pts[1])
-			if after < base-1e-12 {
-				t.Fatalf("front %s: advantage grew by %v and the probability fell from %v to %v", f, step, base, after)
+			for _, o := range []byte(f) {
+				step := 0.05 + r.Float64()
+				better := improveOne(pts[0], o, step)
+				raw0, _ := s.Raw(f, pts[0], pts[1])
+				raw1, _ := s.Raw(f, better, pts[1])
+				rev0, _ := s.Raw(f, pts[1], pts[0])
+				rev1, _ := s.Raw(f, pts[1], better)
+				pq0, qp0, _ := s.Pair(f, pts[0], pts[1])
+				pq1, qp1, _ := s.Pair(f, better, pts[1])
+				if raw1 < raw0-1e-12 || rev1 > rev0+1e-12 {
+					t.Fatalf("front %s objective %c up by %v: raw %v to %v, the other's raw %v to %v", f, o, step, raw0, raw1, rev0, rev1)
+				}
+				if pq1 < pq0-1e-12 || qp1 > qp0+1e-12 {
+					t.Fatalf("front %s objective %c up by %v: normalised %v to %v, the other's %v to %v", f, o, step, pq0, pq1, qp0, qp1)
+				}
 			}
 		}
 	}

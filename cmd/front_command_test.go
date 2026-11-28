@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -252,34 +253,41 @@ func TestFrontIsACommandOfBlis(t *testing.T) {
 	}
 }
 
-// DEC-1: blis front only reads. A run's Result is the same bytes (outside runtime) when the run is
-// repeated after the stage has read it, and the stage leaves the Result file and its directory as
-// they were. The points are real runs at three concurrencies, so the extraction from a real
-// Result is exercised too.
+// DEC-1: blis front only reads. It leaves the directory of the Results as it found it: the same
+// files, each with the same bytes and the same modification time (a rewrite with identical bytes
+// changes the time), and it writes nothing else there. The points are real runs at three
+// concurrencies, so the extraction from a real Result is exercised too.
 func TestTheStageChangesNoSimulatedValue(t *testing.T) {
 	dir := t.TempDir()
 	var files []string
-	stable := func(raw []byte) string {
-		var r result.Result
-		if err := result.Unmarshal(raw, &r); err != nil {
+	for _, c := range []string{"1", "4", "16"} {
+		r, _ := aRealResult(t, c)
+		files = append(files, writeFrontResult(t, dir, r))
+	}
+	// Date the inputs an hour back, so that a later write shows in the time.
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	for _, f := range files {
+		if err := os.Chtimes(f, old, old); err != nil {
 			t.Fatal(err)
 		}
-		r.Runtime = nil
-		b, _ := result.Marshal(&r, result.FormatJSON)
-		return string(b)
 	}
-	before := map[string]string{}
-	for _, c := range []string{"1", "4", "16"} {
-		r, raw := aRealResult(t, c)
-		files = append(files, writeFrontResult(t, dir, r))
-		before[c] = stable(raw)
+	type seen struct {
+		bytes string
+		mtime time.Time
 	}
-	snapshot := func() map[string]string {
-		m := map[string]string{}
-		ents, _ := os.ReadDir(dir)
+	snapshot := func() map[string]seen {
+		m := map[string]seen{}
+		ents, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
 		for _, e := range ents {
 			b, _ := os.ReadFile(filepath.Join(dir, e.Name()))
-			m[e.Name()] = string(b)
+			fi, err := e.Info()
+			if err != nil {
+				t.Fatal(err)
+			}
+			m[e.Name()] = seen{string(b), fi.ModTime()}
 		}
 		return m
 	}
@@ -295,14 +303,14 @@ func TestTheStageChangesNoSimulatedValue(t *testing.T) {
 		t.Fatalf("front changed the directory: %d files became %d", len(was), len(after))
 	}
 	for n, b := range was {
-		if after[n] != b {
-			t.Errorf("front rewrote %s", n)
-		}
-	}
-	for _, c := range []string{"1", "4", "16"} {
-		_, raw := aRealResult(t, c)
-		if got := stable(raw); got != before[c] {
-			t.Errorf("concurrency %s: the run after the stage differs from the run before it", c)
+		a, ok := after[n]
+		switch {
+		case !ok:
+			t.Errorf("front removed %s", n)
+		case a.bytes != b.bytes:
+			t.Errorf("front changed the bytes of %s", n)
+		case !a.mtime.Equal(b.mtime):
+			t.Errorf("front rewrote %s: modified %v, was %v", n, a.mtime, b.mtime)
 		}
 	}
 }
