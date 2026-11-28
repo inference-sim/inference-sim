@@ -26,7 +26,7 @@ sys.path.insert(0, HERE)
 import run_sched  # noqa: E402
 
 EXTRA_SERVER_ARGS = ("max_mamba_cache_size", "mamba_full_memory_ratio", "mamba_radix_cache_strategy",
-                     "hybrid_cache_checkpoints_level")
+                     "hybrid_cache_checkpoints_level", "mamba_track_interval")
 KV_FIELDS = ("mamba_pool_idx", "mamba_ping_pong_track_buffer", "mamba_ping_pong_empty", "mamba_next_track_idx",
              "mamba_last_track_idx", "mamba_last_track_seqlen", "mamba_prev_track_seqlen", "mamba_cow_src_index",
              "mamba_needs_clear")
@@ -93,6 +93,8 @@ def config(s, cfg: dict) -> dict:
                     "mamba_size": int(s.req_to_token_pool.mamba_pool.size),
                     "ping_pong_size": int(s.req_to_token_pool.mamba_ping_pong_track_buffer_size),
                     "initial_tracking_slots": int(s.req_to_token_pool.mamba_initial_tracking_slots),
+                    "track_interval": int(m.mamba_track_interval),
+                    "state_chunk_size": int(getattr(s.model_config.hf_text_config, "mamba_chunk_size", 64)),
                     "tree_slot_interval": int(s.tree_cache.components[s.tree_cache.slot_id("state")].mamba_cache_chunk_size)}
     return cfg
 

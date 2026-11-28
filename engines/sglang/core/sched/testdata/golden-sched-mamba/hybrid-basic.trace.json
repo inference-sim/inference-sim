@@ -1,0 +1,728 @@
+{
+ "classes": {
+  "allocator": "TokenToKVPoolAllocator",
+  "tree_cache": "UnifiedRadixCache",
+  "tree_core": "UnifiedTreeCore"
+ },
+ "config": {
+  "abort_on_priority_when_disabled": false,
+  "allocator": "TokenToKVPoolAllocator",
+  "allow_auto_truncate": false,
+  "chunked_prefill_size": 8192,
+  "clip_max_new_tokens": 4096,
+  "context_len": 4096,
+  "disable_overlap_after_prefill": false,
+  "disaggregation_mode": "null",
+  "enable_overlap": false,
+  "enable_priority_preemption": false,
+  "enable_priority_scheduling": false,
+  "eos_token_ids": [
+   248044,
+   248046
+  ],
+  "in_batch_prefix_check_threshold": 32,
+  "in_batch_prefix_deprioritize_threshold": 32,
+  "is_mixed_chunk": false,
+  "mamba": {
+   "checkpoints_level": 2,
+   "extra_buffer": true,
+   "initial_tracking_slots": 1,
+   "lazy": false,
+   "mamba_size": 16,
+   "path_state_cap": 1,
+   "ping_pong_size": 1,
+   "state_chunk_size": 64,
+   "track_interval": 256,
+   "tree_slot_interval": 64
+  },
+  "mamba_chunk_grid": 1,
+  "max_context_len": 4097,
+  "max_prefill_tokens": 16384,
+  "max_queued_requests": null,
+  "max_req_input_len": 4090,
+  "max_req_len": 4095,
+  "max_running_requests": 4,
+  "max_total_num_tokens": 4096,
+  "need_sort": false,
+  "new_token_ratio": {
+   "decay": 0.0010033333333333333,
+   "init": 0.7,
+   "min": 0.098
+  },
+  "page_size": 1,
+  "policy": "fcfs",
+  "pp_max_micro_batch_size": 4,
+  "pp_size": 1,
+  "prefill_decode_interval": 0,
+  "prefill_max_requests": null,
+  "priority_scheduling_preemption_threshold": 10,
+  "radix_cache_disabled": false,
+  "radix_eviction_policy": "lru",
+  "random_seed": 0,
+  "req_pool_size": 4,
+  "retract_decode_steps": 20,
+  "retraction_policy": "length",
+  "schedule_low_priority_values_first": false,
+  "tree_cache": "UnifiedRadixCache",
+  "vocab_size": 248320
+ },
+ "finished": {
+  "r0": {
+   "reason": {
+    "ignored_stop": null,
+    "length": 4,
+    "type": "length"
+   },
+   "step": 4
+  },
+  "r1": {
+   "reason": {
+    "ignored_stop": null,
+    "length": 3,
+    "type": "length"
+   },
+   "step": 2
+  },
+  "r2": {
+   "reason": {
+    "ignored_stop": null,
+    "length": 2,
+    "type": "length"
+   },
+   "step": 4
+  }
+ },
+ "harness_problems": [],
+ "pool": {
+  "max_req_input_len": 4090,
+  "max_total_num_tokens": 4096
+ },
+ "provenance": {
+  "blis_sglang_commit": "668943e7ac4083e1bf199865579526cb5865edc6+dirty",
+  "lockfile_sha256": "6e08f237723633701d731058a3358d19c93e36841ae681ac8f19e58a1b6c7d77",
+  "mock_version": "gpu-mock/12+321bd53ce346",
+  "model": "Qwen/Qwen3.5-397B-A17B (reduced)",
+  "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+  "oracle_inputs": {
+   "oracle/harness.json": "a616a3a535dc670cba483de6102f925d9d45054931c49e0561abe765b71ab2d8",
+   "oracle/harness.py": "cdba51e7883c1837f9e9eee4231b32104d54d6e3e1213917eba18549df0c5e16",
+   "oracle/mocks.json": "96a2177996bd9e9ed033d08469dbc7626c4c9a90b74847f1e969c049c33b88bd",
+   "oracle/requirements.lock": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+   "oracle/run_sched.py": "c2f5ceda849a80cc170fb25bb9b4629e39d684a4b2875422824c8bb3019f67d8",
+   "oracle/run_sched_mamba.py": "7755db109b89c55ee11a904c8d0e8dd5d7b379320e51c7e6295cd5ae15dfe9d4",
+   "oracle/run_scheduler.py": "7d624d8c7cf66f9daf849d6029f7e5af71bc9ed06fca712f0c1b5b7aa9a96ceb",
+   "oracle/scenarios-sched-mamba/hybrid-basic.json": "d497f3cd7aad9085b6793653b99f78fd8382037a82232dc3f91bc601a26b7a34",
+   "oracle/stubs.py": "e30a3a770e3a4f91008449145089328ba8fbb83b35bda7082e1c77e323eb1692",
+   "oracle/traces.py": "66d1818a2eb1b3d8bbfa3c5988bc088a8741798e46e536152ab368961bbd28a6"
+  },
+  "platform": "darwin-arm64",
+  "python": "3.12.16",
+  "requirements_lock_sha256": "78509af9c3645c91d113a20795301a34f702394c83898a03b2f96bd28e0d19b9",
+  "scenario_sha256": "d497f3cd7aad9085b6793653b99f78fd8382037a82232dc3f91bc601a26b7a34",
+  "seed": 0,
+  "sglang_commit": "c4af57ff93f301846fa1da4c31f8523c08c7510d",
+  "tier": 2
+ },
+ "receive": {
+  "max_recv_per_poll": -1,
+  "scheduler_recv_interval": 1
+ },
+ "resolved": {
+  "chunked_prefill_size": 8192,
+  "mamba_radix_cache_strategy": "extra_buffer",
+  "max_mamba_cache_size": 16,
+  "max_running_requests": 8,
+  "max_total_tokens": 4096,
+  "page_size": 1,
+  "schedule_policy": "fcfs"
+ },
+ "sglang_env": {
+  "SGLANG_UNIFIED_RADIX_TREE_CORE_BACKEND": "python"
+ },
+ "shutdown_sent": true,
+ "steps": [
+  {
+   "after": {
+    "available_tokens": 4082,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 0,
+    "forward_ct": 1,
+    "mamba": {
+     "chunked_mamba": [],
+     "mamba_available": 12,
+     "running_mamba": [],
+     "tree_mamba_evictable": 0,
+     "tree_mamba_protected": 0,
+     "waiting_mamba": []
+    },
+    "new_token_ratio": 0.7,
+    "processed_tokens": 14,
+    "protected": 0,
+    "req_pool_available": 2,
+    "running": [],
+    "waiting": []
+   },
+   "arrivals": [
+    "r0",
+    "r1"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 4082,
+     "batch_size": 2,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      0,
+      0
+     ],
+     "extend_seq_lens": [
+      8,
+      6
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2219,
+      "upstream_code": true
+     },
+     "mamba_batch": {
+      "mamba_prefill_track_mask_cpu": [
+       false,
+       false
+      ],
+      "mamba_track_indices": [
+       5,
+       6
+      ],
+      "mamba_track_mask": [
+       false,
+       false
+      ],
+      "mamba_track_seqlens": [
+       -1,
+       -1
+      ],
+      "mamba_track_seqlens_cpu": [
+       -1,
+       -1
+      ]
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      3,
+      4
+     ],
+     "rids": [
+      "r0",
+      "r1"
+     ],
+     "seq_lens": [
+      8,
+      6
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 0
+  },
+  {
+   "after": {
+    "available_tokens": 4080,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 0,
+    "forward_ct": 2,
+    "mamba": {
+     "chunked_mamba": [],
+     "mamba_available": 12,
+     "running_mamba": [
+      {
+       "branching": null,
+       "mamba_cow_src_index": null,
+       "mamba_last_track_idx": 0,
+       "mamba_last_track_seqlen": null,
+       "mamba_needs_clear": false,
+       "mamba_next_track_idx": 0,
+       "mamba_ping_pong_empty": [
+        false
+       ],
+       "mamba_ping_pong_track_buffer": [
+        5
+       ],
+       "mamba_pool_idx": 3,
+       "mamba_prev_track_seqlen": null,
+       "rid": "r0"
+      },
+      {
+       "branching": null,
+       "mamba_cow_src_index": null,
+       "mamba_last_track_idx": 0,
+       "mamba_last_track_seqlen": null,
+       "mamba_needs_clear": false,
+       "mamba_next_track_idx": 0,
+       "mamba_ping_pong_empty": [
+        false
+       ],
+       "mamba_ping_pong_track_buffer": [
+        6
+       ],
+       "mamba_pool_idx": 4,
+       "mamba_prev_track_seqlen": null,
+       "rid": "r1"
+      }
+     ],
+     "tree_mamba_evictable": 0,
+     "tree_mamba_protected": 0,
+     "waiting_mamba": []
+    },
+    "new_token_ratio": 0.6989966666666666,
+    "processed_tokens": 14,
+    "protected": 0,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 9,
+      "kv_committed": 9,
+      "output_len": 2,
+      "prefix_len": 8,
+      "rid": "r0"
+     },
+     {
+      "kv_allocated": 7,
+      "kv_committed": 7,
+      "output_len": 2,
+      "prefix_len": 6,
+      "rid": "r1"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 4080,
+     "batch_size": 2,
+     "chunked": null,
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2219,
+      "upstream_code": true
+     },
+     "mamba_batch": {
+      "mamba_track_buffer_indices": [
+       0,
+       0
+      ],
+      "mamba_track_indices": [
+       5,
+       6
+      ],
+      "mamba_track_mask": [
+       false,
+       false
+      ],
+      "mamba_track_mask_cpu": [
+       false,
+       false
+      ],
+      "mamba_track_seqlens": [
+       -1,
+       -1
+      ]
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      4
+     ],
+     "rids": [
+      "r0",
+      "r1"
+     ],
+     "seq_lens": [
+      9,
+      7
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 1
+  },
+  {
+   "after": {
+    "available_tokens": 4086,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 0,
+    "forward_ct": 3,
+    "mamba": {
+     "chunked_mamba": [],
+     "mamba_available": 14,
+     "running_mamba": [
+      {
+       "branching": null,
+       "mamba_cow_src_index": null,
+       "mamba_last_track_idx": 0,
+       "mamba_last_track_seqlen": null,
+       "mamba_needs_clear": false,
+       "mamba_next_track_idx": 0,
+       "mamba_ping_pong_empty": [
+        false
+       ],
+       "mamba_ping_pong_track_buffer": [
+        5
+       ],
+       "mamba_pool_idx": 3,
+       "mamba_prev_track_seqlen": null,
+       "rid": "r0"
+      },
+      {
+       "branching": null,
+       "mamba_cow_src_index": null,
+       "mamba_last_track_idx": null,
+       "mamba_last_track_seqlen": null,
+       "mamba_needs_clear": false,
+       "mamba_next_track_idx": null,
+       "mamba_ping_pong_empty": null,
+       "mamba_ping_pong_track_buffer": null,
+       "mamba_pool_idx": null,
+       "mamba_prev_track_seqlen": null,
+       "rid": "r1"
+      }
+     ],
+     "tree_mamba_evictable": 0,
+     "tree_mamba_protected": 0,
+     "waiting_mamba": []
+    },
+    "new_token_ratio": 0.6979933333333332,
+    "processed_tokens": 14,
+    "protected": 0,
+    "req_pool_available": 3,
+    "running": [
+     {
+      "kv_allocated": 10,
+      "kv_committed": 10,
+      "output_len": 3,
+      "prefix_len": 8,
+      "rid": "r0"
+     },
+     {
+      "kv_allocated": 0,
+      "kv_committed": 8,
+      "output_len": 3,
+      "prefix_len": 6,
+      "rid": "r1"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 4078,
+     "batch_size": 2,
+     "chunked": null,
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2219,
+      "upstream_code": true
+     },
+     "mamba_batch": {
+      "mamba_track_buffer_indices": [
+       0,
+       0
+      ],
+      "mamba_track_indices": [
+       5,
+       6
+      ],
+      "mamba_track_mask": [
+       false,
+       false
+      ],
+      "mamba_track_mask_cpu": [
+       false,
+       false
+      ],
+      "mamba_track_seqlens": [
+       -1,
+       -1
+      ]
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      4
+     ],
+     "rids": [
+      "r0",
+      "r1"
+     ],
+     "seq_lens": [
+      10,
+      8
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "r1"
+     ],
+     "output_lens": [
+      3
+     ],
+     "rids": [
+      "r1"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 2
+  },
+  {
+   "after": {
+    "available_tokens": 4076,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 0,
+    "forward_ct": 4,
+    "mamba": {
+     "chunked_mamba": [],
+     "mamba_available": 12,
+     "running_mamba": [
+      {
+       "branching": null,
+       "mamba_cow_src_index": null,
+       "mamba_last_track_idx": 0,
+       "mamba_last_track_seqlen": null,
+       "mamba_needs_clear": false,
+       "mamba_next_track_idx": 0,
+       "mamba_ping_pong_empty": [
+        false
+       ],
+       "mamba_ping_pong_track_buffer": [
+        5
+       ],
+       "mamba_pool_idx": 3,
+       "mamba_prev_track_seqlen": null,
+       "rid": "r0"
+      }
+     ],
+     "tree_mamba_evictable": 0,
+     "tree_mamba_protected": 0,
+     "waiting_mamba": []
+    },
+    "new_token_ratio": 0.6979933333333332,
+    "processed_tokens": 24,
+    "protected": 0,
+    "req_pool_available": 2,
+    "running": [
+     {
+      "kv_allocated": 10,
+      "kv_committed": 10,
+      "output_len": 3,
+      "prefix_len": 8,
+      "rid": "r0"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [
+    "r2"
+   ],
+   "forwards": [
+    {
+     "available_tokens": 4076,
+     "batch_size": 1,
+     "chunked": null,
+     "decoding": null,
+     "extend_prefix_lens": [
+      0
+     ],
+     "extend_seq_lens": [
+      10
+     ],
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2219,
+      "upstream_code": true
+     },
+     "mamba_batch": {
+      "mamba_prefill_track_mask_cpu": [
+       false
+      ],
+      "mamba_track_indices": [
+       9
+      ],
+      "mamba_track_mask": [
+       false
+      ],
+      "mamba_track_seqlens": [
+       -1
+      ],
+      "mamba_track_seqlens_cpu": [
+       -1
+      ]
+     },
+     "mode": "EXTEND",
+     "req_pool_indices": [
+      4
+     ],
+     "rids": [
+      "r2"
+     ],
+     "seq_lens": [
+      10
+     ]
+    }
+   ],
+   "outputs": [],
+   "step": 3
+  },
+  {
+   "after": {
+    "available_tokens": 4096,
+    "batch_is_full": false,
+    "chunked": null,
+    "evictable": 0,
+    "forward_ct": 5,
+    "mamba": {
+     "chunked_mamba": [],
+     "mamba_available": 16,
+     "running_mamba": [
+      {
+       "branching": null,
+       "mamba_cow_src_index": null,
+       "mamba_last_track_idx": null,
+       "mamba_last_track_seqlen": null,
+       "mamba_needs_clear": false,
+       "mamba_next_track_idx": null,
+       "mamba_ping_pong_empty": null,
+       "mamba_ping_pong_track_buffer": null,
+       "mamba_pool_idx": null,
+       "mamba_prev_track_seqlen": null,
+       "rid": "r0"
+      },
+      {
+       "branching": null,
+       "mamba_cow_src_index": null,
+       "mamba_last_track_idx": null,
+       "mamba_last_track_seqlen": null,
+       "mamba_needs_clear": false,
+       "mamba_next_track_idx": null,
+       "mamba_ping_pong_empty": null,
+       "mamba_ping_pong_track_buffer": null,
+       "mamba_pool_idx": null,
+       "mamba_prev_track_seqlen": null,
+       "rid": "r2"
+      }
+     ],
+     "tree_mamba_evictable": 0,
+     "tree_mamba_protected": 0,
+     "waiting_mamba": []
+    },
+    "new_token_ratio": 0.6969899999999999,
+    "processed_tokens": 24,
+    "protected": 0,
+    "req_pool_available": 4,
+    "running": [
+     {
+      "kv_allocated": 0,
+      "kv_committed": 11,
+      "output_len": 4,
+      "prefix_len": 8,
+      "rid": "r0"
+     },
+     {
+      "kv_allocated": 0,
+      "kv_committed": 11,
+      "output_len": 2,
+      "prefix_len": 10,
+      "rid": "r2"
+     }
+    ],
+    "waiting": []
+   },
+   "arrivals": [],
+   "forwards": [
+    {
+     "available_tokens": 4074,
+     "batch_size": 2,
+     "chunked": null,
+     "decoding": null,
+     "loop": {
+      "file": "python/sglang/srt/managers/scheduler.py",
+      "function": "event_loop_normal",
+      "line": 2219,
+      "upstream_code": true
+     },
+     "mamba_batch": {
+      "mamba_track_buffer_indices": [
+       0,
+       0
+      ],
+      "mamba_track_indices": [
+       5,
+       9
+      ],
+      "mamba_track_mask": [
+       false,
+       false
+      ],
+      "mamba_track_mask_cpu": [
+       false,
+       false
+      ]
+     },
+     "mode": "DECODE",
+     "req_pool_indices": [
+      3,
+      4
+     ],
+     "rids": [
+      "r0",
+      "r2"
+     ],
+     "seq_lens": [
+      11,
+      11
+     ]
+    }
+   ],
+   "outputs": [
+    {
+     "finished": [
+      "r0",
+      "r2"
+     ],
+     "output_lens": [
+      4,
+      2
+     ],
+     "rids": [
+      "r0",
+      "r2"
+     ],
+     "type": "BatchTokenIDOutput"
+    }
+   ],
+   "step": 4
+  },
+  {
+   "arrivals": [],
+   "forwards": [],
+   "outputs": [],
+   "shutdown": true,
+   "step": 5
+  }
+ ],
+ "truncated": false
+}
