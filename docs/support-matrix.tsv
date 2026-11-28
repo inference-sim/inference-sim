@@ -3023,6 +3023,54 @@ muse-spark-open-dspark	vllm	h200	ib-400g	agg	1	16	runs			measured=110;transferre
 muse-spark-open-dspark	vllm	h200	ib-400g	pd	1	16	runs			measured=220;transferred=4;literature=2;vendor_spec=28;assumed=80;not_charged=2	
 muse-spark-open-dspark	vllm	h200	roce-400g	agg	1	16	runs			measured=110;transferred=2;vendor_spec=14;assumed=41;not_charged=1	
 muse-spark-open-dspark	vllm	h200	roce-400g	pd	1	16	runs			measured=220;transferred=4;vendor_spec=28;assumed=82;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	sglang	b200	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	b200	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	b200	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	b200	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	b300	ib-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	b300	ib-800g	pd	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	b300	roce-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	b300	roce-800g	pd	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	gb200-nvl72	ib-400g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	gb200-nvl72	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	gb200-nvl72	roce-400g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	gb200-nvl72	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	gb300	ib-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	gb300	ib-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	gb300	roce-800g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	gb300	roce-800g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	h100	ib-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	h100	ib-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	h100	roce-400g	agg	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	h100	roce-400g	pd	8	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	h200	ib-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	h200	ib-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	h200	roce-400g	agg	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	sglang	h200	roce-400g	pd	4	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
+nemotron-3-super-120b-a12b-bf16	vllm	b200	ib-400g	agg	4	16	runs			measured=110;transferred=4;literature=1;vendor_spec=14;assumed=47;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	b200	ib-400g	pd	4	16	runs			measured=220;transferred=8;literature=2;vendor_spec=28;assumed=94;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	b200	roce-400g	agg	4	16	runs			measured=110;transferred=4;vendor_spec=14;assumed=48;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	b200	roce-400g	pd	4	16	runs			measured=220;transferred=8;vendor_spec=28;assumed=96;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	b300	ib-800g	agg	2	16	runs			measured=110;vendor_spec=14;assumed=48;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	b300	ib-800g	pd	2	16	runs			measured=220;vendor_spec=28;assumed=96;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	b300	roce-800g	agg	2	16	runs			measured=110;vendor_spec=14;assumed=48;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	b300	roce-800g	pd	2	16	runs			measured=220;vendor_spec=28;assumed=96;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	gb200-nvl72	ib-400g	agg	4	16	runs			measured=127;transferred=6;literature=1;vendor_spec=14;assumed=23;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	gb200-nvl72	ib-400g	pd	4	16	runs			measured=254;transferred=12;literature=2;vendor_spec=28;assumed=46;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	gb200-nvl72	roce-400g	agg	4	16	runs			measured=127;transferred=6;vendor_spec=14;assumed=24;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	gb200-nvl72	roce-400g	pd	4	16	runs			measured=254;transferred=12;vendor_spec=28;assumed=48;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	gb300	ib-800g	agg	2	16	runs			measured=93;vendor_spec=14;assumed=60;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	gb300	ib-800g	pd	4	16	runs			measured=186;vendor_spec=28;assumed=120;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	gb300	roce-800g	agg	2	16	runs			measured=93;vendor_spec=14;assumed=60;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	gb300	roce-800g	pd	4	16	runs			measured=186;vendor_spec=28;assumed=120;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	h100	ib-400g	agg	8	16	runs			measured=114;literature=1;vendor_spec=14;assumed=45;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	h100	ib-400g	pd	8	16	runs			measured=228;literature=2;vendor_spec=28;assumed=90;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	h100	roce-400g	agg	8	16	runs			measured=114;vendor_spec=14;assumed=46;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	h100	roce-400g	pd	8	16	runs			measured=228;vendor_spec=28;assumed=92;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	h200	ib-400g	agg	4	16	runs			measured=110;transferred=2;literature=1;vendor_spec=14;assumed=43;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	h200	ib-400g	pd	4	16	runs			measured=220;transferred=4;literature=2;vendor_spec=28;assumed=86;not_charged=2	
+nemotron-3-super-120b-a12b-bf16	vllm	h200	roce-400g	agg	4	16	runs			measured=110;transferred=2;vendor_spec=14;assumed=44;not_charged=1	
+nemotron-3-super-120b-a12b-bf16	vllm	h200	roce-400g	pd	4	16	runs			measured=220;transferred=4;vendor_spec=28;assumed=88;not_charged=2	
 nemotron-3-super-120b-a12b-fp8	sglang	b200	ib-400g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
 nemotron-3-super-120b-a12b-fp8	sglang	b200	ib-400g	pd	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		instance instance_0: engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
 nemotron-3-super-120b-a12b-fp8	sglang	b200	roce-400g	agg	2	0	refused	sglang_not_lowered	inference-sim/inference-sim#2344		engine sglang 0.5.23: pool 0: architecture NemotronHForCausalLM is not lowered (inference-sim/inference-sim#2344)
