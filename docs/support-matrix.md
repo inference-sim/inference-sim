@@ -8,36 +8,35 @@ Each cell is one model on one chip, over one fabric, in one serving mode, on one
 
 | | cells |
 |---|---|
-| cells | 3936 |
-| simulate | 2072 |
+| cells | 3984 |
+| simulate | 2140 |
 | refused, a limit (capacity or upstream) | 96 |
-| refused, a defect | 1768 |
+| refused, a defect | 1748 |
 
 ## By engine and chip
 
 | engine | chip | simulate | limit | defect |
 |---|---|---|---|---|
-| sglang | b200 | 34 | 16 | 278 |
-| sglang | b300 | 34 | 16 | 278 |
-| sglang | gb200-nvl72 | 34 | 16 | 278 |
-| sglang | gb300 | 34 | 16 | 278 |
-| sglang | h100 | 22 | 16 | 290 |
-| sglang | h200 | 22 | 12 | 294 |
-| vllm | b200 | 316 | 0 | 12 |
-| vllm | b300 | 316 | 0 | 12 |
-| vllm | gb200-nvl72 | 316 | 0 | 12 |
-| vllm | gb300 | 316 | 0 | 12 |
-| vllm | h100 | 312 | 4 | 12 |
-| vllm | h200 | 316 | 0 | 12 |
+| sglang | b200 | 44 | 16 | 272 |
+| sglang | b300 | 44 | 16 | 272 |
+| sglang | gb200-nvl72 | 44 | 16 | 272 |
+| sglang | gb300 | 44 | 16 | 272 |
+| sglang | h100 | 24 | 16 | 292 |
+| sglang | h200 | 24 | 12 | 296 |
+| vllm | b200 | 320 | 0 | 12 |
+| vllm | b300 | 320 | 0 | 12 |
+| vllm | gb200-nvl72 | 320 | 0 | 12 |
+| vllm | gb300 | 320 | 0 | 12 |
+| vllm | h100 | 316 | 4 | 12 |
+| vllm | h200 | 320 | 0 | 12 |
 
 ## Defects, by issue
 
 | issue | cause | cells | models |
 |---|---|---|---|
-| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1276 | 60 |
+| inference-sim/inference-sim#2344 | the SGLang engine does not lower this architecture, chip or setting | 1332 | 65 |
 | inference-sim/inference-sim#2346 | the SGLang engine does not lower this architecture, chip or setting | 24 | 2 |
-| inference-sim/inference-sim#2351 | the SGLang engine does not model prefill/decode disaggregation | 204 | 19 |
-| inference-sim/inference-sim#2366 | the SGLang engine does not lower this architecture, chip or setting | 120 | 5 |
+| inference-sim/inference-sim#2351 | the SGLang engine does not model prefill/decode disaggregation | 248 | 24 |
 | inference-sim/inference-sim#2489 | sparse MLA attention beside recurrent layers is not mapped | 48 | 2 |
 | inference-sim/inference-sim#2650 | the SGLang engine does not lower this architecture, chip or setting | 96 | 8 |
 
