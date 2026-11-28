@@ -19,6 +19,17 @@ type Trace struct {
 	Provenance map[string]any `json:"provenance"`
 	Kind       string         `json:"kind"`
 	Calls      []Call         `json:"calls"`
+	// Driver is the driver's own calls at objects no interface records (the state slot allocator
+	// of the mamba tree traces), each placed after the call with sequence number After.
+	Driver []DriverCall `json:"driver"`
+}
+
+// A DriverCall is a call the driver made at an object the recorder does not watch.
+type DriverCall struct {
+	After int     `json:"after"`
+	M     string  `json:"m"`
+	N     int     `json:"n"`
+	Ret   []int64 `json:"ret"`
 }
 
 // A Call is one call into an interface from outside it.

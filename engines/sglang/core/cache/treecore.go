@@ -44,6 +44,12 @@ type node struct {
 	hostUUID        *int64
 	writeThroughAck *NodeID
 	loadBackAnchor  *NodeID
+
+	// The state component (components/mamba.py@c4af57ff): the node's state slot, nil where it holds
+	// none; its lock count; and its place in the state LRU list.
+	mamba        []int64
+	mambaLock    int
+	mPrev, mNext *node
 }
 
 func (n *node) evicted() bool { return n.parent != nil && n.value == nil }
@@ -89,6 +95,8 @@ type treeCore struct {
 	isEagle  bool
 	full     *fullComponent
 	events   eventRecorder
+	// mamba is the tree's state component, or nil for a tree of FULL alone.
+	mamba *mambaTree
 
 	// clock is _LAST_ACCESS_TIME_COUNTER_FLOAT (components/base.py:158-165@297e54fd): a counter,
 	// not a clock, that orders accesses.
@@ -140,6 +148,9 @@ func (t *treeCore) reset() {
 	t.root.value = []int64{}
 	t.root.hashValue = []string{}
 	t.root.lockRef = 1
+	if t.mamba != nil {
+		t.mamba.reset()
+	}
 	t.evictable, t.protected = 0, 0
 	t.leaves = map[*node]bool{}
 	t.host.resetTree()
@@ -248,7 +259,13 @@ func (t *treeCore) MatchPrefix(p MatchPrefixParams) MatchResult {
 	full := 0
 	var actions []CacheAction
 	// FULL's validators (components/full.py:110-121): device only, or device or host.
-	valid := func(n *node) bool { return n.value != nil || (sep && n.backuped()) }
+	valid := func(n *node) bool {
+		// MambaComponent's validator (:157-169): a node is a match only where a state sits.
+		if t.mamba != nil && n.mamba == nil {
+			return false
+		}
+		return n.value != nil || (sep && n.backuped())
+	}
 	update := func(n *node) {
 		matched := valid(n)
 		if matched {
@@ -290,6 +307,9 @@ func (t *treeCore) MatchPrefix(p MatchPrefixParams) MatchResult {
 		update(cur)
 		offset += pl
 	}
+	if t.mamba != nil {
+		t.mamba.refreshMatchEnd(best)
+	}
 	now := t.tick()
 	for n := best; n != nil; n = n.parent {
 		n.lastAccess = now
@@ -312,6 +332,11 @@ func (t *treeCore) MatchPrefix(p MatchPrefixParams) MatchResult {
 		hit += len(n.hostValue)
 	}
 	r.HostHitLength = hit
+	if t.mamba != nil {
+		// finalize_match_result_in_tree_core (components/mamba.py:195-218): the last grid point
+		// within the full-KV hit that lies past the state's boundary.
+		r.MambaBranchingSeqlen = branchingDepth(full, devLen+hit, t.mamba.grid)
+	}
 	if cur != t.root {
 		id := cur.id
 		r.LastVisitedNode = &id
@@ -447,7 +472,9 @@ func (t *treeCore) advanceInsert() InsertStep {
 			return InsertStep{Actions: w.pending, Result: &r}
 		}
 		for _, a := range w.pending[flushed:] {
-			if a.Kind == BackupKVAction {
+			// Only the fire-and-forget actions wait for the next barrier (_is_deferrable_action,
+			// unified_tree_core.py:1436-1441).
+			if a.Kind != FreeDeviceKVAction && a.Kind != UpdatePendingBackupOnNodeSplitAction {
 				out := w.pending
 				w.pending = nil
 				return InsertStep{Actions: out}
@@ -507,6 +534,9 @@ func (t *treeCore) insertCommitStep(w *insertWalk) {
 		w.newLeaf = true
 	}
 	w.result = InsertResult{PrefixLen: w.total, LastDeviceNode: w.target.id}
+	if t.mamba != nil {
+		t.mamba.commitInsert(w.target, w.newLeaf, w.p, &w.result, &w.pending)
+	}
 	w.phase = phaseTail
 }
 
@@ -584,7 +614,7 @@ func (t *treeCore) uneevict(n *node, fresh []int64, sessionID *string) {
 
 // isDeviceLeaf is _is_device_leaf (:2348-2364).
 func (t *treeCore) isDeviceLeaf(n *node) bool {
-	if n == t.root || n.evicted() || n.lockRef > 0 {
+	if n == t.root || n.evicted() || n.lockRef > 0 || n.mambaLock > 0 {
 		return false
 	}
 	for _, c := range n.children {
@@ -617,6 +647,9 @@ func (t *treeCore) IncLockRef(id NodeID) LockReceipt {
 	r := LockReceipt{Node: n.id}
 	d := t.full.acquireLock(n)
 	r.Delta = &d
+	if t.mamba != nil {
+		t.mamba.acquireLock(n)
+	}
 	t.updateLeaves(n)
 	return r
 }
@@ -627,18 +660,45 @@ func (t *treeCore) DecLockRef(id NodeID, r LockReceipt) {
 	if r.Node != n.id {
 		panic(fmt.Sprintf("cache: lock receipt anchored on node %d released on node %d", r.Node, n.id))
 	}
+	// The components release in reverse order (_release_components, unified_tree_core.py:840-868).
+	if t.mamba != nil {
+		t.mamba.releaseLock(n)
+	}
 	t.full.releaseLock(n)
 	t.updateLeaves(n)
 }
 
 // --- evicting ---
 
-// EvictDeviceStart, EvictDeviceNextNode and EvictDeviceEnd are the FULL walk (:1644-1786).
+// EvictDeviceStart, EvictDeviceNextNode and EvictDeviceEnd are a component's device walk (:1644-1786
+// and each component's _evict_device_*): the FULL walk over the evictable leaves, or the state walk
+// over the state LRU list.
 func (t *treeCore) EvictDeviceStart(c ComponentType, requestCnt int) {
+	if c == MambaComponentType {
+		t.mamba.evictStart(requestCnt)
+		return
+	}
 	t.full.evictDeviceStart(requestCnt)
 }
-func (t *treeCore) EvictDeviceEnd(c ComponentType) { t.full.evictDeviceEnd() }
+
+func (t *treeCore) EvictDeviceEnd(c ComponentType) {
+	if c == MambaComponentType {
+		t.mamba.evictEnd()
+		return
+	}
+	t.full.evictDeviceEnd()
+}
+
 func (t *treeCore) EvictDeviceNextNode(c ComponentType, tr Tracker) EvictionStep {
+	if c == MambaComponentType {
+		step, n := t.mamba.evictNext(tr)
+		if n != nil {
+			id := n.id
+			step.Node = &id
+		}
+		step.MadeProgress = step.Node != nil || len(step.Tracker) > 0 || len(step.DeviceFrees) > 0
+		return step
+	}
 	n := t.full.evictDeviceNextNode(tr)
 	if n == nil {
 		return EvictionStep{}
@@ -697,6 +757,9 @@ func (t *treeCore) releaseAllLayers(n *node, medium string, step *EvictionStep) 
 		step.HostFrees[FullComponentType] = append(step.HostFrees[FullComponentType], n.hostValue)
 		n.hostValue = nil
 	}
+	if t.mamba != nil {
+		t.mamba.evictState(n, step)
+	}
 	delete(t.leaves, n)
 	delete(t.host.leaves, n)
 }
@@ -712,10 +775,18 @@ func (t *treeCore) removeLeafFromParent(n *node) {
 // ancestors with FULL on neither tier are deleted, up to a live or locked node.
 func (t *treeCore) deleteTombstoneAncestors(cur *node, step *EvictionStep) {
 	for cur != t.root && len(cur.children) == 0 {
-		if cur.lockRef > 0 || cur.hostLockRef > 0 {
+		if cur.lockRef > 0 || cur.hostLockRef > 0 || cur.mambaLock > 0 {
 			break
 		}
-		if cur.value != nil || cur.hostValue != nil {
+		if cur.value != nil {
+			t.updateLeaves(cur)
+			break
+		}
+		// The FULL value is gone: the state left on the node goes with it (:2289-2346).
+		if t.mamba != nil && cur.mamba != nil {
+			t.mamba.evictState(cur, step)
+		}
+		if cur.hostValue != nil {
 			t.updateLeaves(cur)
 			break
 		}
@@ -735,19 +806,58 @@ func (t *treeCore) TakeEvents() []Event { return t.events.take() }
 func (t *treeCore) RootNodeHandle(extraKey *string) NodeID { return t.root.id }
 func (t *treeCore) SupportsFastMatchPrefix() bool          { return false }
 
-// totalSize is total_size (:3368-3385).
+// totalSize is total_size (:3752-3769): the FULL slots on the device, and the state slots.
 func (t *treeCore) totalSize() int {
-	total := 0
+	full, _ := t.TotalSize()
+	return full
+}
+
+func (t *treeCore) TotalSize() (int, int) {
+	total, state := 0, 0
 	stack := []*node{t.root}
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		total += len(n.value)
+		state += len(n.mamba)
 		for _, c := range n.children {
 			stack = append(stack, c)
 		}
 	}
-	return total
+	return total, state
+}
+
+func (t *treeCore) MambaEvictableSize() int {
+	if t.mamba == nil {
+		return 0
+	}
+	return t.mamba.evictable
+}
+
+func (t *treeCore) MambaProtectedSize() int {
+	if t.mamba == nil {
+		return 0
+	}
+	return t.mamba.protected
+}
+
+// ComponentDeviceValue is get_component_device_value (:3373-3377): the component's slots on the
+// node, or nil where it holds none.
+func (t *treeCore) ComponentDeviceValue(c ComponentType, id NodeID) []int64 {
+	n := t.node(id)
+	if c == MambaComponentType {
+		return n.mamba
+	}
+	return n.value
+}
+
+// EvictExcessPathStates is evict_excess_path_states (:2253-2265): the cap trim an insert asked for.
+func (t *treeCore) EvictExcessPathStates(tail NodeID) EvictionStep {
+	step := newStep()
+	if t.mamba != nil {
+		t.mamba.evictExcessPathStates(t.node(tail), &step)
+	}
+	return step
 }
 
 // leafHeap orders leaves as FullComponent's heap does (components/full.py:209-244@297e54fd): by

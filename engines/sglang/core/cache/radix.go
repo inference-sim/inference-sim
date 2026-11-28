@@ -28,6 +28,8 @@ type RadixConfig struct {
 	EvictionPolicy string
 	// SessionRadixCache is --enable-session-radix-cache, which is refused.
 	SessionRadixCache bool
+	// Mamba adds the recurrent-state slot of a hybrid model to the tree, or is nil.
+	Mamba *MambaTreeConfig
 }
 
 // RadixCache is UnifiedRadixCache (unified_radix_cache.py:199-3973@297e54fd) with the Python
@@ -104,6 +106,8 @@ func (c *RadixCache) ApplyActions(actions []CacheAction) {
 			if a.AckID != nil && c.host != nil {
 				c.host.ReplacePendingWriteThroughNode(*a.AckID, a.OldNode, []NodeID{a.NewNode, a.NewChild})
 			}
+		case MambaEvictExcessPathStatesAction:
+			c.ApplyEvictionStep(c.core.EvictExcessPathStates(a.TailNode))
 		default:
 			panic(fmt.Sprintf("cache: unhandled cache action %s", a.Kind))
 		}
@@ -115,6 +119,10 @@ func (c *RadixCache) ApplyEvictionStep(s EvictionStep) {
 	for _, v := range s.DeviceFrees[FullComponentType] {
 		// FreeComponentDeviceSlot, applied by FullComponent (components/full.py:537-552).
 		c.alloc.FreeSegment(v, 0)
+	}
+	for _, v := range s.DeviceFrees[MambaComponentType] {
+		// FreeComponentDeviceSlot of the state component: the slots go back to the state allocator.
+		c.tree.mamba.cfg.Slots.Free(v)
 	}
 	if hv := s.HostFrees[FullComponentType]; len(hv) > 0 {
 		if c.host == nil {
@@ -145,6 +153,12 @@ func NewRadixCache(cfg RadixConfig, alloc Allocator, pool ReqToTokenPool) (*Radi
 	c := &RadixCache{cfg: cfg, alloc: alloc, pool: pool,
 		tree: newTreeCore(cfg.PageSize, cfg.IsEagle, events, cfg.DynamoFormat)}
 	c.tree.full.heap.priority = prio
+	if cfg.Mamba != nil {
+		if cfg.Mamba.Slots == nil {
+			return nil, fmt.Errorf("cache: a tree with a state component needs the pool's state slot allocator")
+		}
+		c.tree.mamba = newMambaTree(c.tree, *cfg.Mamba)
+	}
 	c.core = c.tree
 	c.Reset()
 	return c, nil
@@ -167,7 +181,53 @@ func (c *RadixCache) MatchPrefix(p MatchPrefixParams) MatchResult {
 	r := c.core.MatchPrefix(p)
 	c.ApplyActions(r.Actions)
 	r.Actions = nil
+	if c.tree.mamba != nil {
+		c.finalizeMatchInCache(p, r)
+	}
 	return r
+}
+
+// finalizeMatchInCache is MambaComponent.finalize_match_result_in_cache (components/mamba.py:220-265@c4af57ff):
+// with copy on write, the matched state is staged into the request's own slot. The slot is taken
+// now, evicting a state for it if the pool has none (the matched node pinned meanwhile), unless
+// the row's binding takes it.
+func (c *RadixCache) finalizeMatchInCache(p MatchPrefixParams, r MatchResult) {
+	if !p.CowMamba {
+		return
+	}
+	src := c.core.ComponentDeviceValue(MambaComponentType, r.BestMatchNode)
+	if p.Req != nil && p.Req.KV.Mamba == nil {
+		p.Req.KV.Mamba = &MambaKV{}
+	}
+	if src == nil {
+		// A source from an earlier match of an unadmitted request may have been evicted and its slot
+		// reused since; never carry it over.
+		if p.Req != nil {
+			p.Req.KV.Mamba.CowSrcIndex = nil
+		}
+		return
+	}
+	req := p.Req
+	if req == nil {
+		panic("cache: a copy-on-write match with no request")
+	}
+	m := req.KV.Mamba
+	if !m.HoldsMamba() && !p.DeferCowSlot {
+		slots := c.tree.mamba.cfg.Slots
+		dst, ok := slots.Alloc(1)
+		if !ok {
+			lock := c.IncLockRef(r.BestMatchNode)
+			c.EvictForAlloc(KVDemand{StateSlots: 1})
+			dst, ok = slots.Alloc(1)
+			c.DecLockRef(r.BestMatchNode, lock)
+			if !ok {
+				panic("cache: can not alloc mamba cache")
+			}
+		}
+		m.PoolIdx = &dst[0]
+	}
+	m.CowSrcIndex = &src[0]
+	m.NeedsClear = false
 }
 
 // TouchPrefix is touch_prefix (:647-652): the tree walk alone.
@@ -181,7 +241,7 @@ func (c *RadixCache) TouchPrefix(k Key) {
 func (c *RadixCache) SupportsFastMatchPrefix() bool { return c.core.SupportsFastMatchPrefix() }
 func (c *RadixCache) SupportsPrefixSharing() bool   { return !c.cfg.Disable }
 func (c *RadixCache) SupportsSWA() bool             { return false }
-func (c *RadixCache) SupportsMamba() bool           { return false }
+func (c *RadixCache) SupportsMamba() bool           { return c.tree.mamba != nil }
 
 // Insert is insert (:661-688): the resumable walk, each step's actions applied at its barrier
 // (the duplicate slots freed at the allocator as page-exact segments, a backup run), then
@@ -205,69 +265,124 @@ func (c *RadixCache) Insert(p InsertParams) InsertResult {
 	return *step.Result
 }
 
-// Evict is evict and _evict (:690-839) for the FULL component.
+// Evict is evict and _evict (:690-839): the components' requests, each by its own walk.
 func (c *RadixCache) Evict(p EvictParams) EvictResult {
 	if c.cfg.Disable {
 		return EvictResult{}
 	}
-	return c.evict(p.NumTokens, -1)
+	return c.evict(p, nil)
 }
 
-// evict is _evict (:805-839): the walk, then under write-back the blocking write check.
-func (c *RadixCache) evict(request, target int) EvictResult {
-	n := c.evictFull(request, target)
+// evict is _evict (:1044-1090@c4af57ff): the walks, then under write-back the blocking write check.
+// demand is the allocation the walk serves, per component, or nil.
+func (c *RadixCache) evict(p EvictParams, demand map[ComponentType]int) EvictResult {
+	tr := Tracker{FullComponentType: 0}
+	request := map[ComponentType]int{FullComponentType: p.NumTokens}
+	cts := []ComponentType{FullComponentType}
+	if c.tree.mamba != nil {
+		tr[MambaComponentType] = 0
+		request[MambaComponentType] = p.MambaNum
+		cts = append(cts, MambaComponentType)
+	}
+	c.evictComponents(cts, request, tr, demand)
 	if c.host != nil && c.IsWriteBack() {
 		c.host.WritingCheck(true)
 	}
-	return EvictResult{NumTokensEvicted: n}
+	return EvictResult{NumTokensEvicted: tr[FullComponentType], MambaNumEvicted: tr[MambaComponentType]}
+}
+
+// poolAvailable is _pool_available (:1029-1042): what the component's own pool can serve now.
+func (c *RadixCache) poolAvailable(ct ComponentType) int {
+	if ct == MambaComponentType {
+		return c.tree.mamba.cfg.Slots.AvailableSize()
+	}
+	return c.alloc.OwnerAvailableSize()
 }
 
 // EvictForAlloc is evict_for_alloc and evict_pool_shortfalls (unified_radix_cache.py:806-850@c4af57ff)
-// for the FULL component of a pool of its own: the token pool's shortfall against d is what the
-// walk is asked for, and the walk runs until the pool serves d.
+// for pools of their own: each component's shortfall against what d takes of it is what its walk is
+// asked for, and a walk runs until its pool serves d.
 func (c *RadixCache) EvictForAlloc(d KVDemand) EvictResult {
 	if c.cfg.Disable {
 		return EvictResult{}
 	}
-	if d.FullTokens <= 0 {
+	demand := map[ComponentType]int{}
+	if d.FullTokens > 0 {
+		demand[FullComponentType] = d.FullTokens
+	}
+	if c.tree.mamba != nil && d.StateSlots > 0 {
+		demand[MambaComponentType] = d.StateSlots
+	}
+	short := map[ComponentType]int{}
+	for _, ct := range []ComponentType{FullComponentType, MambaComponentType} {
+		n, ok := demand[ct]
+		if !ok {
+			continue
+		}
+		if s := n - c.poolAvailable(ct); s > 0 {
+			short[ct] = s
+		}
+	}
+	if len(short) == 0 {
 		return EvictResult{}
 	}
-	short := d.FullTokens - c.alloc.OwnerAvailableSize()
-	if short <= 0 {
-		return EvictResult{}
+	served := map[ComponentType]int{}
+	for ct := range short {
+		served[ct] = demand[ct]
 	}
-	return c.evict(short, d.FullTokens)
+	return c.evict(EvictParams{NumTokens: short[FullComponentType], MambaNum: short[MambaComponentType]}, served)
 }
 
 // WindowCheckpointInterval is window_checkpoint_interval (unified_radix_cache.py:4791-4799@c4af57ff):
-// a tree with no state component keeps no checkpoints.
-func (c *RadixCache) WindowCheckpointInterval() int { return 0 }
-
-// evictFull is _evict_components (:952-1058) for the FULL component; target < 0 means no
-// availability target, otherwise the owner pool's size the walk runs to.
-func (c *RadixCache) evictFull(request, target int) int {
-	tr := Tracker{FullComponentType: 0}
-	// target_reached (:1217-1223@c4af57ff) reads the owner pool's free size once.
-	reached := func() bool {
-		if target < 0 {
-			return false
-		}
-		return c.alloc.OwnerAvailableSize() >= target
-	}
-	toTarget := target >= 0 && request > 0
-	if reached() || (!toTarget && tr[FullComponentType] >= request) {
+// a tree with no state keeps no checkpoints; one with state keeps them on its grid.
+func (c *RadixCache) WindowCheckpointInterval() int {
+	if c.tree.mamba == nil {
 		return 0
 	}
-	quota := request
-	if toTarget {
-		quota = max(request, tr[FullComponentType]+c.core.FullEvictableSize())
+	return c.tree.mamba.grid
+}
+
+// evictComponents is _evict_components (:1206-1257): each component in turn, FULL first. An
+// allocation-driven FULL request names the allocator's shortfall, not what the walk must free, so
+// its walk runs to the target; a walk skipped when its pool already serves the demand (an earlier
+// component's cascade may have freed it).
+func (c *RadixCache) evictComponents(cts []ComponentType, request map[ComponentType]int, tr Tracker, demand map[ComponentType]int) {
+	reached := func(ct ComponentType) bool {
+		d, ok := demand[ct]
+		if demand == nil || !ok {
+			return false
+		}
+		return c.poolAvailable(ct) >= d
 	}
-	c.core.EvictDeviceStart(FullComponentType, quota)
-	defer c.core.EvictDeviceEnd(FullComponentType)
+	for _, ct := range cts {
+		req := request[ct]
+		_, inDemand := demand[ct]
+		toTarget := ct == FullComponentType && req > 0 && demand != nil && inDemand
+		if reached(ct) || (!toTarget && tr[ct] >= req) {
+			continue
+		}
+		quota := req
+		if toTarget {
+			quota = max(req, tr[ct]+c.core.FullEvictableSize())
+		}
+		c.evictWalk(ct, quota, tr, reached)
+	}
+}
+
+// evictWalk is _evict_device_walk (:1276-1390) without the write-back batching: the component's
+// walk, a leaf it selects evicted as a leaf, until the walk runs dry or the pool serves the demand.
+func (c *RadixCache) evictWalk(ct ComponentType, quota int, tr Tracker, reached func(ComponentType) bool) {
+	add := func(s EvictionStep) {
+		for k, v := range s.Tracker {
+			tr[k] += v
+		}
+	}
+	c.core.EvictDeviceStart(ct, quota)
+	defer c.core.EvictDeviceEnd(ct)
 	for {
-		step := c.core.EvictDeviceNextNode(FullComponentType, tr)
+		step := c.core.EvictDeviceNextNode(ct, tr)
 		c.ApplyEvictionStep(step)
-		tr[FullComponentType] += step.Tracker[FullComponentType]
+		add(step)
 		if step.Node == nil {
 			if !step.MadeProgress {
 				break
@@ -275,7 +390,7 @@ func (c *RadixCache) evictFull(request, target int) int {
 		} else {
 			leaf := c.core.EvictDeviceLeaf(*step.Node, c.IsWriteBack())
 			c.ApplyEvictionStep(leaf)
-			tr[FullComponentType] += leaf.Tracker[FullComponentType]
+			add(leaf)
 			if leaf.BackupKV != nil {
 				// Deferred demote (:1031-1052): back the leaf up, demote it only once written;
 				// failing that, drop its subtree.
@@ -283,19 +398,18 @@ func (c *RadixCache) evictFull(request, target int) int {
 					c.host.WritingCheck(true)
 					d := c.core.Demote(*step.Node)
 					c.ApplyEvictionStep(d)
-					tr[FullComponentType] += d.Tracker[FullComponentType]
+					add(d)
 				} else {
 					d := c.core.DropSubtreeNoHost(*step.Node)
 					c.ApplyEvictionStep(d)
-					tr[FullComponentType] += d.Tracker[FullComponentType]
+					add(d)
 				}
 			}
 		}
-		if reached() {
+		if reached(ct) {
 			break
 		}
 	}
-	return tr[FullComponentType]
 }
 
 // IncLockRef and DecLockRef are inc_lock_ref and dec_lock_ref (:1077-1092).
@@ -427,7 +541,7 @@ func (c *RadixCache) EvictableSize() int     { return c.core.EvictableSize() }
 func (c *RadixCache) ProtectedSize() int     { return c.core.FullProtectedSize() } // protected_size is full_protected_size (unified_radix_cache.py:4946@c4af57ff)
 func (c *RadixCache) FullEvictableSize() int { return c.core.FullEvictableSize() }
 func (c *RadixCache) FullProtectedSize() int { return c.core.FullProtectedSize() }
-func (c *RadixCache) TotalSize() (int, int)  { return c.tree.totalSize(), 0 }
+func (c *RadixCache) TotalSize() (int, int)  { return c.core.TotalSize() }
 func (c *RadixCache) TakeEvents() []Event    { return c.core.TakeEvents() }
 
 // DFSWeightOrder is dfs_weight_order (:3972-3973): the tree core's, over node handles.

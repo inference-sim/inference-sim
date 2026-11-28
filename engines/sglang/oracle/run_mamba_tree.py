@@ -26,6 +26,7 @@ and calls
     | {"on": "allocator", "m": "alloc", "n": n, "as": name}
     | {"on": "mamba", "m": "alloc", "n": n, "as": name}      (the pool's mamba slot allocator)
     | {"on": "pool", "m": "alloc", "reqs": [names]}          (the request table's acquire)
+The trace carries "driver": the mamba allocator calls, each with the seq of the last recorded call before it.
 A key is "tokens" with an optional "extra_key" and "cache_salt".
 
 Usage: python -I oracle/run_mamba_tree.py direct <sglang checkout> <sequence.json> <out.json>
@@ -86,6 +87,7 @@ def drive(sglang_root: str, path: str) -> dict:
     cb = sq["cache"]
     page = sq.get("page_size", 1)
     bound, reqs = {}, {}
+    driver = []   # the driver's own calls at objects no interface records (the mamba slot allocator)
 
     def key(c):
         return RadixKey(array("q", c["tokens"]), c.get("extra_key"), cache_salt=c.get("cache_salt"))
@@ -163,9 +165,13 @@ def drive(sglang_root: str, path: str) -> dict:
                 out = getattr(t, m)()
             else:
                 raise SystemExit(f"{path}: the driver has no call {c['on']}.{m}")
+            if c["on"] == "mamba":
+                driver.append({"after": mon.calls[-1]["seq"] if mon.calls else -1, "m": m, "n": c.get("n"),
+                               "ret": None if out is None else out.tolist()})
             if "as" in c:
                 bound[c["as"]] = out
-    return {"provenance": traces.provenance(TIER, sglang_root, path, sq, INPUTS), "kind": "direct", "calls": mon.calls}
+    return {"provenance": traces.provenance(TIER, sglang_root, path, sq, INPUTS), "kind": "direct", "calls": mon.calls,
+            "driver": driver}
 
 
 def main(argv) -> int:

@@ -52,6 +52,10 @@ type ComponentType string
 // FullComponentType is ComponentType.FULL, every tree's base component.
 const FullComponentType ComponentType = "full"
 
+// MambaComponentType is the recurrent-state slot of a hybrid model's tree (ComponentType.MAMBA,
+// unified_cache/component_type.py@c4af57ff); SGLang's traces name its tracker entries "mamba".
+const MambaComponentType ComponentType = "mamba"
+
 // Key is a RadixKey (radix_cache.py:59-99@297e54fd): the tokens a tree is keyed on and the
 // namespace that separates trees. Bigram is EAGLE's bigram view, whose length is one less than
 // its tokens'.
@@ -76,6 +80,9 @@ func (k Key) Len() int {
 // MatchPrefixParams is MatchPrefixParams (base_prefix_cache.py:64-73@297e54fd) on the FULL path.
 type MatchPrefixParams struct {
 	Key Key
+	// CowMamba takes the matched state into the request's own slot (copy on write); DeferCowSlot
+	// leaves taking that slot to the row's binding (MatchPrefixParams, base_prefix_cache.py:64-73@c4af57ff).
+	CowMamba, DeferCowSlot bool
 	// Req is the request the match is for, or nil for a match no request makes.
 	Req *Req
 }
@@ -95,6 +102,9 @@ type MatchResult struct {
 	// FullDeviceMatchLen is the reusable prefix of FULL's device scan when a shorter prefix was
 	// reported, or nil.
 	FullDeviceMatchLen *int `json:"full_device_match_len"`
+	// MambaBranchingSeqlen is the length at which a hybrid model's state would be published, or nil
+	// (MambaComponent.finalize_match_result_in_tree_core, components/mamba.py:195-218@c4af57ff).
+	MambaBranchingSeqlen *int `json:"mamba_branching_seqlen"`
 	// Actions is the walk's cache actions (a split of a node whose backup is in flight), which
 	// the cache applies before the finalizers (unified_radix_cache.py:619-626@297e54fd).
 	Actions []CacheAction `json:"-"`
@@ -113,6 +123,13 @@ type InsertParams struct {
 	InsertedLen int
 	Priority    int
 	SessionID   *string
+	// MambaValue is the state slot the inserting request donates (mamba_value), AllowMissingMamba
+	// says the leaf already holds the checkpoint and none is given, MambaKeepIdx is the ping-pong
+	// entry prepare picked, and MambaCheckpointDeferred that prepare held the state back.
+	MambaValue              []int64
+	AllowMissingMamba       bool
+	MambaKeepIdx            *int
+	MambaCheckpointDeferred bool
 }
 
 // InsertResult is InsertResult (base_prefix_cache.py:117-152@297e54fd) on the FULL path.
@@ -120,22 +137,29 @@ type InsertResult struct {
 	PrefixLen      int    `json:"prefix_len"`
 	TotalLen       int    `json:"total_len"`
 	LastDeviceNode NodeID `json:"last_device_node"`
+	// MambaExist is mamba_exist: the tree already held a state at the insert's end.
+	MambaExist bool `json:"mamba_exist"`
 }
 
 // EvictParams is EvictParams (base_prefix_cache.py:154-161@297e54fd) on the FULL path.
 type EvictParams struct {
 	NumTokens int
+	// MambaNum is the state slots to evict.
+	MambaNum int
 }
 
 // KVDemand is KVDemand (kv/alloc/demand.py@c4af57ff) on the FULL path: what an allocation will
 // take of the token pool, not what to evict.
 type KVDemand struct {
 	FullTokens int
+	// StateSlots is the recurrent state slots the allocation takes.
+	StateSlots int
 }
 
 // EvictResult is EvictResult (base_prefix_cache.py:163-170@297e54fd) on the FULL path.
 type EvictResult struct {
 	NumTokensEvicted int `json:"num_tokens_evicted"`
+	MambaNumEvicted  int `json:"mamba_num_evicted"`
 }
 
 // LockReceipt is the receipt a lock returns and its release replays: IncLockRefResult and
@@ -305,6 +329,9 @@ const (
 	// UpdatePendingBackupOnNodeSplitAction tells the cache a node whose backup is in flight was
 	// split, so the ack covers both halves.
 	UpdatePendingBackupOnNodeSplitAction CacheActionKind = "UpdatePendingBackupOnNodeSplit"
+	// MambaEvictExcessPathStatesAction asks the tree to evict the states of a path beyond its cap
+	// once the insert's other actions have run (MambaEvictExcessPathStates, components/mamba.py).
+	MambaEvictExcessPathStatesAction CacheActionKind = "MambaEvictExcessPathStates"
 )
 
 // CacheAction is one action a tree step hands the cache.
@@ -316,6 +343,8 @@ type CacheAction struct {
 	// AckID, OldNode, NewNode and NewChild are UpdatePendingBackupOnNodeSplit's.
 	AckID                      *NodeID
 	OldNode, NewNode, NewChild NodeID
+	// TailNode is MambaEvictExcessPathStates's tail.
+	TailNode NodeID
 }
 
 // LoadBackSpec is the FULL transfer build_load_back_spec returns (unified_tree_core.py:2578-2611
@@ -349,6 +378,13 @@ type TreeCore interface {
 	ProtectedSize() int
 	FullEvictableSize() int
 	FullProtectedSize() int
+	// The state component (components/mamba.py@c4af57ff): the tree's state ledgers and the state
+	// of a node, the cap eviction an insert asks for, and the sizes of both tiers.
+	MambaEvictableSize() int
+	MambaProtectedSize() int
+	TotalSize() (full, state int)
+	ComponentDeviceValue(c ComponentType, n NodeID) []int64
+	EvictExcessPathStates(tail NodeID) EvictionStep
 
 	// The host tier (unified_tree_core.py:2389-2850@297e54fd).
 	SetHicacheEnabled()

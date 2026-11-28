@@ -197,6 +197,14 @@ class Monitor:
             out["kv"] = {k: self.enc(getattr(kv, k, None), depth + 1) for k in
                          ("req_pool_idx", "cache_protected_len", "cache_inserted_len", "kv_committed_len",
                           "kv_allocated_len")}
+            # A hybrid model's request also holds recurrent state slots (a request of a plain model has
+            # none, and its record is unchanged).
+            for k in ("mamba_pool_idx", "mamba_cow_src_index", "mamba_needs_clear", "mamba_ping_pong_track_buffer",
+                      "mamba_ping_pong_empty", "mamba_next_track_idx", "mamba_last_track_idx", "mamba_last_track_seqlen",
+                      "mamba_prev_track_seqlen"):
+                v = getattr(kv, k, None)
+                if v is not None:
+                    out["kv"][k] = self.enc(v, depth + 1)
             pool = self.req_to_token_pool
             if pool is not None and kv.req_pool_idx is not None:
                 # The request's row of the pool: the slots its KV holds, as checkpoint reads them.
