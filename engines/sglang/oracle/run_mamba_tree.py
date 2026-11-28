@@ -19,6 +19,10 @@ and calls
     | {"on": "cache", "m": "insert", "tokens": [...], "value": name | [name, a, b], "mamba": name,
        "prev_prefix_len": n, "keep_idx": n, "allow_missing_mamba": bool, "as": name}
     | {"on": "cache", "m": "evict", "num_tokens": n, "mamba_num": n}
+    | {"op": "write_row", "req": r, "slots": [...]}   (the KV slots of the request's row)
+    | {"op": "lock", "req": r, "node": name}          (the request takes the tree lock and last node)
+    | {"on": "cache", "m": "checkpoint", "req": r, "up_to": n}
+    | {"on": "cache", "m": "on_release", "req": r, "checkpointed": bool}
     | {"on": "cache", "m": "evict_for_alloc", "full_tokens": n, "state_slots": n}
     | {"on": "cache", "m": "inc_lock_ref", "node": name, "as": name} | {"on": "cache", "m": "dec_lock_ref", "node": name, "lock": name}
     | {"on": "cache", "m": reset | evictable_size | protected_size | full_evictable_size | full_protected_size |
@@ -54,12 +58,33 @@ class Req(P.Req):
     no tree lock, no extra key."""
 
     def __init__(self, rid, fields):
-        super().__init__(rid, fields)
         self.session = None
         self.lock = None
+        self.last_node = None
         self.extra_key = None
         self.cache_salt = None
         self.priority = 0
+        self.session_id = None
+        self.output_ids = []
+        self.full_untruncated_fill_ids = []
+        self.prefix_len = 0
+        self.skip_radix_cache_insert = False
+        self.kv_rotation_base = None
+        self.finished_reason = None
+        self.is_finished = False
+        super().__init__(rid, fields)
+
+    def update(self, fields):
+        from array import array
+
+        super().update(fields)
+        for k in ("origin_input_ids", "output_ids", "full_untruncated_fill_ids"):
+            v = getattr(self, k)
+            if isinstance(v, list):
+                setattr(self, k, array("q", v))
+
+    def finished(self):
+        return self.is_finished
 
 
 def drive(sglang_root: str, path: str) -> dict:
@@ -136,6 +161,17 @@ def drive(sglang_root: str, path: str) -> dict:
             if op == "set":
                 reqs[c["req"]].update(c["set"])
                 continue
+            if op == "write_row":
+                q = reqs[c["req"]]
+                row = q.kv.req_pool_idx
+                pool.write((row, slice(0, len(c["slots"]))), torch.tensor(c["slots"], dtype=torch.int64))
+                continue
+            if op == "lock":
+                q = reqs[c["req"]]
+                n = bound[c["node"]]
+                q.last_node = getattr(n, "last_device_node", n)
+                q.lock = cache.lock(q.last_node)
+                continue
             t, m = targets[c["on"]], c["m"]
             if c["on"] == "pool" and m == "alloc":
                 out = acquire_rows(pool, pool.state, [reqs[n] for n in c["reqs"]])
@@ -148,6 +184,10 @@ def drive(sglang_root: str, path: str) -> dict:
                     key=key(c), value=value(c["value"]), prev_prefix_len=c.get("prev_prefix_len", 0),
                     mamba_value=bound[c["mamba"]] if c.get("mamba") else None, mamba_keep_idx=c.get("keep_idx"),
                     allow_missing_mamba=c.get("allow_missing_mamba", False), priority=c.get("priority", 0)))
+            elif m == "checkpoint":
+                out = t.checkpoint(reqs[c["req"]], up_to=c["up_to"])
+            elif m == "on_release":
+                out = t.on_release(reqs[c["req"]], checkpointed=c["checkpointed"])
             elif m == "evict":
                 out = t.evict(EvictParams(num_tokens=c.get("num_tokens", 0), mamba_num=c.get("mamba_num", 0)))
             elif m == "evict_for_alloc":

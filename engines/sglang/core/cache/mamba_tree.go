@@ -16,8 +16,13 @@ type MambaTreeConfig struct {
 	CheckpointInterval int
 	// PathStateCap is the cap; negative for none.
 	PathStateCap int
-	// Slots is the request pool's state slot allocator, which tree states are slots of.
-	Slots *MambaSlotAllocator
+	// CheckpointsLevel is --hybrid-cache-checkpoints-level (0 for its default, 2): below 3 a running
+	// request's checkpoint is held back unless it sits at the branching point.
+	CheckpointsLevel int
+	// Pool is the hybrid request table whose state slot allocator the tree's states are slots of,
+	// and whose lifecycle (ping-pong tracking slots, working slots) the checkpoints of a request
+	// drive.
+	Pool *HybridRequestPool
 }
 
 // mambaTree is MambaComponent on the device: one state slot per node that holds one, an LRU list of

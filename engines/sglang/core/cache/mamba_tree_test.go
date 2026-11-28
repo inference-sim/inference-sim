@@ -77,6 +77,16 @@ func (l *mtCore) MatchPrefix(p MatchPrefixParams) MatchResult {
 	l.add(mtCall{m: "match_prefix", ints: []int{r.DevicePrefixLen, r.FullKVHitLength, br}, nodes: []NodeID{r.LastDeviceNode, r.BestMatchNode}})
 	return r
 }
+func (l *mtCore) RootNodeHandle(k *string) NodeID {
+	n := l.TreeCore.RootNodeHandle(k)
+	l.add(mtCall{m: "root_node_handle", nodes: []NodeID{n}})
+	return n
+}
+func (l *mtCore) CollectFullDeviceIndices(from, until NodeID) []int64 {
+	s := l.TreeCore.CollectFullDeviceIndices(from, until)
+	l.add(mtCall{m: "collect_full_device_indices", slots: [][]int64{s}})
+	return s
+}
 func (l *mtCore) HasOngoingInsert() bool {
 	l.add(mtCall{m: "has_ongoing_insert"})
 	return l.TreeCore.HasOngoingInsert()
@@ -239,15 +249,62 @@ func (r *mtReplay) port(s NodeID) NodeID {
 }
 
 type tracedMamba struct {
-	ReqPoolIdx *int    `json:"req_pool_idx"`
-	PoolIdx    *int64  `json:"mamba_pool_idx"`
-	CowSrc     []int64 `json:"mamba_cow_src_index"`
-	NeedsClear *bool   `json:"mamba_needs_clear"`
+	ReqPoolIdx        *int    `json:"req_pool_idx"`
+	PoolIdx           *int64  `json:"mamba_pool_idx"`
+	CowSrc            []int64 `json:"mamba_cow_src_index"`
+	NeedsClear        *bool   `json:"mamba_needs_clear"`
+	PingPong          []int64 `json:"mamba_ping_pong_track_buffer"`
+	PingPongEmpty     []bool  `json:"mamba_ping_pong_empty"`
+	NextTrackIdx      *int    `json:"mamba_next_track_idx"`
+	LastTrackIdx      *int    `json:"mamba_last_track_idx"`
+	LastTrackSeqlen   *int    `json:"mamba_last_track_seqlen"`
+	PrevTrackSeqlen   *int    `json:"mamba_prev_track_seqlen"`
+	CacheProtectedLen int     `json:"cache_protected_len"`
+	CacheInsertedLen  int     `json:"cache_inserted_len"`
+	KVAllocatedLen    int     `json:"kv_allocated_len"`
 }
 
 type mtReq struct {
-	ID string      `json:"req"`
-	KV tracedMamba `json:"kv"`
+	ID       string      `json:"req"`
+	KV       tracedMamba `json:"kv"`
+	Origin   []int64     `json:"origin_input_ids"`
+	Fill     []int64     `json:"full_untruncated_fill_ids"`
+	Finished *bool       `json:"finished"`
+	LastNode *NodeID     `json:"last_node"`
+	Lock     *tracedLock `json:"lock"`
+}
+
+// syncReq makes the held request the one a call's argument names: what the driver set (the ids,
+// whether it finished, the lengths of its KV, the tracked state lengths) is taken from the trace, and
+// what the cache and the pool computed (the slots, the protected length, the lock) must equal it.
+func (r *mtReplay) syncReq(raw json.RawMessage) (*Req, error) {
+	have, err := r.reqOf(raw)
+	if err != nil {
+		return nil, err
+	}
+	var q mtReq
+	if err := json.Unmarshal(raw, &q); err != nil {
+		return nil, err
+	}
+	have.OriginInputIDs, have.FillIDs = q.Origin, q.Fill
+	have.Finished = q.Finished != nil && *q.Finished
+	have.KV.KVAllocatedLen = q.KV.KVAllocatedLen
+	have.KV.Mamba.LastTrackSeqlen, have.KV.Mamba.PrevTrackSeqlen = q.KV.LastTrackSeqlen, q.KV.PrevTrackSeqlen
+	if have.KV.CacheProtectedLen != q.KV.CacheProtectedLen || have.KV.CacheInsertedLen != q.KV.CacheInsertedLen {
+		return nil, fmt.Errorf("request %s: protected %d, inserted %d; SGLang's %d, %d", q.ID, have.KV.CacheProtectedLen,
+			have.KV.CacheInsertedLen, q.KV.CacheProtectedLen, q.KV.CacheInsertedLen)
+	}
+	return have, r.sameMambaKV(have, q.KV)
+}
+
+func (r *mtReplay) sameMambaKV(have *Req, q tracedMamba) error {
+	m := have.KV.Mamba
+	if !slices.Equal(m.PingPongBuffer, q.PingPong) || !slices.Equal(m.PingPongEmpty, q.PingPongEmpty) ||
+		deref(m.NextTrackIdx) != deref(q.NextTrackIdx) || deref(m.LastTrackIdx) != deref(q.LastTrackIdx) {
+		return fmt.Errorf("request %s: tracking slots %v %v next %v last %v; SGLang's %v %v next %v last %v", have.ID, m.PingPongBuffer,
+			m.PingPongEmpty, deref(m.NextTrackIdx), deref(m.LastTrackIdx), q.PingPong, q.PingPongEmpty, deref(q.NextTrackIdx), deref(q.LastTrackIdx))
+	}
+	return nil
 }
 
 // reqOf is the request an argument names: the one the replay holds for its id, built from the
@@ -345,15 +402,15 @@ func replayMambaTree(name string, tr Trace) (int, error) {
 					interval = *s.Interval
 				}
 			}
-			capStates := 1
+			capStates, level := 1, 2
 			if v, ok := sc.ServerArgs["hybrid_cache_checkpoints_level"].(float64); ok && v >= 3 {
-				capStates = -1
+				capStates, level = -1, 3
 			}
 			overlap := sc.Cache.Overlap
 			r.pool = NewHybridRequestPool(sc.Cache.MaxNumReqs, sc.Cache.MambaSize, sc.Cache.MaxContext, sc.Cache.ExtraBuf, sc.Cache.Lazy, overlap)
 			r.alloc = &stubAllocator{page: p.PageSize}
 			r.c, err = NewRadixCache(RadixConfig{PageSize: p.PageSize, EvictionPolicy: p.Policy,
-				Mamba: &MambaTreeConfig{CheckpointInterval: interval, PathStateCap: capStates, Slots: r.pool.Mamba}}, r.alloc, r.pool.RequestPool)
+				Mamba: &MambaTreeConfig{CheckpointInterval: interval, PathStateCap: capStates, CheckpointsLevel: level, Pool: r.pool}}, r.alloc, r.pool.RequestPool)
 			if err != nil {
 				return n, err
 			}
@@ -369,6 +426,14 @@ func replayMambaTree(name string, tr Trace) (int, error) {
 				return n, fmt.Errorf("seq %d tree_core.%s: %w", c.Seq, c.Method, err)
 			}
 			n++
+		case c.Iface == ReqToTokenIface && c.In == nil && c.Method == "write":
+			slots, err := c.RowWrite()
+			if err != nil {
+				return n, err
+			}
+			for _, s := range slots {
+				r.pool.Write(s.Row, s.Pos, []int64{s.Slot})
+			}
 		case c.Iface == ReqToTokenIface && c.In == nil && c.Method == "alloc":
 			if err := r.allocReqs(c); err != nil {
 				return n, fmt.Errorf("seq %d req_to_token.alloc: %w", c.Seq, err)
@@ -564,6 +629,29 @@ func (r *mtReplay) answer(c Call) error {
 			return fmt.Errorf("insert prefix %d (state existed %v); SGLang %d (%v)", got.PrefixLen, got.MambaExist, want.PrefixLen, want.MambaExist)
 		}
 		return r.pair(want.LastDeviceNode, got.LastDeviceNode)
+	case "checkpoint", "on_release":
+		var raw json.RawMessage
+		if err := c.Arg("req", &raw); err != nil {
+			return err
+		}
+		q, err := r.syncReq(raw)
+		if err != nil {
+			return err
+		}
+		if c.Method == "checkpoint" {
+			var upTo int
+			if err := c.Arg("up_to", &upTo); err != nil {
+				return err
+			}
+			r.c.Checkpoint(q, upTo)
+		} else {
+			var cp bool
+			if err := c.Arg("checkpointed", &cp); err != nil {
+				return err
+			}
+			r.c.OnRelease(q, cp)
+		}
+		return r.sameAfter(c, q)
 	case "evict":
 		var p struct {
 			Params tracedParams `json:"params"`
@@ -622,6 +710,37 @@ func (r *mtReplay) answer(c Call) error {
 		}
 	default:
 		return fmt.Errorf("the replay has no cache call %s", c.Method)
+	}
+	return nil
+}
+
+// sameAfter compares the request as the call left it with SGLang's record of it on return.
+func (r *mtReplay) sameAfter(c Call, q *Req) error {
+	if len(c.ReqAfter) == 0 {
+		return nil
+	}
+	var a mtReq
+	if err := json.Unmarshal(c.ReqAfter[0], &a); err != nil {
+		return err
+	}
+	if q.KV.CacheProtectedLen != a.KV.CacheProtectedLen || q.KV.CacheInsertedLen != a.KV.CacheInsertedLen {
+		return fmt.Errorf("after the call: protected %d, inserted %d; SGLang's %d, %d", q.KV.CacheProtectedLen, q.KV.CacheInsertedLen,
+			a.KV.CacheProtectedLen, a.KV.CacheInsertedLen)
+	}
+	if (q.LastNode == nil) != (a.LastNode == nil) {
+		return fmt.Errorf("after the call: last node %v; SGLang's %v", q.LastNode, a.LastNode)
+	}
+	if a.LastNode != nil {
+		if err := r.pair(*a.LastNode, *q.LastNode); err != nil {
+			return err
+		}
+	}
+	m := q.KV.Mamba
+	if (m.PoolIdx == nil) != (a.KV.PoolIdx == nil) || (m.PoolIdx != nil && *m.PoolIdx != *a.KV.PoolIdx) {
+		return fmt.Errorf("after the call: state slot %v; SGLang's %v", m.PoolIdx, a.KV.PoolIdx)
+	}
+	if !slices.Equal(m.PingPongBuffer, a.KV.PingPong) {
+		return fmt.Errorf("after the call: tracking slots %v; SGLang's %v", m.PingPongBuffer, a.KV.PingPong)
 	}
 	return nil
 }
@@ -775,6 +894,14 @@ func (r *mtReplay) wantCore(seq int) ([]mtCall, error) {
 			var v [2]int
 			err = x.Answer(&v)
 			cc.ints = v[:]
+		case "root_node_handle":
+			var n NodeID
+			err = x.Answer(&n)
+			cc.nodes = []NodeID{n}
+		case "collect_full_device_indices":
+			var s []int64
+			err = x.Answer(&s)
+			cc.slots = [][]int64{s}
 		case "reset", "has_ongoing_insert", "end_insert", "dec_lock_ref":
 		default:
 			return nil, fmt.Errorf("seq %d: the replay does not know tree-core call %s", x.Seq, x.Method)

@@ -45,7 +45,15 @@ type RadixCache struct {
 	pool  ReqToTokenPool
 	// host is the HiCache tier init_hicache attaches, or nil for a device-only cache.
 	host HostTier
+	// life is MambaComponent's request side, for a tree with a state component.
+	life *MambaLifecycle
 }
+
+// stateEvictor lets the lifecycle ask the cache to evict for a state slot (evict_for_alloc with
+// KVDemand(state_slots=n), mamba.py:868).
+type stateEvictor struct{ c *RadixCache }
+
+func (e stateEvictor) EvictForAlloc(n int) { e.c.EvictForAlloc(KVDemand{StateSlots: n}) }
 
 var _ PrefixCache = (*RadixCache)(nil)
 
@@ -122,7 +130,7 @@ func (c *RadixCache) ApplyEvictionStep(s EvictionStep) {
 	}
 	for _, v := range s.DeviceFrees[MambaComponentType] {
 		// FreeComponentDeviceSlot of the state component: the slots go back to the state allocator.
-		c.tree.mamba.cfg.Slots.Free(v)
+		c.tree.mamba.cfg.Pool.Mamba.Free(v)
 	}
 	if hv := s.HostFrees[FullComponentType]; len(hv) > 0 {
 		if c.host == nil {
@@ -154,10 +162,16 @@ func NewRadixCache(cfg RadixConfig, alloc Allocator, pool ReqToTokenPool) (*Radi
 		tree: newTreeCore(cfg.PageSize, cfg.IsEagle, events, cfg.DynamoFormat)}
 	c.tree.full.heap.priority = prio
 	if cfg.Mamba != nil {
-		if cfg.Mamba.Slots == nil {
-			return nil, fmt.Errorf("cache: a tree with a state component needs the pool's state slot allocator")
+		if cfg.Mamba.Pool == nil {
+			return nil, fmt.Errorf("cache: a tree with a state component needs the hybrid request pool")
 		}
 		c.tree.mamba = newMambaTree(c.tree, *cfg.Mamba)
+		life, err := NewMambaLifecycle(MambaLifecycleParams{Pool: cfg.Mamba.Pool, ExtraBuffer: cfg.Mamba.Pool.extraBuffer,
+			Evictor: stateEvictor{c}, CheckpointsLevel: cfg.Mamba.CheckpointsLevel})
+		if err != nil {
+			return nil, err
+		}
+		c.life = life
 	}
 	c.core = c.tree
 	c.Reset()
@@ -213,7 +227,7 @@ func (c *RadixCache) finalizeMatchInCache(p MatchPrefixParams, r MatchResult) {
 	}
 	m := req.KV.Mamba
 	if !m.HoldsMamba() && !p.DeferCowSlot {
-		slots := c.tree.mamba.cfg.Slots
+		slots := c.tree.mamba.cfg.Pool.Mamba
 		dst, ok := slots.Alloc(1)
 		if !ok {
 			lock := c.IncLockRef(r.BestMatchNode)
@@ -294,7 +308,7 @@ func (c *RadixCache) evict(p EvictParams, demand map[ComponentType]int) EvictRes
 // poolAvailable is _pool_available (:1029-1042): what the component's own pool can serve now.
 func (c *RadixCache) poolAvailable(ct ComponentType) int {
 	if ct == MambaComponentType {
-		return c.tree.mamba.cfg.Slots.AvailableSize()
+		return c.tree.mamba.cfg.Pool.Mamba.AvailableSize()
 	}
 	return c.alloc.OwnerAvailableSize()
 }
@@ -442,31 +456,49 @@ func (c *RadixCache) Unlock(l *TreeLock) {
 	c.DecLockRef(l.Node, l.Receipt)
 }
 
-// Checkpoint is checkpoint and checkpoint_into_tree (:1159-1336) for the FULL component and a
-// request outside any streaming session.
+// Checkpoint is checkpoint and checkpoint_into_tree (:1632-1840@c4af57ff) for a request outside any
+// streaming session. A tree with a state component first lets that component prepare the insert: a
+// finished request donates its tracked state, a running one donates a copy of it (or holds the
+// checkpoint back), and the length it lets the insert cover bounds the key.
 func (c *RadixCache) Checkpoint(req *Req, upTo int) {
+	finished := req.Finished
 	if c.cfg.Disable {
+		if finished && c.life != nil {
+			c.cleanup(req, true, nil, nil)
+		}
 		return
 	}
 	tokens := req.FillIDs[:min(upTo, len(req.FillIDs))]
-	row := c.pool.Row(*req.KV.ReqPoolIdx)
-	if len(tokens) == 0 {
+	p := InsertParams{PrevPrefixLen: req.KV.CacheProtectedLen, InsertedLen: req.KV.CacheInsertedLen,
+		Priority: req.Priority, SessionID: req.SessionID}
+	var ins MambaInsert
+	effective := len(tokens)
+	if c.life != nil {
+		n, err := c.life.PrepareForCachingReq(req, &ins, len(tokens), finished)
+		if err != nil {
+			panic(err)
+		}
+		effective = min(effective, n)
+	}
+	key := Key{Tokens: tokens[:effective], ExtraKey: req.ExtraKey, CacheSalt: req.CacheSalt, Bigram: c.tree.isEagle}
+	if effective <= 0 {
+		c.cleanup(req, finished, nil, &ins)
 		return
 	}
-	key := Key{Tokens: tokens, ExtraKey: req.ExtraKey, CacheSalt: req.CacheSalt, Bigram: c.tree.isEagle}
+	row := c.pool.Row(*req.KV.ReqPoolIdx)
 	key = key.pageAligned(c.cfg.PageSize)
 	aligned := key.Len()
 	values := append([]int64{}, row[:aligned]...)
-	p := InsertParams{Key: key, Value: values, PrevPrefixLen: req.KV.CacheProtectedLen,
-		InsertedLen: req.KV.CacheInsertedLen, Priority: req.Priority, SessionID: req.SessionID}
+	p.Key, p.Value = key, values
+	p.MambaValue, p.MambaKeepIdx, p.MambaCheckpointDeferred = ins.Value, ins.KeepIdx, ins.CheckpointDeferred
 	res := c.Insert(p)
 	req.KV.CacheInsertedLen = max(req.KV.CacheInsertedLen, aligned)
 
 	// Split the leaf at the prompt boundary, so eviction can drop the output without the
-	// prompt (:1250-1271).
+	// prompt (:1750-1771): only a tree of FULL alone does.
 	prompt := Key{Tokens: req.OriginInputIDs, ExtraKey: req.ExtraKey, CacheSalt: req.CacheSalt,
 		Bigram: c.tree.isEagle}.pageAligned(c.cfg.PageSize)
-	if pl := prompt.Len(); pl > 0 && pl < aligned {
+	if pl := prompt.Len(); c.life == nil && pl > 0 && pl < aligned {
 		prio := req.Priority
 		if prio < math.MaxInt64 {
 			prio++
@@ -486,6 +518,18 @@ func (c *RadixCache) Checkpoint(req *Req, upTo int) {
 	req.Lock = c.Lock(last)
 	req.KV.CacheProtectedLen = len(indices)
 	req.LastNode = &last
+	c.cleanup(req, finished, &MambaInsertResult{Exist: res.MambaExist}, &ins)
+}
+
+// cleanup is each component's cleanup_after_caching_req: FULL has none; the state component frees
+// what the request still holds once the tree took, or did not take, its donated state.
+func (c *RadixCache) cleanup(req *Req, finished bool, res *MambaInsertResult, ins *MambaInsert) {
+	if c.life == nil {
+		return
+	}
+	if err := c.life.CleanupAfterCachingReq(req, finished, res, ins); err != nil {
+		panic(err)
+	}
 }
 
 // FreeKVRow is free_kv_row (base_prefix_cache.py:507-521@297e54fd) with no SWA: the row's
@@ -523,9 +567,17 @@ func (c *RadixCache) PrefixDeviceIndices(req *Req) []int64 {
 }
 
 // The streaming-session entries: a request outside a session is never handed to one.
-func (c *RadixCache) MaybeHandToSession(req *Req)            {}
-func (c *RadixCache) ClaimKVRow(req *Req) bool               { return false }
-func (c *RadixCache) OnRelease(req *Req, checkpointed bool)  {}
+func (c *RadixCache) MaybeHandToSession(req *Req) {}
+func (c *RadixCache) ClaimKVRow(req *Req) bool    { return false }
+
+// OnRelease is on_release (:1620-1627@c4af57ff): a request that was not checkpointed still hands
+// back what its components hold.
+func (c *RadixCache) OnRelease(req *Req, checkpointed bool) {
+	if checkpointed {
+		return
+	}
+	c.cleanup(req, true, nil, nil)
+}
 func (c *RadixCache) SessionRecords() map[string]ReqKV       { return map[string]ReqKV{} }
 func (c *RadixCache) WindowReprefillTailTokens(req *Req) int { return 0 }
 func (c *RadixCache) RetainedWindowTokens() int              { return 0 }
